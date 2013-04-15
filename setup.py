@@ -14,7 +14,7 @@ from distutils.core import Command
 from setuptools import setup, find_packages
 
 from version import *
-VERSION = get_git_version(),
+VERSION = get_git_version()
 PROJECT = ''
 URL = 'http://diffeo.com'
 AUTHOR = 'Diffeo, Inc.'
