@@ -13,9 +13,9 @@ from distutils.core import Command
 
 from setuptools import setup, find_packages
 
-from version import *
+from version import get_git_version
 VERSION = get_git_version()
-PROJECT = ''
+PROJECT = os.path.dirname(os.path.abspath(__file__)).split('/')[-1]
 URL = 'http://diffeo.com'
 AUTHOR = 'Diffeo, Inc.'
 AUTHOR_EMAIL = 'support@diffeo.com'
@@ -54,8 +54,7 @@ setup(
     name=PROJECT,
     version=VERSION,
     description=DESC,
-    #long_description=read_file('README.rst'),
-    long_description='',
+    long_description=read_file('README.rst'),
     author=AUTHOR,
     author_email=AUTHOR_EMAIL,
     url=URL,
