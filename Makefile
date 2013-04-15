@@ -19,5 +19,5 @@ install: build
 	python setup.py install
 
 test:
-	cd src && py.test tests -s
+	cd src && python ../runtests.py tests -s	
 
