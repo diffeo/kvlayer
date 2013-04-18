@@ -58,9 +58,6 @@ setup(
     author=AUTHOR,
     author_email=AUTHOR_EMAIL,
     url=URL,
-    dependency_links=[
-        'http://devhub.diffeo.com:8080'
-    ],
     packages = find_packages('src'),
     package_dir = {'': 'src'},
     cmdclass = {'test': PyTest},
