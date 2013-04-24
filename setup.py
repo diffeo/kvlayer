@@ -15,7 +15,7 @@ from setuptools import setup, find_packages
 
 from version import get_git_version
 VERSION = get_git_version()
-PROJECT = os.popen("git remote -v | grep devhub | head -1 | cut -d':' -f 2 | cut -d'.' -f 1").read().strip()
+#PROJECT = #must specify a string ... this does not work: os.popen("git remote -v | grep devhub | head -1 | cut -d':' -f 2 | cut -d'.' -f 1").read().strip()
 URL = 'http://diffeo.com'
 AUTHOR = 'Diffeo, Inc.'
 AUTHOR_EMAIL = 'support@diffeo.com'
