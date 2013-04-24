@@ -19,7 +19,11 @@ install: build
 	python setup.py install
 
 test:
-	cd src && PYTHONPATH=. python ../runtests.py tests 	
+	python runtests.py src
+
+register:
+	python setup.py sdist bdist_egg upload -r internal
 
 check:
 	pylint -i y --output-format=parseable src/`git remote -v | grep origin | head -1 | cut -d':' -f 2 | cut -d'.' -f 1`
+
