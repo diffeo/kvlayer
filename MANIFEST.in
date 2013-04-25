@@ -1,2 +1,2 @@
-include RELEASE-VERSION
 include version.py
+include RELEASE-VERSION
