@@ -358,9 +358,9 @@ class CStorage(AbstractStorage):
                 #    table_name, row_name, columns, start, finish))
             return
 
-	while True:
+        while True:
             ## if we have
-        prev_start = start
+            prev_start = start
             #logger.debug('cassandra get(%r...)' % row_name)
             for key, val in self.tables[table_name].get(
                     row_name,
