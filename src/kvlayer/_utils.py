@@ -9,7 +9,7 @@ Copyright 2012-2013 Diffeo, Inc.
 import uuid
 import itertools
 from operator import attrgetter
-from bigtree._exceptions import StorageClosed
+from kvlayer._exceptions import StorageClosed
 
 def _requires_connection(func):
     '''

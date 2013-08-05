@@ -1,5 +1,5 @@
 '''
-Implementation of bigtree.storage.AbstractStorage using local memory
+Implementation of AbstractStorage using local memory
 instead of a DB backend
 
 Your use of this software is governed by your license agreement.
@@ -12,13 +12,11 @@ import uuid
 import logging
 import hashlib
 import traceback
-from bigtree._tree_id import TreeID
-from bigtree._vertexfamily import VertexFamily
-from bigtree._exceptions import MissingID
-from bigtree.storage._abstract_storage import AbstractStorage
-from bigtree.storage._utils import _requires_connection
+from kvlayer._exceptions import MissingID
+from kvlayer._abstract_storage import AbstractStorage
+from kvlayer._utils import _requires_connection
 
-logger = logging.getLogger('bigtree.storage.local')
+logger = logging.getLogger('__name__')
 
 ## make LocalStorage a singleton, so it looks like a client to db
 def _local_storage_singleton(cls):

@@ -1,5 +1,5 @@
 '''
-Implementation of bigtree.storage.AbstractStorage using Cassandra
+Implementation of AbstractStorage using Cassandra
 
 Your use of this software is governed by your license agreement.
 
