@@ -11,19 +11,20 @@ import time
 import random
 import logging
 import traceback
-import pycassa
-from pycassa.pool import ConnectionPool
-from pycassa.types import AsciiType
-from thrift.transport.TTransport import TTransportException
-from pycassa.system_manager import (SystemManager, SIMPLE_STRATEGY,
-                                    ASCII_TYPE, BYTES_TYPE)
-
 from kvlayer._utils import join_uuids, split_uuids
 from kvlayer._exceptions import MissingID
 from kvlayer._abstract_storage import AbstractStorage
 from kvlayer._utils import _requires_connection
+from thrift.transport.TTransport import TTransportException
 
 logger = logging.getLogger('__name__')
+
+## get the Cassandra client library
+import pycassa
+from pycassa.pool import ConnectionPool
+from pycassa.system_manager import SystemManager, SIMPLE_STRATEGY, \
+    ASCII_TYPE, BYTES_TYPE
+from pycassa.types import AsciiType
 
 
 class LittleLogger(object):
@@ -34,25 +35,30 @@ class LittleLogger(object):
         #logger.debug('event: %s %r' % (self.name, dic))
         return
 
-
 class _PycassaListener(object):
     def __init__(self, storage):
         self.storage = storage
-        for method_name in ['connection_checked_out',
-                            'connection_created',
-                            'connection_disposed',
-                            'connection_recycled',
-                            'pool_at_max',
-                            'pool_disposed',
-                            'server_list_obtained',
-                            'connection_checked_in']:
+        for method_name in ['connection_checked_out', 'connection_created', 'connection_disposed', 'connection_recycled', 'pool_at_max',
+                            'pool_disposed', 'server_list_obtained', 'connection_checked_in']:
             setattr(self, method_name, LittleLogger(method_name))
 
     def connection_failed(self, dic):
-        logger.critical('connection_failed: reset pool??')
+        logger.critical('connection_failed: %s:' % str(dic))
         #self.storage.recreate_pool()
 
+def _singleton(cls):
+    '''
+    generic singleton decorator for a class
+    '''
+    instances = {}
+    def getinstance(*args, **kwargs):
+        if cls not in instances:
+            instances[cls] = cls(*args, **kwargs)
+        return instances[cls]
 
+    return getinstance
+
+#@_singleton
 class CStorage(AbstractStorage):
     """
     Cassandra storage implements a set of table-like structures using
@@ -70,8 +76,7 @@ class CStorage(AbstractStorage):
         logger.info('CStorage(_chosen_server=%r' % self._chosen_server)
         self.pool_size = config['connection_pool_size']
         self._connected = False
-        self.thrift_framed_transport_size_in_mb = config[
-            'thrift_framed_transport_size_in_mb']
+        self.thrift_framed_transport_size_in_mb = config['thrift_framed_transport_size_in_mb']
         self.pool = None
         self.table_names = None
 
@@ -99,10 +104,9 @@ class CStorage(AbstractStorage):
                 {
                     'replication_factor': str(self.config.get('replication_factor', '1'))
                 },
-            )
+                )
         except pycassa.InvalidRequestException, exc:
-            if exc.why.startswith('Keyspace names must be '
-                                  'case-insensitively unique'):
+            if exc.why.startswith('Keyspace names must be case-insensitively unique'):
                 pass
             else:
                 raise exc
@@ -112,8 +116,7 @@ class CStorage(AbstractStorage):
 
         ## now that we are consistent, we can create a pool
         self.pool = ConnectionPool(namespace, self.storage_addresses,
-                                   max_retries=1000, pool_timeout=10,
-                                   pool_size=2, timeout=120)
+                          max_retries=1000, pool_timeout=10, pool_size=2, timeout=120)
         self.pool.fill()
         self.pool.add_listener(_PycassaListener(self))
 
@@ -122,17 +125,18 @@ class CStorage(AbstractStorage):
             self.tables[family] = self._get_cf(family)
 
         elapsed = time.time() - start_connect_time
-        logger.info('took %.3f seconds to setup_namespace(%r) '
-                    'ConnectionPool(%d)' % (elapsed, namespace,
-                                            self.pool_size))
+        logger.info('took %.3f seconds to setup_namespace(%r) ConnectionPool(%d)' % (
+                elapsed, namespace, self.pool_size))
 
         ## indicated connection is established
         self._connected = True
 
     def _get_cf(self, cf_name):
-        return pycassa.ColumnFamily(self.pool, cf_name,
+        return pycassa.ColumnFamily(
+                self.pool, cf_name,
                 read_consistency_level=pycassa.ConsistencyLevel.ALL,
-                write_consistency_level=pycassa.ConsistencyLevel.ALL)
+                write_consistency_level=pycassa.ConsistencyLevel.ALL,
+                )
 
     def _create_tables(self, namespace, table_names, sm=None):
         if sm is None:
@@ -143,13 +147,12 @@ class CStorage(AbstractStorage):
             try:
                 sm.create_column_family(
                     namespace, family, super=False,
-                    key_validation_class=ASCII_TYPE,
-                    default_validation_class=BYTES_TYPE,
+                    key_validation_class = ASCII_TYPE,
+                    default_validation_class = BYTES_TYPE,
                     comparator_type=comparator,
-                )
+                    )
             except pycassa.InvalidRequestException, exc:
-                if exc.why.startswith('Cannot add already existing '
-                                      'column family'):
+                if exc.why.startswith('Cannot add already existing column family'):
                     pass
                 else:
                     raise exc
@@ -163,12 +166,10 @@ class CStorage(AbstractStorage):
                 consistency_delay < self.max_consistency_delay:
             consistency_delay = time.time() - start_consistency_delay
             if consistency_delay > 20:
-                logger.warn('waited %.1f seconds for cluster-wide '
-                            'consistency %r' % (consistency_delay,
-                                                sm.describe_schema_versions()))
+                logger.warn('waited %.1f seconds for cluster-wide consistency %r' % (
+                        consistency_delay, sm.describe_schema_versions()))
             time.sleep(0.2)
-        logger.info('number of schemas in cluster: %d' %
-                    len(sm.describe_schema_versions()))
+        logger.info('number of schemas in cluster: %d' % len(sm.describe_schema_versions()))
 
     def delete_namespace(self, namespace):
         sm = SystemManager(self._chosen_server)
@@ -291,6 +292,7 @@ class CStorage(AbstractStorage):
 
     @_requires_connection
     def get(self, table_name, *key_ranges, **kwargs):
+        batch_size = kwargs.pop('batch_size', 100)
         if not key_ranges:
             ## get all columns
             key_ranges = [['', '']]
@@ -306,19 +308,14 @@ class CStorage(AbstractStorage):
                 finish = None
             else:
                 columns = None
-                start  = len(start) > 0 and join_uuids(*start, num_uuids=num_uuids) or ''
-                finish = len(finish) > 0 and join_uuids(*finish, num_uuids=num_uuids, padding='f') or ''
+                start  = len(start)>0 and join_uuids(*start,  num_uuids=num_uuids) or ''
+                finish = len(finish)>0 and join_uuids(*finish, num_uuids=num_uuids, padding='f') or ''
                 row_names = self._make_row_names(table_name, start, finish)
             total_count = 0
             hit_empty = False
             for row_name in row_names:
                 try:
-                    for key, val in self._get_from_one_row(table_name,
-                                                           row_name,
-                                                           columns,
-                                                           start,
-                                                           finish,
-                                                           num_uuids):
+                    for key, val in self._get_from_one_row(table_name, row_name, columns, start, finish, num_uuids):
                         yield key, val
                         if start:
                             assert start <= join_uuids(*key, num_uuids=num_uuids)
@@ -326,8 +323,12 @@ class CStorage(AbstractStorage):
                             assert finish >= join_uuids(*key, num_uuids=num_uuids)
 
                         total_count += 1
+                        #logger.critical('total_count: %d' % total_count)
                 except pycassa.NotFoundException:
                     hit_empty = True
+
+            #logger.debug('specific_key_range: %r  hit_empty: %r  total_count: %r' %
+            #                (specific_key_range, hit_empty, total_count))
 
             if specific_key_range and hit_empty and total_count == 0:
                 raise MissingID('table_name=%r columns=%r start=%r finish=%r' % (
@@ -358,9 +359,9 @@ class CStorage(AbstractStorage):
                 #    table_name, row_name, columns, start, finish))
             return
 
-        while True:
+	while True:
             ## if we have
-            prev_start = start
+	    prev_start = start
             #logger.debug('cassandra get(%r...)' % row_name)
             for key, val in self.tables[table_name].get(
                     row_name,
@@ -396,6 +397,7 @@ class CStorage(AbstractStorage):
             joined_key = join_uuids(*key)
             row_name = self._make_row_name(table_name, joined_key)
             columns = [joined_key]
+            #logger.critical('C* delete: table_name=%r columns=%r' % (table_name, columns))
             batch.remove(row_name, columns=columns)
             count += 1
         batch.send()
