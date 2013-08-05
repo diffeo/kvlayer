@@ -1,5 +1,5 @@
 '''
-Definition of bigtree.storage.AbstractStorage, which all storage
+Definition of AbstractStorage, which all storage
 implementations inherit.
 
 Your use of this software is governed by your license agreement.
