@@ -16,7 +16,7 @@ from kvlayer._exceptions import MissingID
 from kvlayer._abstract_storage import AbstractStorage
 from kvlayer._utils import _requires_connection
 
-logger = logging.getLogger('__name__')
+logger = logging.getLogger('kvlayer')
 
 ## make LocalStorage a singleton, so it looks like a client to db
 def _local_storage_singleton(cls):

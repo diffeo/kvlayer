@@ -17,7 +17,7 @@ from kvlayer._abstract_storage import AbstractStorage
 from kvlayer._utils import _requires_connection
 from thrift.transport.TTransport import TTransportException
 
-logger = logging.getLogger('__name__')
+logger = logging.getLogger('kvlayer')
 
 ## get the Cassandra client library
 import pycassa
