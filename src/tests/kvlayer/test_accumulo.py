@@ -1,18 +1,28 @@
+import os
 import re
+import sys
 import uuid
+import yaml
 import pytest
+import kvlayer
 
 from pyaccumulo import Accumulo, Mutation
+
+from _setup_logging import logger
 
 from kvlayer._accumulo import AStorage
 from make_namespace_string import make_namespace_string
 
 namespace = make_namespace_string()
 
-config = {'host': 'ec2-23-20-131-144.compute-1.amazonaws.com',
-          'port': 50096,
-          'user': 'root',
-          'password': 'diffeo'}
+config_path = os.path.join(os.path.dirname(__file__), 'config_accumulo.yaml')
+if not os.path.exists(config_path):
+    sys.exit('failed to find %r' % config_path)
+
+try:
+    config = yaml.load(open(config_path))
+except Exception, exc:
+    sys.exit('failed to load %r: %s' % (config_path, exc))
 
 
 def ns(name):
@@ -30,10 +40,31 @@ def fin():
 
 @pytest.fixture
 def direct(request):
-    conn = Accumulo(host=config['host'], port=50096,
+    conn = Accumulo(host='test-accumulo-1.diffeo.com', port=50096,
                     user="root", password="diffeo")
     request.addfinalizer(fin)
     return conn
+
+@pytest.fixture(scope='module', params=['accumulo'])
+def client(request):
+
+    global config
+    config['storage_type'] = request.param
+
+    logger.info('initializing client')
+    client = kvlayer.client(config)
+
+    logger.info('deleting old namespace')
+    #client.delete_namespace(namespace)
+
+    def fin():
+        logger.info('tearing down %r' % namespace)
+        client.delete_namespace(namespace)
+        logger.info('done cleaning up')
+    request.addfinalizer(fin)
+
+    logger.info('starting test')
+    return client
 
 
 def test_init_accumulo():
@@ -43,30 +74,33 @@ def test_init_accumulo():
 
 def test_ns():
     storage = AStorage(config)
-    ## No namespace is set by default
-    assert storage._ns('test') == 'test_'
+    ## default config sets namespace='test'
+    assert storage._ns('test') == 'test_test'
 
 
-def test_setup_namespace(direct):
+def test_setup_namespace(client):
+    #storage = AStorage(config)
+    logger.info('creating namespace: %r' % namespace)
+    client.setup_namespace(namespace, ['table1', 'table2'])
+    logger.info('checking existence of tables')
+    assert client.table_exists(ns('table1'))
+    assert client.table_exists(ns('table2'))
+    logger.info('finished checking')
+
+
+def test_delete_namespace(client):
     storage = AStorage(config)
     storage.setup_namespace(namespace, ['table1', 'table2'])
-    assert direct.table_exists(ns('table1'))
-    assert direct.table_exists(ns('table2'))
-
-
-def test_delete_namespace(direct):
-    storage = AStorage(config)
-    storage.setup_namespace(namespace, ['table1', 'table2'])
-    tables = direct.list_tables()
+    tables = client.list_tables()
     assert ns('table1') in tables
     assert ns('table2') in tables
     storage.delete_namespace(namespace)
-    tables = direct.list_tables()
+    tables = client.list_tables()
     assert ns('table1') not in tables
     assert ns('table2') not in tables
 
 
-def test_clear_table(direct):
+def test_clear_table(client):
     storage = AStorage(config)
     storage.setup_namespace(namespace, ['table1'])
 
@@ -74,33 +108,33 @@ def test_clear_table(direct):
     m = Mutation('row_1')
     m.put(cf='cf1', cq='cq1', val='1')
     m.put(cf='cf1', cq='cq1', val='2')
-    direct.write(ns('table1'), m)
+    client.write(ns('table1'), m)
 
     # Clear table
     storage.clear_table('table1')
 
     # Verify clear
-    for entry in direct.scan(ns('table1')):
+    for entry in client.scan(ns('table1')):
         assert False
 
     # Clear an empty table
     storage.clear_table('table1')
 
     # Verify still clear
-    for entry in direct.scan(ns('table1')):
+    for entry in client.scan(ns('table1')):
         assert False
 
 
-def test_create_if_missing(direct):
+def test_create_if_missing(client):
     storage = AStorage(config)
-    assert not direct.table_exists(ns('table1'))
+    assert not client.table_exists(ns('table1'))
     storage.create_if_missing(namespace, 'table1', 2)
-    assert direct.table_exists(ns('table1'))
+    assert client.table_exists(ns('table1'))
     storage.create_if_missing(namespace, 'table1', 2)
-    assert direct.table_exists(ns('table1'))
+    assert client.table_exists(ns('table1'))
 
 
-def test_put_get(direct):
+def test_put_get(client):
     storage = AStorage(config)
     storage.setup_namespace(namespace, ['table1'])
     kv_dict = {(uuid.uuid4(),
@@ -109,7 +143,7 @@ def test_put_get(direct):
     storage.put('table1', *keys_and_values)
     keys = kv_dict.keys()
     values = kv_dict.values()
-    for entry in direct.scan(ns('table1')):
+    for entry in client.scan(ns('table1')):
         assert entry.val in values
     generator = storage.get('table1', (keys[0], keys[0]))
     key, value = generator.next()
@@ -119,7 +153,7 @@ def test_put_get(direct):
             assert kv_dict[key] == value
 
 
-def test_delete(direct):
+def test_delete(client):
     storage = AStorage(config)
     storage.setup_namespace(namespace, ['table1'])
     kv_dict = {(uuid.uuid4(),
@@ -140,7 +174,7 @@ def test_delete(direct):
             generator.next()
 
 
-def test_close(direct):
+def test_close(client):
     storage = AStorage(config)
     conn = storage.conn
     assert conn

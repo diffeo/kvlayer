@@ -18,6 +18,6 @@ def make_namespace_string(test_name='test'):
     return '_'.join([
             test_name[:25], 
             getpass.getuser().replace('-', '_')[:5],
-            str(os.getpid()),
+            #str(os.getpid()),
             hashlib.md5(socket.gethostname()).hexdigest()[:4],
             ])
