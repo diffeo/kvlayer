@@ -109,7 +109,7 @@ setup(
     install_requires=[
         'pycassa',
         'pyaccumulo',
-        'yaml',
+        'pyyaml',
         'cql'
     ],
     # include_package_data = True,
