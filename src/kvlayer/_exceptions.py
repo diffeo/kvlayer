@@ -14,9 +14,5 @@ class MissingID(Exception):
     pass
 
 
-class RejectVertex(Exception):
-    pass
-
-
 class DatabaseEmpty(Exception):
     pass
