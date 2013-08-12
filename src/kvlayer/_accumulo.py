@@ -8,64 +8,80 @@ Copyright 2012-2013 Diffeo, Inc.
 
 import re
 import logging
-from kvlayer._exceptions import MissingID
+from kvlayer._exceptions import MissingID, ProgrammerError
 from kvlayer._abstract_storage import AbstractStorage
 from pyaccumulo import Accumulo, Mutation, Range, BatchWriter
 from _utils import join_uuids, split_uuids
 
-logger = logging.getLogger('__name__')
+logger = logging.getLogger('kvlayer')
 
 
 class AStorage(AbstractStorage):
-    """
-    Accumulo storage implements two column families within a namespace
-    specified by the user:
-
-       * 'tree' stores VertexFamilies of parents and their children.
-
-       * 'inbound' stores binary blobs of vertex data awaiting
-         insertion into the tree
-
-       * 'events' stores log messages
-
-       # 'meta' stores meta data information
-
-    """
+    '''
+    Accumulo storage implements kvlayer's AbstractStorage, which
+    manages a set of tables as specified to setup_namespace
+    '''
     def __init__(self, config):
-        '''
-        thrift proxy server for accumulo doesn't currently
-        support more than one address
-        assert len(config['storage_addresses']) == 1
-        storage_host_port = config['storage_addresses'][0]
-        host, port = storage_host_port.split(':', 1)
-        '''
         self._connected = False
-        self._host = config['host']
-        self._port = config['port']
-        self._user = config['user']
-        self._password = config['password']
-        self._namespace = ''
+        addresses = config.get('storage_addresses', [])
+        if not addresses:
+            raise ProgrammerError('config lacks storage_addresses')
+
+        logger.info('accumulo thrift proxy supports only one address, using first: %r' % addresses)
+        address = addresses[0]
+        if ':' not in address:
+            self._host = address
+            self._port = 50096
+        else:
+            self._host, self._port = address.split(':')
+            self._port = int(self._port)
+
+        self._user = config.get('username', None)
+        self._password = config.get('password', None)
+        if not self._user and self._password:
+            raise ProgrammerError('accumulo storage requires username/password')
+
+        self._namespace = config.get('namespace', None)
+        if not self._namespace:
+            raise ProgrammerError('kvlayer requires a namespace')
+
         self._conn = None
 
     @property
     def conn(self):
         if not self._conn:
+            logger.critical('connecting to Accumulo')
+            logger.flush()
             self._conn = Accumulo(self._host, self._port,
                                   self._user, self._password)
             self._connected = True
         return self._conn
 
     def _ns(self, table):
+        '''
+        accumulo does not have "namespaces" as a concept per se, so we
+        achieve the same effect by creating tables with the namespace
+        string appended to the end of the table name
+        '''
         return '%s_%s' % (table, self._namespace)
 
     def setup_namespace(self, namespace, table_names):
+        '''
+        create tables within the namespace
+        '''
         self._namespace = namespace
+        logger.info('creating tables')
         for table in table_names:
             if not self.conn.table_exists(self._ns(table)):
                 self.conn.create_table(self._ns(table))
 
     def delete_namespace(self, namespace):
+        '''
+        delete all of the tables within namespace
+        '''
+        logger.critical('getting list of tables')
         tables = self.conn.list_tables()
+        logger.critical('searching through tables to find deletes for %s: %r' % (namespace, tables))
         tables_to_delete = [x for x in tables if re.search(namespace, x)]
         for table in tables_to_delete:
             self.conn.delete_table(table)
