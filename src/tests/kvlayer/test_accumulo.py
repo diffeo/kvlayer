@@ -11,6 +11,7 @@ from pyaccumulo import Accumulo, Mutation
 from _setup_logging import logger
 
 from kvlayer._accumulo import AStorage
+from kvlayer._exceptions import MissingID
 from make_namespace_string import make_namespace_string
 
 namespace = make_namespace_string()
@@ -44,6 +45,7 @@ def direct(request):
                     user="root", password="diffeo")
     # request.addfinalizer(fin)
     return conn
+
 
 @pytest.fixture(scope='function', params=['accumulo'])
 def client(request):
@@ -153,6 +155,21 @@ def test_put_get(client, direct):
             assert kv_dict[key] == value
 
 
+def test_get_all_keys(client, direct):
+    storage = AStorage(config)
+    storage.setup_namespace(namespace, ['table1'])
+    kv_dict = {(uuid.uuid4(),
+                uuid.uuid4()): 'value' + str(x) for x in xrange(10)}
+    keys_and_values = [(key, value) for key, value in kv_dict.iteritems()]
+    storage.put('table1', *keys_and_values)
+
+    for key, val in storage.get('table1'):
+        assert kv_dict[key] == val
+        del kv_dict[key]
+
+    assert kv_dict == {}
+
+
 def test_delete(client, direct):
     storage = AStorage(config)
     storage.setup_namespace(namespace, ['table1'])
@@ -170,7 +187,7 @@ def test_delete(client, direct):
             assert kv_dict[key] == value
     for key in delete_keys:
         generator = storage.get('table1', (key, key))
-        with pytest.raises(StopIteration):
+        with pytest.raises(MissingID):
             generator.next()
 
 

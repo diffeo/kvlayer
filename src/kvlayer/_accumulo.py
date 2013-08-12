@@ -105,16 +105,26 @@ class AStorage(AbstractStorage):
         batch_writer.close()
 
     def get(self, table_name, *key_ranges, **kwargs):
+        if not key_ranges:
+            key_ranges = [['', '']]
         for start_key, stop_key in key_ranges:
-            try:
+            total_count = 0
+            specific_key_range = bool(start_key or stop_key)
+            if specific_key_range:
                 key_range = Range(srow=self._preceeding_key(join_uuids(*start_key)),
-                                  erow=join_uuids(*stop_key))
-                scanner = self.conn.scan(self._ns(table_name),
-                                         scanrange=key_range)
-                row = scanner.next()
+                                    erow=join_uuids(*stop_key))
+                scanner = self.conn.scan(self._ns(table_name), scanrange=key_range)
+            else:
+                scanner = self.conn.scan(self._ns(table_name))
+
+            for row in scanner:
+                total_count += 1
                 yield tuple(split_uuids(row.row)), row.val
-            except ValueError: # FIX with correct exception
-                raise MissingID()
+            else:
+                if specific_key_range and total_count == 0:
+                    raise MissingID('table_name=%r start=%r finish=%r' % (
+                                    table_name, start_key, stop_key))
+
 
     def _preceeding_key(self, key):
         format_string = '%%0.%dx' % len(key)
