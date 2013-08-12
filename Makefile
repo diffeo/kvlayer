@@ -13,8 +13,6 @@ build_packages: build_eggs
 	python setup.py bdist_rpm
 
 install: build
-	## I think this `clean --all` step removes existing versions
-	## from site-packages that would conflict when we install
 	python setup.py clean --all
 	python setup.py install
 
