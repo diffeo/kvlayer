@@ -51,7 +51,6 @@ class AStorage(AbstractStorage):
     def conn(self):
         if not self._conn:
             logger.critical('connecting to Accumulo')
-            logger.flush()
             self._conn = Accumulo(self._host, self._port,
                                   self._user, self._password)
             self._connected = True
