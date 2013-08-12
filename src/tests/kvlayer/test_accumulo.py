@@ -210,3 +210,4 @@ def test_preceeding_key():
     assert storage._preceeding_key('fff00') == 'ffeff'
     assert storage._preceeding_key('fff00') == 'ffeff'
     assert storage._preceeding_key('f0000') == 'effff'
+    assert storage._preceeding_key('00000') == '.'
