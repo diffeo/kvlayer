@@ -127,8 +127,11 @@ class AStorage(AbstractStorage):
 
 
     def _preceeding_key(self, key):
+        num = (int(key, 16) - 1)
+        if num < 0:
+            return '.'
         format_string = '%%0.%dx' % len(key)
-        return format_string % (int(key, 16) - 1)
+        return format_string % num
 
     def delete(self, table_name, *keys, **kwargs):
         for key in keys:
