@@ -42,10 +42,10 @@ def fin():
 def direct(request):
     conn = Accumulo(host='test-accumulo-1.diffeo.com', port=50096,
                     user="root", password="diffeo")
-    request.addfinalizer(fin)
+    # request.addfinalizer(fin)
     return conn
 
-@pytest.fixture(scope='module', params=['accumulo'])
+@pytest.fixture(scope='function', params=['accumulo'])
 def client(request):
 
     global config
@@ -78,29 +78,29 @@ def test_ns():
     assert storage._ns('test') == 'test_test'
 
 
-def test_setup_namespace(client):
+def test_setup_namespace(client, direct):
     #storage = AStorage(config)
     logger.info('creating namespace: %r' % namespace)
     client.setup_namespace(namespace, ['table1', 'table2'])
     logger.info('checking existence of tables')
-    assert client.table_exists(ns('table1'))
-    assert client.table_exists(ns('table2'))
+    assert direct.table_exists(ns('table1'))
+    assert direct.table_exists(ns('table2'))
     logger.info('finished checking')
 
 
-def test_delete_namespace(client):
+def test_delete_namespace(client, direct):
     storage = AStorage(config)
     storage.setup_namespace(namespace, ['table1', 'table2'])
-    tables = client.list_tables()
+    tables = direct.list_tables()
     assert ns('table1') in tables
     assert ns('table2') in tables
     storage.delete_namespace(namespace)
-    tables = client.list_tables()
+    tables = direct.list_tables()
     assert ns('table1') not in tables
     assert ns('table2') not in tables
 
 
-def test_clear_table(client):
+def test_clear_table(client, direct):
     storage = AStorage(config)
     storage.setup_namespace(namespace, ['table1'])
 
@@ -108,33 +108,33 @@ def test_clear_table(client):
     m = Mutation('row_1')
     m.put(cf='cf1', cq='cq1', val='1')
     m.put(cf='cf1', cq='cq1', val='2')
-    client.write(ns('table1'), m)
+    direct.write(ns('table1'), m)
 
     # Clear table
     storage.clear_table('table1')
 
     # Verify clear
-    for entry in client.scan(ns('table1')):
+    for entry in direct.scan(ns('table1')):
         assert False
 
     # Clear an empty table
     storage.clear_table('table1')
 
     # Verify still clear
-    for entry in client.scan(ns('table1')):
+    for entry in direct.scan(ns('table1')):
         assert False
 
 
-def test_create_if_missing(client):
+def test_create_if_missing(client, direct):
     storage = AStorage(config)
-    assert not client.table_exists(ns('table1'))
-    storage.create_if_missing(namespace, 'table1', 2)
-    assert client.table_exists(ns('table1'))
-    storage.create_if_missing(namespace, 'table1', 2)
-    assert client.table_exists(ns('table1'))
+    assert not direct.table_exists(ns('table_create_if_missing'))
+    storage.create_if_missing(namespace, 'table_create_if_missing', 2)
+    assert direct.table_exists(ns('table_create_if_missing'))
+    storage.create_if_missing(namespace, 'table_create_if_missing', 2)
+    assert direct.table_exists(ns('table_create_if_missing'))
 
 
-def test_put_get(client):
+def test_put_get(client, direct):
     storage = AStorage(config)
     storage.setup_namespace(namespace, ['table1'])
     kv_dict = {(uuid.uuid4(),
@@ -143,7 +143,7 @@ def test_put_get(client):
     storage.put('table1', *keys_and_values)
     keys = kv_dict.keys()
     values = kv_dict.values()
-    for entry in client.scan(ns('table1')):
+    for entry in direct.scan(ns('table1')):
         assert entry.val in values
     generator = storage.get('table1', (keys[0], keys[0]))
     key, value = generator.next()
@@ -153,7 +153,7 @@ def test_put_get(client):
             assert kv_dict[key] == value
 
 
-def test_delete(client):
+def test_delete(client, direct):
     storage = AStorage(config)
     storage.setup_namespace(namespace, ['table1'])
     kv_dict = {(uuid.uuid4(),
