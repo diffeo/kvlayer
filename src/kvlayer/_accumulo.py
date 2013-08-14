@@ -36,6 +36,7 @@ class AStorage(AbstractStorage):
             self._host, self._port = address.split(':')
             self._port = int(self._port)
 
+        self.table_names = {}
         self._user = config.get('username', None)
         self._password = config.get('password', None)
         if not self._user and self._password:
@@ -70,6 +71,7 @@ class AStorage(AbstractStorage):
         '''
         self._namespace = namespace
         logger.info('creating tables')
+        self.table_names = table_names
         for table in table_names:
             if not self.conn.table_exists(self._ns(table)):
                 self.conn.create_table(self._ns(table))
@@ -91,6 +93,7 @@ class AStorage(AbstractStorage):
 
     def create_if_missing(self, namespace, table_name, num_uuids):
         self._namespace = namespace
+        self.table_names[table_name] = num_uuids
         if not self.conn.table_exists(self._ns(table_name)):
             self.conn.create_table(self._ns(table_name))
 
@@ -105,14 +108,15 @@ class AStorage(AbstractStorage):
         batch_writer.close()
 
     def get(self, table_name, *key_ranges, **kwargs):
+        num_uuids = self.table_names[table_name]
         if not key_ranges:
             key_ranges = [['', '']]
         for start_key, stop_key in key_ranges:
             total_count = 0
             specific_key_range = bool(start_key or stop_key)
             if specific_key_range:
-                key_range = Range(srow=self._preceeding_key(join_uuids(*start_key)),
-                                    erow=join_uuids(*stop_key))
+                key_range = Range(srow=self._preceeding_key(join_uuids(*start_key, num_uuids=num_uuids, padding='0')),
+                                    erow=join_uuids(*stop_key, num_uuids=num_uuids, padding='f'))
                 scanner = self.conn.scan(self._ns(table_name), scanrange=key_range)
             else:
                 scanner = self.conn.scan(self._ns(table_name))

@@ -83,7 +83,7 @@ def test_ns():
 def test_setup_namespace(client, direct):
     #storage = AStorage(config)
     logger.info('creating namespace: %r' % namespace)
-    client.setup_namespace(namespace, ['table1', 'table2'])
+    client.setup_namespace(namespace, {'table1': 1, 'table2': 1})
     logger.info('checking existence of tables')
     assert direct.table_exists(ns('table1'))
     assert direct.table_exists(ns('table2'))
@@ -92,7 +92,7 @@ def test_setup_namespace(client, direct):
 
 def test_delete_namespace(client, direct):
     storage = AStorage(config)
-    storage.setup_namespace(namespace, ['table1', 'table2'])
+    client.setup_namespace(namespace, {'table1': 1, 'table2': 1})
     tables = direct.list_tables()
     assert ns('table1') in tables
     assert ns('table2') in tables
@@ -104,7 +104,7 @@ def test_delete_namespace(client, direct):
 
 def test_clear_table(client, direct):
     storage = AStorage(config)
-    storage.setup_namespace(namespace, ['table1'])
+    client.setup_namespace(namespace, {'table1': 1, 'table2': 1})
 
     # Write some rows to table
     m = Mutation('row_1')
@@ -138,7 +138,7 @@ def test_create_if_missing(client, direct):
 
 def test_put_get(client, direct):
     storage = AStorage(config)
-    storage.setup_namespace(namespace, ['table1'])
+    client.setup_namespace(namespace, {'table1': 1, 'table2': 1})
     kv_dict = {(uuid.uuid4(),
                 uuid.uuid4()): 'value' + str(x) for x in xrange(10)}
     keys_and_values = [(key, value) for key, value in kv_dict.iteritems()]
@@ -157,7 +157,7 @@ def test_put_get(client, direct):
 
 def test_get_all_keys(client, direct):
     storage = AStorage(config)
-    storage.setup_namespace(namespace, ['table1'])
+    client.setup_namespace(namespace, {'table1': 1, 'table2': 1})
     kv_dict = {(uuid.uuid4(),
                 uuid.uuid4()): 'value' + str(x) for x in xrange(10)}
     keys_and_values = [(key, value) for key, value in kv_dict.iteritems()]
@@ -172,7 +172,7 @@ def test_get_all_keys(client, direct):
 
 def test_delete(client, direct):
     storage = AStorage(config)
-    storage.setup_namespace(namespace, ['table1'])
+    client.setup_namespace(namespace, {'table1': 1, 'table2': 1})
     kv_dict = {(uuid.uuid4(),
                 uuid.uuid4()): 'value' + str(x) for x in xrange(10)}
     keys_and_values = [(key, value) for key, value in kv_dict.iteritems()]
