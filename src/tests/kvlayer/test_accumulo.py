@@ -103,7 +103,6 @@ def test_delete_namespace(client, direct):
 
 
 def test_clear_table(client, direct):
-    storage = AStorage(config)
     client.setup_namespace(namespace, {'table1': 1, 'table2': 1})
 
     # Write some rows to table
@@ -113,14 +112,14 @@ def test_clear_table(client, direct):
     direct.write(ns('table1'), m)
 
     # Clear table
-    storage.clear_table('table1')
+    client.clear_table('table1')
 
     # Verify clear
     for entry in direct.scan(ns('table1')):
         assert False
 
     # Clear an empty table
-    storage.clear_table('table1')
+    client.clear_table('table1')
 
     # Verify still clear
     for entry in direct.scan(ns('table1')):
@@ -128,42 +127,39 @@ def test_clear_table(client, direct):
 
 
 def test_create_if_missing(client, direct):
-    storage = AStorage(config)
     assert not direct.table_exists(ns('table_create_if_missing'))
-    storage.create_if_missing(namespace, 'table_create_if_missing', 2)
+    client.create_if_missing(namespace, 'table_create_if_missing', 2)
     assert direct.table_exists(ns('table_create_if_missing'))
-    storage.create_if_missing(namespace, 'table_create_if_missing', 2)
+    client.create_if_missing(namespace, 'table_create_if_missing', 2)
     assert direct.table_exists(ns('table_create_if_missing'))
 
 
 def test_put_get(client, direct):
-    storage = AStorage(config)
     client.setup_namespace(namespace, {'table1': 1, 'table2': 1})
     kv_dict = {(uuid.uuid4(),
                 uuid.uuid4()): 'value' + str(x) for x in xrange(10)}
     keys_and_values = [(key, value) for key, value in kv_dict.iteritems()]
-    storage.put('table1', *keys_and_values)
+    client.put('table1', *keys_and_values)
     keys = kv_dict.keys()
     values = kv_dict.values()
     for entry in direct.scan(ns('table1')):
         assert entry.val in values
-    generator = storage.get('table1', (keys[0], keys[0]))
+    generator = client.get('table1', (keys[0], keys[0]))
     key, value = generator.next()
     assert kv_dict[key] == value
     for x in xrange(10):
-        for key, value in storage.get('table1', (keys[x], keys[x])):
+        for key, value in client.get('table1', (keys[x], keys[x])):
             assert kv_dict[key] == value
 
 
 def test_get_all_keys(client, direct):
-    storage = AStorage(config)
     client.setup_namespace(namespace, {'table1': 1, 'table2': 1})
     kv_dict = {(uuid.uuid4(),
                 uuid.uuid4()): 'value' + str(x) for x in xrange(10)}
     keys_and_values = [(key, value) for key, value in kv_dict.iteritems()]
-    storage.put('table1', *keys_and_values)
+    client.put('table1', *keys_and_values)
 
-    for key, val in storage.get('table1'):
+    for key, val in client.get('table1'):
         assert kv_dict[key] == val
         del kv_dict[key]
 
@@ -171,43 +167,40 @@ def test_get_all_keys(client, direct):
 
 
 def test_delete(client, direct):
-    storage = AStorage(config)
-    client.setup_namespace(namespace, {'table1': 1, 'table2': 1})
+    client.setup_namespace(namespace, {'table1': 1})
     kv_dict = {(uuid.uuid4(),
                 uuid.uuid4()): 'value' + str(x) for x in xrange(10)}
     keys_and_values = [(key, value) for key, value in kv_dict.iteritems()]
-    storage.put('table1', *keys_and_values)
+    client.put('table1', *keys_and_values)
     keys = kv_dict.keys()
     delete_keys = keys[0:len(keys):2]
     save_keys = keys[1:len(keys):2]
     assert set(delete_keys)
-    storage.delete('table1', *delete_keys)
+    client.delete('table1', *delete_keys)
     for key in save_keys:
-        for key, value in storage.get('table1', (key, key)):
+        for key, value in client.get('table1', (key, key)):
             assert kv_dict[key] == value
     for key in delete_keys:
-        generator = storage.get('table1', (key, key))
+        generator = client.get('table1', (key, key))
         with pytest.raises(MissingID):
             generator.next()
 
 
 def test_close(client):
-    storage = AStorage(config)
-    conn = storage.conn
+    conn = client.conn
     assert conn
-    assert storage._connected
-    storage.close()
-    assert not storage._connected
+    assert client._connected
+    client.close()
+    assert not client._connected
 
 
-def test_preceeding_key():
-    storage = AStorage(config)
-    assert storage._preceeding_key('00001') == '00000'
-    assert storage._preceeding_key('00010') == '0000f'
-    assert storage._preceeding_key('00011') == '00010'
-    assert storage._preceeding_key('000f0') == '000ef'
-    assert storage._preceeding_key('000f1') == '000f0'
-    assert storage._preceeding_key('fff00') == 'ffeff'
-    assert storage._preceeding_key('fff00') == 'ffeff'
-    assert storage._preceeding_key('f0000') == 'effff'
-    assert storage._preceeding_key('00000') == '.'
+def test_preceeding_key(client):
+    assert client._preceeding_key('00001') == '00000'
+    assert client._preceeding_key('00010') == '0000f'
+    assert client._preceeding_key('00011') == '00010'
+    assert client._preceeding_key('000f0') == '000ef'
+    assert client._preceeding_key('000f1') == '000f0'
+    assert client._preceeding_key('fff00') == 'ffeff'
+    assert client._preceeding_key('fff00') == 'ffeff'
+    assert client._preceeding_key('f0000') == 'effff'
+    assert client._preceeding_key('00000') == '.'

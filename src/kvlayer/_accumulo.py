@@ -74,6 +74,7 @@ class AStorage(AbstractStorage):
         self.table_names = table_names
         for table in table_names:
             if not self.conn.table_exists(self._ns(table)):
+                logger.info('creating accumulo table for %s: %r' % (namespace, table))
                 self.conn.create_table(self._ns(table))
 
     def delete_namespace(self, namespace):
