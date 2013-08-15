@@ -74,7 +74,8 @@ class AStorage(AbstractStorage):
         self.table_names = table_names
         for table in table_names:
             if not self.conn.table_exists(self._ns(table)):
-                logger.info('creating accumulo table for %s: %r' % (namespace, table))
+                logger.info('creating accumulo table for %s: %r' %
+                            (namespace, table))
                 self.conn.create_table(self._ns(table))
 
     def delete_namespace(self, namespace):
@@ -142,6 +143,7 @@ class AStorage(AbstractStorage):
         for key in keys:
             joined_key = join_uuids(*key)
             preceeding_key = self._preceeding_key(joined_key)
+            logger.debug('delete %s from %s' % (str(key), table_name))
             self.conn.client.deleteRows(self.conn.login,
                                         self._ns(table_name),
                                         preceeding_key,
