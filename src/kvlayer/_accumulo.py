@@ -100,8 +100,8 @@ class AStorage(AbstractStorage):
 
     def put(self, table_name, *keys_and_values, **kwargs):
         batch_writer = BatchWriter(conn=self.conn, table=self._ns(table_name),
-                                   max_memory=10, latency_ms=30,
-                                   timeout_ms=5, threads=11)
+                                   max_memory=1000000, latency_ms=10,
+                                   timeout_ms=1000, threads=10)
         for key, value in keys_and_values:
             mut = Mutation(join_uuids(*key))
             mut.put(cf="cf1", cq="cq1", val=value)
