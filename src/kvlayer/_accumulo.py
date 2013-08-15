@@ -77,6 +77,10 @@ class AStorage(AbstractStorage):
                 logger.info('creating accumulo table for %s: %r' %
                             (namespace, table))
                 self.conn.create_table(self._ns(table))
+                self.conn.client.setTableProperty(self.conn.login,
+                                                  self._ns(table),
+                                                  'table.bloom.enabled',
+                                                  'true')
 
     def delete_namespace(self, namespace):
         '''
