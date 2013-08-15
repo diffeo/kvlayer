@@ -1,13 +1,8 @@
 
 namespace: test
 storage_addresses: ['test-accumulo-1.diffeo.com']
-storage_type: cassandra
+storage_type: accumulo 
 
 username: root
 password: diffeo
 
-connection_pool_size: 2
-max_consistency_delay: 120
-replication_factor: 1
-
-thrift_framed_transport_size_in_mb: 15
