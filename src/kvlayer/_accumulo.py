@@ -11,6 +11,8 @@ import logging
 from kvlayer._exceptions import MissingID, ProgrammerError
 from kvlayer._abstract_storage import AbstractStorage
 from pyaccumulo import Accumulo, Mutation, Range, BatchWriter
+from pyaccumulo.iterators import RowDeletingIterator
+from pyaccumulo.proxy.ttypes import IteratorScope
 from _utils import join_uuids, split_uuids
 
 logger = logging.getLogger('kvlayer')
@@ -67,6 +69,20 @@ class AStorage(AbstractStorage):
         '''
         return '%s_%s' % (table, self._namespace)
 
+    def _create_table(self, namespace, table):
+        logger.info('creating accumulo table for %s: %r' %
+                    (namespace, table))
+
+        self.conn.create_table(self._ns(table))
+        self.conn.client.setTableProperty(self.conn.login,
+                                          self._ns(table),
+                                          'table.bloom.enabled',
+                                          'true')
+        i = RowDeletingIterator()
+        scopes = set([IteratorScope.SCAN, IteratorScope.MINC,
+                      IteratorScope.MAJC])
+        i.attach(self.conn, self._ns(table), scopes)
+
     def setup_namespace(self, namespace, table_names):
         '''
         create tables within the namespace
@@ -76,13 +92,7 @@ class AStorage(AbstractStorage):
         self.table_names = table_names
         for table in table_names:
             if not self.conn.table_exists(self._ns(table)):
-                logger.info('creating accumulo table for %s: %r' %
-                            (namespace, table))
-                self.conn.create_table(self._ns(table))
-                self.conn.client.setTableProperty(self.conn.login,
-                                                  self._ns(table),
-                                                  'table.bloom.enabled',
-                                                  'true')
+                self._create_table(namespace, table)
 
     def delete_namespace(self, namespace):
         '''
@@ -104,11 +114,7 @@ class AStorage(AbstractStorage):
         self._namespace = namespace
         self.table_names[table_name] = num_uuids
         if not self.conn.table_exists(self._ns(table_name)):
-            self.conn.create_table(self._ns(table_name))
-            self.conn.client.setTableProperty(self.conn.login,
-                                              self._ns(table_name),
-                                              'table.bloom.enabled',
-                                              'true')
+            self._create_table(namespace, table_name)
 
     def put(self, table_name, *keys_and_values, **kwargs):
         batch_writer = BatchWriter(conn=self.conn, table=self._ns(table_name),
@@ -116,7 +122,7 @@ class AStorage(AbstractStorage):
                                    timeout_ms=1000, threads=10)
         for key, value in keys_and_values:
             mut = Mutation(join_uuids(*key))
-            mut.put(cf="", cq="", val=value)
+            mut.put(cf='', cq='', val=value)
             batch_writer.add_mutation(mut)
         batch_writer.close()
 
@@ -154,14 +160,14 @@ class AStorage(AbstractStorage):
         return format_string % num
 
     def delete(self, table_name, *keys, **kwargs):
+        batch_writer = BatchWriter(conn=self.conn, table=self._ns(table_name),
+                                   max_memory=1000000, latency_ms=10,
+                                   timeout_ms=1000, threads=10)
         for key in keys:
-            joined_key = join_uuids(*key)
-            preceeding_key = self._preceeding_key(joined_key)
-            logger.debug('delete %s from %s' % (str(key), table_name))
-            self.conn.client.deleteRows(self.conn.login,
-                                        self._ns(table_name),
-                                        preceeding_key,
-                                        joined_key)
+            mut = Mutation(join_uuids(*key))
+            mut.put(cf='', cq='', val='DEL_ROW')
+            batch_writer.add_mutation(mut)
+        batch_writer.close()
 
     def close(self):
         self._connected = False
