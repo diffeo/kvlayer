@@ -27,7 +27,8 @@ class AStorage(AbstractStorage):
         if not addresses:
             raise ProgrammerError('config lacks storage_addresses')
 
-        logger.info('accumulo thrift proxy supports only one address, using first: %r' % addresses)
+        logger.info('accumulo thrift proxy supports only one address, using '
+                    'first: %r' % addresses)
         address = addresses[0]
         if ':' not in address:
             self._host = address
@@ -40,7 +41,8 @@ class AStorage(AbstractStorage):
         self._user = config.get('username', None)
         self._password = config.get('password', None)
         if not self._user and self._password:
-            raise ProgrammerError('accumulo storage requires username/password')
+            raise ProgrammerError('accumulo storage requires '
+                                  'username/password')
 
         self._namespace = config.get('namespace', None)
         if not self._namespace:
@@ -88,7 +90,8 @@ class AStorage(AbstractStorage):
         '''
         logger.critical('getting list of tables')
         tables = self.conn.list_tables()
-        logger.critical('searching through tables to find deletes for %s: %r' % (namespace, tables))
+        logger.critical('searching through tables to find deletes for '
+                        '%s: %r' % (namespace, tables))
         tables_to_delete = [x for x in tables if re.search(namespace, x)]
         for table in tables_to_delete:
             self.conn.delete_table(table)
@@ -125,9 +128,13 @@ class AStorage(AbstractStorage):
             total_count = 0
             specific_key_range = bool(start_key or stop_key)
             if specific_key_range:
-                key_range = Range(srow=self._preceeding_key(join_uuids(*start_key, num_uuids=num_uuids, padding='0')),
-                                    erow=join_uuids(*stop_key, num_uuids=num_uuids, padding='f'))
-                scanner = self.conn.scan(self._ns(table_name), scanrange=key_range)
+                joined_key = join_uuids(*start_key, num_uuids=num_uuids,
+                                        padding='0')
+                srow = self._preceeding_key(joined_key)
+                erow = join_uuids(*stop_key, num_uuids=num_uuids, padding='f')
+                key_range = Range(srow=srow, erow=erow)
+                scanner = self.conn.scan(self._ns(table_name),
+                                         scanrange=key_range)
             else:
                 scanner = self.conn.scan(self._ns(table_name))
 
@@ -138,7 +145,6 @@ class AStorage(AbstractStorage):
                 if specific_key_range and total_count == 0:
                     raise MissingID('table_name=%r start=%r finish=%r' % (
                                     table_name, start_key, stop_key))
-
 
     def _preceeding_key(self, key):
         num = (int(key, 16) - 1)
