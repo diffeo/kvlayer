@@ -97,6 +97,7 @@ setup(
     classifiers=[
         'License :: Diffeo',
     ],
+    dependency_links = ['http://devhub.diffeo.com:8080/simple/'],
     tests_require=[
         'guppy',
         'pytest',
@@ -108,7 +109,7 @@ setup(
     ],
     install_requires=[
         'pycassa',
-        'pyaccumulo',
+        'pyaccumulo_patched',
         'pyyaml',
         'cql'
     ],
