@@ -102,6 +102,10 @@ class AStorage(AbstractStorage):
         self.table_names[table_name] = num_uuids
         if not self.conn.table_exists(self._ns(table_name)):
             self.conn.create_table(self._ns(table_name))
+            self.conn.client.setTableProperty(self.conn.login,
+                                              self._ns(table_name),
+                                              'table.bloom.enabled',
+                                              'true')
 
     def put(self, table_name, *keys_and_values, **kwargs):
         batch_writer = BatchWriter(conn=self.conn, table=self._ns(table_name),
@@ -109,7 +113,7 @@ class AStorage(AbstractStorage):
                                    timeout_ms=1000, threads=10)
         for key, value in keys_and_values:
             mut = Mutation(join_uuids(*key))
-            mut.put(cf="cf1", cq="cq1", val=value)
+            mut.put(cf="", cq="", val=value)
             batch_writer.add_mutation(mut)
         batch_writer.close()
 
