@@ -183,7 +183,8 @@ def test_delete(client, direct):
     for key in delete_keys:
         generator = client.get('table1', (key, key))
         with pytest.raises(MissingID):
-            generator.next()
+            row = generator.next()
+            assert not row
 
 
 def test_close(client):
