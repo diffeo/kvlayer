@@ -38,11 +38,16 @@ except Exception, exc:
     sys.exit('failed to load %r: %s' % (config_path, exc))
 
 
-@pytest.fixture(scope="module", params=['local', 'cassandra'])
+@pytest.fixture(scope="module", params=[
+    ('local', ''), 
+    ('cassandra', 'test-cassandra-1.diffeo.com'), 
+    ('accumulo', 'test-accumulo-1.diffeo.com'), 
+])
 def client(request):
 
     global config
-    config['storage_type'] = request.param
+    config['storage_type'] = request.param[0]
+    config['storage_addresses'] = [request.param[1]]
 
     client = kvlayer.client(config)
 
