@@ -194,48 +194,25 @@ class CStorage(AbstractStorage):
             self.table_names[table_name] = num_uuids
             self.tables[table_name] = self._get_cf(table_name)
 
-    def _find_prefix(self, joined_key):
-        idx = 0
-        ## would be better to us first non-repeating char, instead of
-        ## zero, which comes from looking at the start of a large
-        ## sorted list of UUIDs
-        for non_zero_char in joined_key:
-            if non_zero_char != '0':
-                break
-            idx += 1
-        if idx == 0:
-            if len(joined_key) > 0:
-                non_zero_char = joined_key[0]
-            else:
-                non_zero_char = ''
-        return idx, non_zero_char
+    def _shard_number(self, joined_key):
+        ## use first three hex characters, i.e. 4096 shards
+        return int(joined_key[:3], 16)
 
-    def _make_row_name(self, table_name, joined_key):
+    def _make_shard_name(self, table_name, joined_key):
         '''
-        create a sixteen-way fan out of table across the C* cluster
+        create a prefix-based sharding of table_name across the C* cluster
         '''
-        idx, non_zero_char = self._find_prefix(joined_key)
-        return table_name + '-' + non_zero_char
+        return '%s-%04d' % (table_name, self._shard_number(joined_key))
 
-    def _make_row_names(self, table_name, start, finish):
+    def _make_shard_names(self, table_name, start, finish):
         '''
-        generate all row names needed between start and finish
+        generate all row names (shards) needed between start and finish
         '''
-        idx1, non_zero_char1 = self._find_prefix(start)
-        idx2, non_zero_char2 = self._find_prefix(finish)
-        if idx1 != idx2 or non_zero_char1 == '' or non_zero_char2 == '':
-            ## generate *all* names
-            row_names = [table_name + '-' + c for c in '0123456789abcdef']
-            random.shuffle(row_names)
-        elif non_zero_char1 == non_zero_char2:
-            row_names = [table_name + '-' + non_zero_char1]
-        else:
-            assert non_zero_char1 < non_zero_char2
-            row_names = []
-            for c in '0123456789abcdef':
-                if non_zero_char1 <= c <= non_zero_char2:
-                    row_names.append(table_name + '-' + c)
-
+        start_shard  = self._shard_number(start)
+        finish_shard = self._shard_number(finish)
+        row_names = []
+        for shard_num in range(start_shard, finish_shard + 1):
+            row_names.append('%s-%04d' % (table_name, shard_num))
         return row_names
 
     @_requires_connection
@@ -271,7 +248,7 @@ class CStorage(AbstractStorage):
                 ## even if only one
                 key = (key,)
             joined_key = join_uuids(*key)
-            row_name = self._make_row_name(table_name, joined_key)
+            row_name = self._make_shard_name(table_name, joined_key)
             if len(blob) >= self.thrift_framed_transport_size_in_mb * 2**19:
                 logger.critical('len(blob)=%d >= thrift_framed_transport_size_in_mb / 2 = %d, so there is a risk that the total payload will exceed the full thrift_framed_transport_size_in_mb, and the only solution to this is to change Cassandra server-side config to allow larger frames...'
                                 % (len(blob), self.thrift_framed_transport_size_in_mb * 2**19))
@@ -303,14 +280,14 @@ class CStorage(AbstractStorage):
                 #logger.info('specific_key_range: %r %r' % (start, finish))
                 joined_key = join_uuids(*start,  num_uuids=num_uuids)
                 columns = [joined_key]
-                row_names = [self._make_row_name(table_name, joined_key)]
+                row_names = [self._make_shard_name(table_name, joined_key)]
                 start = None
                 finish = None
             else:
                 columns = None
-                start  = len(start)>0 and join_uuids(*start,  num_uuids=num_uuids) or ''
-                finish = len(finish)>0 and join_uuids(*finish, num_uuids=num_uuids, padding='f') or ''
-                row_names = self._make_row_names(table_name, start, finish)
+                start  = len(start)>0  and join_uuids(*start,  num_uuids=num_uuids)              or '0' * 32 * num_uuids
+                finish = len(finish)>0 and join_uuids(*finish, num_uuids=num_uuids, padding='f') or 'f' * 32 * num_uuids
+                row_names = self._make_shard_names(table_name, start, finish)
             total_count = 0
             hit_empty = False
             for row_name in row_names:
@@ -395,7 +372,7 @@ class CStorage(AbstractStorage):
         count = 0
         for key in keys:
             joined_key = join_uuids(*key)
-            row_name = self._make_row_name(table_name, joined_key)
+            row_name = self._make_shard_name(table_name, joined_key)
             columns = [joined_key]
             #logger.critical('C* delete: table_name=%r columns=%r' % (table_name, columns))
             batch.remove(row_name, columns=columns)
