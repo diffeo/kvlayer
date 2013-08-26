@@ -40,6 +40,15 @@ class AStorage(AbstractStorage):
             self._port = int(self._port)
 
         self.table_names = {}
+
+        ## The following are all parameters to the accumulo
+        ## batch interfaces.
+        self._max_memory = config.get('accumulo_max_memory', 1000000)
+        self._timeout_ms = config.get('accumulo_timeout_ms', 3000)
+        self._threads = config.get('accumulo_threads', 10)
+        self._latency_ms = config.get('accumulo_latency_ms', 10)
+
+        ## Acumulo storage requires a username and password
         self._user = config.get('username', None)
         self._password = config.get('password', None)
         if not self._user and self._password:
@@ -117,9 +126,12 @@ class AStorage(AbstractStorage):
             self._create_table(namespace, table_name)
 
     def put(self, table_name, *keys_and_values, **kwargs):
-        batch_writer = BatchWriter(conn=self.conn, table=self._ns(table_name),
-                                   max_memory=1000000, latency_ms=10,
-                                   timeout_ms=1000, threads=10)
+        batch_writer = BatchWriter(conn=self.conn,
+                                   table=self._ns(table_name),
+                                   max_memory=self._max_memory,
+                                   latency_ms=self._latency_ms,
+                                   timeout_ms=self._timeout_ms,
+                                   threads=self._threads)
         for key, value in keys_and_values:
             mut = Mutation(join_uuids(*key))
             mut.put(cf='', cq='', val=value)
@@ -160,9 +172,12 @@ class AStorage(AbstractStorage):
         return format_string % num
 
     def delete(self, table_name, *keys, **kwargs):
-        batch_writer = BatchWriter(conn=self.conn, table=self._ns(table_name),
-                                   max_memory=1000000, latency_ms=10,
-                                   timeout_ms=1000, threads=10)
+        batch_writer = BatchWriter(conn=self.conn,
+                                   table=self._ns(table_name),
+                                   max_memory=self._max_memory,
+                                   latency_ms=self._latency_ms,
+                                   timeout_ms=self._timeout_ms,
+                                   threads=self._threads)
         for key in keys:
             mut = Mutation(join_uuids(*key))
             mut.put(cf='', cq='', val='DEL_ROW')
