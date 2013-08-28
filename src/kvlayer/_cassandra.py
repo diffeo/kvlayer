@@ -231,7 +231,7 @@ class CStorage(AbstractStorage):
         batch = self.tables[table_name].batch(queue_size=batch_size)
         for key, blob in keys_and_values:
             if len(blob) + cur_bytes >= self.thrift_framed_transport_size_in_mb * 2**19:
-                logger.critical('len(blob)=%d + cur_bytes=%d >= thrift_framed_transport_size_in_mb = %d'
+                logger.critical('len(blob)=%d + cur_bytes=%d >= thrift_framed_transport_size_in_mb/2 = %d'
                                 % (len(blob), cur_bytes, self.thrift_framed_transport_size_in_mb * 2**19))
                 ## convert to MB and then cut in half
                 if cur_rows > 0:

@@ -140,7 +140,7 @@ class AStorage(AbstractStorage):
             if (len(blob) + cur_bytes >=
                     self.thrift_framed_transport_size_in_mb * 2 ** 19):
                 logger.debug('len(blob)=%d + cur_bytes=%d >= '
-                             'thrift_framed_transport_size_in_mb = %d' %
+                             'thrift_framed_transport_size_in_mb/2 = %d' %
                              (len(blob), cur_bytes,
                              self.thrift_framed_transport_size_in_mb * 2 ** 19))
                 logger.debug('pre-emptively sending only what has been '
