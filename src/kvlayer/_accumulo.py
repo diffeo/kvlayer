@@ -55,6 +55,9 @@ class AStorage(AbstractStorage):
             raise ProgrammerError('accumulo storage requires '
                                   'username/password')
 
+        self.thrift_framed_transport_size_in_mb = \
+            config['thrift_framed_transport_size_in_mb']
+
         self._namespace = config.get('namespace', None)
         if not self._namespace:
             raise ProgrammerError('kvlayer requires a namespace')
@@ -126,16 +129,28 @@ class AStorage(AbstractStorage):
             self._create_table(namespace, table_name)
 
     def put(self, table_name, *keys_and_values, **kwargs):
+        cur_bytes = 0
         batch_writer = BatchWriter(conn=self.conn,
                                    table=self._ns(table_name),
                                    max_memory=self._max_memory,
                                    latency_ms=self._latency_ms,
                                    timeout_ms=self._timeout_ms,
                                    threads=self._threads)
-        for key, value in keys_and_values:
+        for key, blob in keys_and_values:
+            if (len(blob) + cur_bytes >=
+                    self.thrift_framed_transport_size_in_mb * 2 ** 19):
+                logger.debug('len(blob)=%d + cur_bytes=%d >= '
+                             'thrift_framed_transport_size_in_mb = %d' %
+                             (len(blob), cur_bytes,
+                             self.thrift_framed_transport_size_in_mb * 2 ** 19))
+                logger.debug('pre-emptively sending only what has been '
+                             'batched, and will send this item in next batch.')
+                batch_writer.flush()
+                cur_bytes = 0
             mut = Mutation(join_uuids(*key))
-            mut.put(cf='', cq='', val=value)
+            mut.put(cf='', cq='', val=blob)
             batch_writer.add_mutation(mut)
+            cur_bytes += len(blob)
         batch_writer.close()
 
     def get(self, table_name, *key_ranges, **kwargs):
