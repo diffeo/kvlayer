@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import yaml
 import uuid
@@ -6,7 +7,6 @@ import pytest
 import kvlayer
 from kvlayer import MissingID
 from kvlayer._local_memory import LocalStorage
-from kvlayer._cassandra import CStorage
 
 from _setup_logging import logger
 
@@ -28,23 +28,40 @@ def test_local_storage_singleton():
     meta = list(local_storage2.get('meta', key_range))
     assert meta[0][1] == b'hi'
 
+
+config_local = dict(
+    storage_type='local',
+    )
+
+
 config_path = os.path.join(os.path.dirname(__file__), 'config_cassandra.yaml')
 if not os.path.exists(config_path):
     sys.exit('failed to find %r' % config_path)
 
 try:
-    config = yaml.load(open(config_path))
+    config_cassandra = yaml.load(open(config_path))
+except Exception, exc:
+    sys.exit('failed to load %r: %s' % (config_path, exc))
+
+config_path = os.path.join(os.path.dirname(__file__), 'config_accumulo.yaml')
+if not os.path.exists(config_path):
+    sys.exit('failed to find %r' % config_path)
+
+try:
+    config_accumulo = yaml.load(open(config_path))
 except Exception, exc:
     sys.exit('failed to load %r: %s' % (config_path, exc))
 
 
+
 @pytest.fixture(scope="module", params=[
-    ('local', ''),
-    ('cassandra', 'test-cassandra-1.diffeo.com'),
+    ('local', '', 'config_local'),
+    ('cassandra', 'test-cassandra-1.diffeo.com', 'config_cassandra'),
+    ('accumulo', 'test-accumulo-1.diffeo.com', 'config_accumulo'),
 ])
 def client(request):
-
-    global config
+    config = globals()[request.param[2]]
+    print "config:", config
     config['storage_type'] = request.param[0]
     config['storage_addresses'] = [request.param[1]]
 
