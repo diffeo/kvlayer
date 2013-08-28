@@ -39,9 +39,8 @@ except Exception, exc:
 
 
 @pytest.fixture(scope="module", params=[
-    ('local', ''), 
-    ('cassandra', 'test-cassandra-1.diffeo.com'), 
-    ('accumulo', 'test-accumulo-1.diffeo.com'), 
+    ('local', ''),
+    ('cassandra', 'test-cassandra-1.diffeo.com'),
 ])
 def client(request):
 

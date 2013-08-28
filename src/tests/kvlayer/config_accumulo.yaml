@@ -6,3 +6,4 @@ storage_type: accumulo
 username: root 
 password: '' 
 
+thrift_framed_transport_size_in_mb: 15
