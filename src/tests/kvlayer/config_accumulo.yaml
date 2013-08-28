@@ -3,6 +3,6 @@ namespace: test
 storage_addresses: ['test-accumulo-1.diffeo.com']
 storage_type: accumulo 
 
-username: root
-password: diffeo
+username: root 
+password: '' 
 

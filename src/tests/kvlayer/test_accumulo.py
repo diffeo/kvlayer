@@ -32,7 +32,7 @@ def ns(name):
 
 def fin():
     conn = Accumulo(host=config['host'], port=50096,
-                    user="root", password="diffeo")
+                    user=config['username'], password=config['password'])
     tables = conn.list_tables()
     for table in tables:
         if re.search(namespace, table):
@@ -42,7 +42,7 @@ def fin():
 @pytest.fixture
 def direct(request):
     conn = Accumulo(host='test-accumulo-1.diffeo.com', port=50096,
-                    user="root", password="diffeo")
+                    user=config['username'], password=config['password'])
     # request.addfinalizer(fin)
     return conn
 
