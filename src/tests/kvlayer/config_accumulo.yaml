@@ -4,6 +4,6 @@ storage_addresses: ['test-accumulo-1.diffeo.com']
 storage_type: accumulo 
 
 username: root 
-password: '' 
+password: diffeo
 
 thrift_framed_transport_size_in_mb: 15
