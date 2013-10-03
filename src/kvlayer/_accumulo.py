@@ -8,11 +8,12 @@ Copyright 2012-2013 Diffeo, Inc.
 
 import re
 import logging
+from kvlayer._decorators import retry
 from kvlayer._exceptions import MissingID, ProgrammerError
 from kvlayer._abstract_storage import AbstractStorage
 from pyaccumulo import Accumulo, Mutation, Range, BatchWriter
 from pyaccumulo.iterators import RowDeletingIterator
-from pyaccumulo.proxy.ttypes import IteratorScope
+from pyaccumulo.proxy.ttypes import IteratorScope, AccumuloSecurityException
 from _utils import join_uuids, split_uuids
 
 logger = logging.getLogger('kvlayer')
@@ -44,7 +45,7 @@ class AStorage(AbstractStorage):
         ## The following are all parameters to the accumulo
         ## batch interfaces.
         self._max_memory = config.get('accumulo_max_memory', 1000000)
-        self._timeout_ms = config.get('accumulo_timeout_ms', 3000)
+        self._timeout_ms = config.get('accumulo_timeout_ms', 30000)
         self._threads = config.get('accumulo_threads', 10)
         self._latency_ms = config.get('accumulo_latency_ms', 10)
 
@@ -128,6 +129,7 @@ class AStorage(AbstractStorage):
         if not self.conn.table_exists(self._ns(table_name)):
             self._create_table(namespace, table_name)
 
+    @retry([AccumuloSecurityException])
     def put(self, table_name, *keys_and_values, **kwargs):
         cur_bytes = 0
         batch_writer = BatchWriter(conn=self.conn,
