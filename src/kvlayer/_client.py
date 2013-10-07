@@ -7,6 +7,7 @@ Copyright 2012-2013 Diffeo, Inc.
 from kvlayer._accumulo import AStorage
 from kvlayer._cassandra import CStorage
 from kvlayer._local_memory import LocalStorage
+from kvlayer._file_storage import FileStorage
 
 STORAGE_CLIENTS = dict(
     ## these strings deinfe the external API for selecting the kvlayer
@@ -14,6 +15,7 @@ STORAGE_CLIENTS = dict(
     cassandra=CStorage,
     accumulo=AStorage,
     local=LocalStorage,
+    filestorage=FileStorage,
 )
 
 def client(config):
