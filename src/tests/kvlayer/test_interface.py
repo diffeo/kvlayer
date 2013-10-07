@@ -7,6 +7,7 @@ import pytest
 import kvlayer
 from kvlayer import MissingID
 from kvlayer._local_memory import LocalStorage
+from tempfile import NamedTemporaryFile
 
 from _setup_logging import logger
 
@@ -34,6 +35,15 @@ config_local = dict(
     )
 
 
+tempfile = NamedTemporaryFile(delete=True)
+new_tempfile = NamedTemporaryFile(delete=True)
+
+config_file= dict(
+    filename = tempfile.name,
+    copy_to_filename =new_tempfile.name
+    )
+
+
 config_path = os.path.join(os.path.dirname(__file__), 'config_cassandra.yaml')
 if not os.path.exists(config_path):
     sys.exit('failed to find %r' % config_path)
@@ -56,6 +66,7 @@ except Exception, exc:
 
 @pytest.fixture(scope="module", params=[
     ('local', '', 'config_local'),
+    ('filestorage', '', 'config_file'),
     ('cassandra', 'test-cassandra-1.diffeo.com', 'config_cassandra'),
     ('accumulo', 'test-accumulo-1.diffeo.com', 'config_accumulo'),
 ])
