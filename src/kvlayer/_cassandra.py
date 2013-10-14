@@ -78,29 +78,25 @@ class CStorage(AbstractStorage):
         self._connected = False
         self.thrift_framed_transport_size_in_mb = config['thrift_framed_transport_size_in_mb']
         self.pool = None
-        self.table_names = None
+        self.tables = {}
+        self._table_names = {}
+        self._namespace = config.get('namespace', None)
+        if not self._namespace:
+            raise ProgrammerError('kvlayer requires a namespace')
 
-    def setup_namespace(self, namespace, table_names):
-        '''Setup the namespace by creating a tables of binary values
-        with keys that are tuples of UUIDs.
-
-        :param table_names: Each string in table_names becomes the
-        name of a table, and the value must be an integer specifying
-        the number of UUIDs in the keys
-
-        :type table_names: dict(str = int)
-        '''
+    def setup_namespace(self, table_names):
         if self.pool:
             self.pool.dispose()
             del self.pool
             self.pool = None
         start_connect_time = time.time()
-        self.table_names = table_names
+
+        self._table_names.update(table_names)
 
         sm = SystemManager(self._chosen_server)
         try:
             sm.create_keyspace(
-                namespace, SIMPLE_STRATEGY,
+                self._namespace, SIMPLE_STRATEGY,
                 {
                     'replication_factor': str(self.config.get('replication_factor', '1'))
                 },
@@ -111,22 +107,22 @@ class CStorage(AbstractStorage):
             else:
                 raise exc
 
-        self._create_tables(namespace, table_names, sm=sm)
+        self._create_tables(table_names, sm=sm)
         self.wait_for_consistency(sm=sm)
 
         ## now that we are consistent, we can create a pool
-        self.pool = ConnectionPool(namespace, self.storage_addresses,
+        self.pool = ConnectionPool(self._namespace, self.storage_addresses,
                           max_retries=1000, pool_timeout=10, pool_size=2, timeout=120)
         self.pool.fill()
         self.pool.add_listener(_PycassaListener(self))
 
-        self.tables = {}
-        for family in table_names:
-            self.tables[family] = self._get_cf(family)
+        for family in self._table_names:
+            if family not in self.tables:
+                self.tables[family] = self._get_cf(family)
 
         elapsed = time.time() - start_connect_time
-        logger.info('took %.3f seconds to setup_namespace(%r) ConnectionPool(%d)' % (
-                elapsed, namespace, self.pool_size))
+        logger.info('took %.3f seconds to setup_namespace() ConnectionPool(%d)' % (
+                elapsed, self.pool_size))
 
         ## indicated connection is established
         self._connected = True
@@ -138,7 +134,7 @@ class CStorage(AbstractStorage):
                 write_consistency_level=pycassa.ConsistencyLevel.ALL,
                 )
 
-    def _create_tables(self, namespace, table_names, sm=None):
+    def _create_tables(self, table_names, sm=None):
         if sm is None:
             sm = SystemManager(self._chosen_server)
         for family, num_uuids in table_names.items():
@@ -146,7 +142,7 @@ class CStorage(AbstractStorage):
             comparator = AsciiType()
             try:
                 sm.create_column_family(
-                    namespace, family, super=False,
+                    self._namespace, family, super=False,
                     key_validation_class = ASCII_TYPE,
                     default_validation_class = BYTES_TYPE,
                     comparator_type=comparator,
@@ -171,10 +167,10 @@ class CStorage(AbstractStorage):
             time.sleep(0.2)
         logger.info('number of schemas in cluster: %d' % len(sm.describe_schema_versions()))
 
-    def delete_namespace(self, namespace):
+    def delete_namespace(self):
         sm = SystemManager(self._chosen_server)
         try:
-            sm.drop_keyspace(namespace)
+            sm.drop_keyspace(self._namespace)
         except pycassa.InvalidRequestException, exc:
             if exc.why.startswith('Cannot drop non existing keyspace'):
                 pass
@@ -184,15 +180,6 @@ class CStorage(AbstractStorage):
             logger.critical('trapping: %s' % traceback.format_exc(exc))
 
         sm.close()
-
-    def create_if_missing(self, namespace, table_name, num_uuids):
-        if table_name not in self.table_names:
-            logger.info('creating: %r' % table_name)
-            sm = SystemManager(self._chosen_server)
-            self._create_tables(namespace, dict(table_name=num_uuids), sm=sm)
-            self.wait_for_consistency(sm=sm)
-            self.table_names[table_name] = num_uuids
-            self.tables[table_name] = self._get_cf(table_name)
 
     def _shard_number(self, joined_key):
         ## use first three hex characters, i.e. 4096 shards
@@ -273,7 +260,7 @@ class CStorage(AbstractStorage):
         if not key_ranges:
             ## get all columns
             key_ranges = [['', '']]
-        num_uuids = self.table_names[table_name]
+        num_uuids = self._table_names[table_name]
         for start, finish in key_ranges:
             specific_key_range = bool( start or finish )
             if specific_key_range and start == finish and len(start) == num_uuids:
@@ -368,7 +355,7 @@ class CStorage(AbstractStorage):
     def delete(self, table_name, *keys, **kwargs):
         batch_size = kwargs.pop('batch_size', 1000)
         batch = self.tables[table_name].batch(queue_size=batch_size)
-        num_uuids = self.table_names[table_name]
+        num_uuids = self._table_names[table_name]
         count = 0
         for key in keys:
             joined_key = join_uuids(*key)

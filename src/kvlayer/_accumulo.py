@@ -40,7 +40,7 @@ class AStorage(AbstractStorage):
             self._host, self._port = address.split(':')
             self._port = int(self._port)
 
-        self.table_names = {}
+        self._table_names = {}
 
         ## The following are all parameters to the accumulo
         ## batch interfaces.
@@ -82,55 +82,51 @@ class AStorage(AbstractStorage):
         '''
         return '%s_%s' % (table, self._namespace)
 
-    def _create_table(self, namespace, table):
+    def _create_table(self, table):
         logger.info('creating accumulo table for %s: %r' %
-                    (namespace, table))
+                    (self._namespace, table))
 
         self.conn.create_table(self._ns(table))
-        logger.debug('self.conn.created_table(%s)', self._ns(table))
+        logger.debug('conn.created_table(%s)', self._ns(table))
         self.conn.client.setTableProperty(self.conn.login,
                                           self._ns(table),
                                           'table.bloom.enabled',
                                           'true')
-        logger.debug("self.conn.client.setTableProperty(%r, %s, table.bloom.enabled', 'true'", self.conn.login, self._ns(table))
+        logger.debug("conn.client.setTableProperty(%r, %s, table.bloom.enabled', 'true'", 
+                     self.conn.login, self._ns(table))
+
         i = RowDeletingIterator()
         scopes = set([IteratorScope.SCAN, IteratorScope.MINC,
                       IteratorScope.MAJC])
         i.attach(self.conn, self._ns(table), scopes)
         logger.debug('i.attach(%r, %s, %r)', self.conn, self._ns(table), scopes)
 
-    def setup_namespace(self, namespace, table_names):
+    def setup_namespace(self, table_names):
+        '''creates tables in the namespace.  Can be run multiple times with
+        different table_names in order to expand the set of tables in
+        the namespace.
         '''
-        create tables within the namespace
-        '''
-        self._namespace = namespace
-        logger.info('creating tables')
-        self.table_names = table_names
+        logger.debug('creating tables: %r', table_names)
+        self._table_names.update(table_names)
         for table in table_names:
             if not self.conn.table_exists(self._ns(table)):
-                self._create_table(namespace, table)
+                self._create_table(table)
 
-    def delete_namespace(self, namespace):
+    def delete_namespace(self):
         '''
         delete all of the tables within namespace
         '''
-        logger.critical('getting list of tables')
+        logger.debug('getting list of tables')
         tables = self.conn.list_tables()
-        logger.critical('searching through tables to find deletes for '
-                        '%s: %r' % (namespace, tables))
-        tables_to_delete = [x for x in tables if re.search(namespace, x)]
+        logger.debug('searching through tables to find deletes for %s: %r',
+                     self._namespace, tables)
+        tables_to_delete = [x for x in tables if re.search(self._namespace, x)]
         for table in tables_to_delete:
             self.conn.delete_table(table)
 
     def clear_table(self, table_name):
         self.conn.delete_table(self._ns(table_name))
         self.conn.create_table(self._ns(table_name))
-
-    def create_if_missing(self, namespace, table_name, num_uuids):
-        self._namespace = namespace
-        self.table_names[table_name] = num_uuids
-        if not self.conn.table_exists(self._ns(table_name)):
-            self._create_table(namespace, table_name)
 
     @retry([AccumuloSecurityException])
     def put(self, table_name, *keys_and_values, **kwargs):
@@ -159,7 +155,7 @@ class AStorage(AbstractStorage):
         batch_writer.close()
 
     def get(self, table_name, *key_ranges, **kwargs):
-        num_uuids = self.table_names[table_name]
+        num_uuids = self._table_names[table_name]
         if not key_ranges:
             key_ranges = [['', '']]
         for start_key, stop_key in key_ranges:

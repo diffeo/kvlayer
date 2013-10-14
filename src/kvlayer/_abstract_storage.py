@@ -45,9 +45,10 @@ class AbstractStorage(object):
         return
 
     @abc.abstractmethod
-    def setup_namespace(self, namespace, table_names):
-        '''Setup the namespace by creating a tables of binary values
-        with keys that are tuples of UUIDs.
+    def setup_namespace(self, table_names):
+        '''creates tables in the namespace.  Can be run multiple times with
+        different table_names in order to expand the set of tables in
+        the namespace.
 
         :param table_names: Each string in table_names becomes the
         name of a table, and the value must be an integer specifying
@@ -58,17 +59,13 @@ class AbstractStorage(object):
         return
 
     @abc.abstractmethod
-    def delete_namespace(self, namespace):
+    def delete_namespace(self):
         '''Deletes all data from namespace.'''
         return
 
     @abc.abstractmethod
     def clear_table(self, table_name):
         'Delete all data from one table'
-        return
-
-    @abc.abstractmethod
-    def create_if_missing(self, namespace, table_name, num_uuids):
         return
 
     @abc.abstractmethod

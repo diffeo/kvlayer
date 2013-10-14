@@ -35,27 +35,31 @@ class LocalStorage(AbstractStorage):
     '''
     local in-memory storage for testing
     '''
-    def __init__(self, *args, **kwargs):
-        self._data = None
+    def __init__(self, config):
+        self._data = {}
+        self._table_names = {}
+        self._namespace = config.get('namespace', None)
 
-    def setup_namespace(self, namespace, table_names):
+    def setup_namespace(self, table_names):
+        '''creates tables in the namespace.  Can be run multiple times with
+        different table_names in order to expand the set of tables in
+        the namespace.
+        '''
+        logger.debug('creating tables: %r' % table_names)
+        self._table_names.update(table_names)
         ## just store everything in a dict
-        if self._data is None:
-            self._data = {table: dict() for table in table_names}
+        for table in table_names:
+            if table not in self._data:
+                self._data[table] = dict()
         self._connected = True
 
     @_requires_connection
-    def delete_namespace(self, namespace):
-        self._data = None
+    def delete_namespace(self):
+        self._data = {}
 
     @_requires_connection
     def clear_table(self, table_name):
         self._data[table_name] = dict()
-
-    @_requires_connection
-    def create_if_missing(self, namespace, table_name, num_uuids):
-        if table_name not in self._data:
-            self._data[table_name] = dict()
 
     @_requires_connection
     def put(self, table_name, *keys_and_values, **kwargs):
