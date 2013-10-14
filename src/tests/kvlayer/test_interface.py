@@ -12,28 +12,13 @@ from tempfile import NamedTemporaryFile
 from _setup_logging import logger
 
 from make_namespace_string import make_namespace_string
-namespace = make_namespace_string()
 
-def test_local_storage_singleton():
-    config_local = dict(
-        storage_type='local',
-        )
-    local_storage = LocalStorage(config_local)
-    local_storage.setup_namespace(namespace, dict(meta=1))
-    keys_and_values = ((uuid.uuid4(),), b'hi')
-    local_storage.put('meta', keys_and_values)
-    key_range = (keys_and_values[0], keys_and_values[0])
-    meta = list(local_storage.get('meta', key_range))
-    assert meta[0][1] == b'hi'
-    local_storage2 = LocalStorage(config_local)
-    meta = list(local_storage2.get('meta', key_range))
-    assert meta[0][1] == b'hi'
-
+from _setup_logging import logger
 
 config_local = dict(
     storage_type='local',
+    ## LocalStorage does not need namespace
     )
-
 
 tempfile = NamedTemporaryFile(delete=True)
 new_tempfile = NamedTemporaryFile(delete=True)
@@ -42,7 +27,6 @@ config_file= dict(
     filename = tempfile.name,
     copy_to_filename =new_tempfile.name
     )
-
 
 config_path = os.path.join(os.path.dirname(__file__), 'config_cassandra.yaml')
 if not os.path.exists(config_path):
@@ -64,7 +48,7 @@ except Exception, exc:
 
 
 
-@pytest.fixture(scope="module", params=[
+@pytest.fixture(scope='function', params=[
     ('local', '', 'config_local'),
     ('filestorage', '', 'config_file'),
     ('cassandra', 'test-cassandra-1.diffeo.com', 'config_cassandra'),
@@ -72,25 +56,25 @@ except Exception, exc:
 ])
 def client(request):
     config = globals()[request.param[2]]
-    print "config:", config
+    namespace = make_namespace_string()
+    config['namespace'] = namespace
+    logger.info('config: %r' % config)
     config['storage_type'] = request.param[0]
     config['storage_addresses'] = [request.param[1]]
 
     client = kvlayer.client(config)
-
-    client.delete_namespace(namespace)
+    client.delete_namespace()
 
     def fin():
-        client.delete_namespace(namespace)
+        client.delete_namespace()
         logger.info('tearing down %r' % namespace)
     request.addfinalizer(fin)
 
     return client
 
 
-def test_low_level_storage(client):
-    client.delete_namespace(namespace)
-    client.setup_namespace(namespace, dict(t1=2, t2=3))
+def test_basic_storage(client):
+    client.setup_namespace(dict(t1=2, t2=3))
     # use time-based UUID 1, so these are ordered
     u1, u2, u3 = uuid.uuid1(), uuid.uuid1(), uuid.uuid1()
     client.put('t1', ((u1, u2), b'88'))
@@ -101,11 +85,26 @@ def test_low_level_storage(client):
     with pytest.raises(MissingID):
         list(client.get('t2', ((u2,), (u3,))))
 
+def test_adding_tables(client):
+    client.setup_namespace(dict(t1=2, t2=3))
+    # use time-based UUID 1, so these are ordered
+    u1, u2, u3 = uuid.uuid1(), uuid.uuid1(), uuid.uuid1()
+    client.put('t1', ((u1, u2), b'88'))
+    client.put('t2', ((u1, u2, u3), b'88'))
+
+    client.setup_namespace(dict(t3=1))
+    client.put('t3', ((u1,), b'88'))
+
+    assert 1 == len(list(client.get('t1')))
+    assert 1 == len(list(client.get('t1', ((u1,), (u1,)))))
+    assert 1 == len(list(client.get('t3', ((u1,), (u1,)))))
+
+    with pytest.raises(MissingID):
+        list(client.get('t2', ((u2,), (u3,))))
 
 @pytest.mark.performance
-def test_low_level_large_writes(client):
-    client.delete_namespace(namespace)
-    client.setup_namespace(namespace, dict(t1=2, t2=3))
+def test_large_writes(client):
+    client.setup_namespace(dict(t1=2, t2=3))
 
     u1, u2, u3 = uuid.uuid1(), uuid.uuid1(), uuid.uuid1()
 
@@ -123,28 +122,26 @@ def test_low_level_large_writes(client):
     client.put('t1', *(((u1, u2), long_string) for row in xrange(num)))
 
 
-def test_low_level_storage_setup_namespace_idempotent(client):
-    client.delete_namespace(namespace)
-    client.setup_namespace(namespace, dict(t1=2))
+def test_setup_namespace_idempotent(client):
+    client.setup_namespace(dict(t1=2))
     u1, u2, u3 = uuid.uuid1(), uuid.uuid1(), uuid.uuid1()
     client.put('t1', ((u1, u2), b'88'))
     assert 1 == len(list(client.get('t1')))
     assert 1 == len(list(client.get('t1', ((u1,), (u1,)))))
 
-    client.setup_namespace(namespace, dict(t1=2))
+    client.setup_namespace(dict(t1=2))
     assert 1 == len(list(client.get('t1')))
     assert 1 == len(list(client.get('t1', ((u1,), (u1,)))))
 
-    client.delete_namespace(namespace)
-    client.setup_namespace(namespace, dict(t1=2))
+    client.delete_namespace()
+    client.setup_namespace(dict(t1=2))
     assert 0 == len(list(client.get('t1')))
     with pytest.raises(MissingID):
         list(client.get('t1', ((u1,), (u1,))))
 
 
-def test_low_level_storage_speed(client):
-    client.delete_namespace(namespace)
-    client.setup_namespace(namespace, dict(t1=2, t2=3))
+def test_storage_speed(client):
+    client.setup_namespace(dict(t1=2, t2=3))
     num_rows = 10 ** 4
     t1 = time.time()
     client.put('t1', *[((uuid.uuid4(), uuid.uuid4(),
@@ -161,9 +158,8 @@ def test_low_level_storage_speed(client):
                 num_rows, (t2 - t1), put_rate, (t3 - t2), get_rate))
 
 
-def test_low_level_clear_table(client):
-    client.delete_namespace(namespace)
-    client.setup_namespace(namespace, dict(t1=2, t2=3))
+def test_clear_table(client):
+    client.setup_namespace(dict(t1=2, t2=3))
     num_rows = 10 ** 2
     # make two tables and reset only one
     client.put('t1', *[((uuid.uuid4(), uuid.uuid4(),
