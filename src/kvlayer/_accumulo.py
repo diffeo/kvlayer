@@ -87,14 +87,17 @@ class AStorage(AbstractStorage):
                     (namespace, table))
 
         self.conn.create_table(self._ns(table))
+        logger.debug('self.conn.created_table(%s)', self._ns(table))
         self.conn.client.setTableProperty(self.conn.login,
                                           self._ns(table),
                                           'table.bloom.enabled',
                                           'true')
+        logger.debug("self.conn.client.setTableProperty(%r, %s, table.bloom.enabled', 'true'", self.conn.login, self._ns(table))
         i = RowDeletingIterator()
         scopes = set([IteratorScope.SCAN, IteratorScope.MINC,
                       IteratorScope.MAJC])
         i.attach(self.conn, self._ns(table), scopes)
+        logger.debug('i.attach(%r, %s, %r)', self.conn, self._ns(table), scopes)
 
     def setup_namespace(self, namespace, table_names):
         '''
@@ -142,9 +145,9 @@ class AStorage(AbstractStorage):
             if (len(blob) + cur_bytes >=
                     self.thrift_framed_transport_size_in_mb * 2 ** 19):
                 logger.debug('len(blob)=%d + cur_bytes=%d >= '
-                             'thrift_framed_transport_size_in_mb/2 = %d' %
-                             (len(blob), cur_bytes,
-                             self.thrift_framed_transport_size_in_mb * 2 ** 19))
+                             'thrift_framed_transport_size_in_mb/2 = %d',
+                             len(blob), cur_bytes,
+                             self.thrift_framed_transport_size_in_mb * 2 ** 19)
                 logger.debug('pre-emptively sending only what has been '
                              'batched, and will send this item in next batch.')
                 batch_writer.flush()
