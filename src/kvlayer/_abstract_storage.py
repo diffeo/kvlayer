@@ -39,10 +39,13 @@ class AbstractStorage(object):
     '''
     __metaclass__ = abc.ABCMeta
 
-    @abc.abstractmethod
-    def __init__(self, namespace, *args, **kwargs):
+    def __init__(self, config):
         '''Initialize a storage instance for namespace'''
-        return
+        self._config = config
+        self._table_names = {}
+        self._namespace = config.get('namespace', None)
+        if not self._namespace:
+            raise ProgrammerError('kvlayer requires a namespace')
 
     @abc.abstractmethod
     def setup_namespace(self, table_names):

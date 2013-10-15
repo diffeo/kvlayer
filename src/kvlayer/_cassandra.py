@@ -68,7 +68,7 @@ class CStorage(AbstractStorage):
 
     """
     def __init__(self, config):
-        self.config = config
+        super(CStorage, self).__init__(config)
         self.storage_addresses = config['storage_addresses']
         self.max_consistency_delay = config['max_consistency_delay']
         ## avoid switching servers when creating/deleting namespaces
@@ -79,10 +79,6 @@ class CStorage(AbstractStorage):
         self.thrift_framed_transport_size_in_mb = config['thrift_framed_transport_size_in_mb']
         self.pool = None
         self.tables = {}
-        self._table_names = {}
-        self._namespace = config.get('namespace', None)
-        if not self._namespace:
-            raise ProgrammerError('kvlayer requires a namespace')
 
     def setup_namespace(self, table_names):
         if self.pool:
@@ -98,7 +94,7 @@ class CStorage(AbstractStorage):
             sm.create_keyspace(
                 self._namespace, SIMPLE_STRATEGY,
                 {
-                    'replication_factor': str(self.config.get('replication_factor', '1'))
+                    'replication_factor': str(self._config.get('replication_factor', '1'))
                 },
                 )
         except pycassa.InvalidRequestException, exc:
