@@ -58,6 +58,7 @@ def client(request):
     config = globals()[request.param[2]]
     namespace = make_namespace_string()
     config['namespace'] = namespace
+    config['app_name'] = 'kvlayer'
     logger.info('config: %r' % config)
     config['storage_type'] = request.param[0]
     config['storage_addresses'] = [request.param[1]]

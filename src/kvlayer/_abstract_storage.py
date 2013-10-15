@@ -8,7 +8,7 @@ Copyright 2012-2013 Diffeo, Inc.
 '''
 
 import abc
-
+from kvlayer._exceptions import ProgrammerError
 
 class AbstractStorage(object):
     '''
@@ -46,6 +46,11 @@ class AbstractStorage(object):
         self._namespace = config.get('namespace', None)
         if not self._namespace:
             raise ProgrammerError('kvlayer requires a namespace')
+        self._app_name = config.get('app_name', None)
+        if not self._app_name:
+            raise ProgrammerError('kvlayer requires an app_name')
+        self._namespace = self._app_name + '_' + self._namespace
+
 
     @abc.abstractmethod
     def setup_namespace(self, table_names):
