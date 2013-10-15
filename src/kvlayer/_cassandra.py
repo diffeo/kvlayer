@@ -79,6 +79,7 @@ class CStorage(AbstractStorage):
         self.thrift_framed_transport_size_in_mb = config['thrift_framed_transport_size_in_mb']
         self.pool = None
         self.tables = {}
+        self._app_namespace = self._app_name + '_' + self._namespace
 
     def setup_namespace(self, table_names):
         if self.pool:
@@ -92,7 +93,7 @@ class CStorage(AbstractStorage):
         sm = SystemManager(self._chosen_server)
         try:
             sm.create_keyspace(
-                self._namespace, SIMPLE_STRATEGY,
+                self._app_namespace, SIMPLE_STRATEGY,
                 {
                     'replication_factor': str(self._config.get('replication_factor', '1'))
                 },
@@ -107,7 +108,7 @@ class CStorage(AbstractStorage):
         self.wait_for_consistency(sm=sm)
 
         ## now that we are consistent, we can create a pool
-        self.pool = ConnectionPool(self._namespace, self.storage_addresses,
+        self.pool = ConnectionPool(self._app_namespace, self.storage_addresses,
                           max_retries=1000, pool_timeout=10, pool_size=2, timeout=120)
         self.pool.fill()
         self.pool.add_listener(_PycassaListener(self))
@@ -138,7 +139,7 @@ class CStorage(AbstractStorage):
             comparator = AsciiType()
             try:
                 sm.create_column_family(
-                    self._namespace, family, super=False,
+                    self._app_namespace, family, super=False,
                     key_validation_class = ASCII_TYPE,
                     default_validation_class = BYTES_TYPE,
                     comparator_type=comparator,
@@ -166,7 +167,7 @@ class CStorage(AbstractStorage):
     def delete_namespace(self):
         sm = SystemManager(self._chosen_server)
         try:
-            sm.drop_keyspace(self._namespace)
+            sm.drop_keyspace(self._app_namespace)
         except pycassa.InvalidRequestException, exc:
             if exc.why.startswith('Cannot drop non existing keyspace'):
                 pass
