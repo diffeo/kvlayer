@@ -36,9 +36,10 @@ class LocalStorage(AbstractStorage):
     local in-memory storage for testing
     '''
     def __init__(self, config):
+        ## singleton prevents use of super
+        #super(LocalStorage, self).__init__(config)
+        AbstractStorage.__init__(self, config)
         self._data = {}
-        self._table_names = {}
-        self._namespace = config.get('namespace', None)
 
     def setup_namespace(self, table_names):
         '''creates tables in the namespace.  Can be run multiple times with

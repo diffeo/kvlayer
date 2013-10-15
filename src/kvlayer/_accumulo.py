@@ -25,6 +25,8 @@ class AStorage(AbstractStorage):
     manages a set of tables as specified to setup_namespace
     '''
     def __init__(self, config):
+        super(AStorage, self).__init__(config)
+
         self._connected = False
         addresses = config.get('storage_addresses', [])
         if not addresses:
@@ -39,8 +41,6 @@ class AStorage(AbstractStorage):
         else:
             self._host, self._port = address.split(':')
             self._port = int(self._port)
-
-        self._table_names = {}
 
         ## The following are all parameters to the accumulo
         ## batch interfaces.
@@ -58,10 +58,6 @@ class AStorage(AbstractStorage):
 
         self.thrift_framed_transport_size_in_mb = \
             config['thrift_framed_transport_size_in_mb']
-
-        self._namespace = config.get('namespace', None)
-        if not self._namespace:
-            raise ProgrammerError('kvlayer requires a namespace')
 
         self._conn = None
 
