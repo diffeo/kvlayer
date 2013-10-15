@@ -68,7 +68,7 @@ def client(request):
 
     def fin():
         client.delete_namespace()
-        logger.info('tearing down %r' % namespace)
+        logger.info('tearing down %r_%r', config['app_name'], namespace)
     request.addfinalizer(fin)
 
     return client
