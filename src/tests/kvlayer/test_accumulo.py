@@ -56,16 +56,14 @@ def client(request):
     logger.info('initializing client')
     client = kvlayer.client(config)
     def _test_ns(name):
-        return name + '_' + \
-            config['app_name'] + '_' + config['namespace']
+        return '_'.join([config['app_name'], config['namespace'], name])            
     client._test_ns = _test_ns
 
     logger.info('deleting old namespace')
     #client.delete_namespace()
 
     def fin():
-        logger.info('tearing down %s_%r', config['app_name'], 
-                    config['namespace'])
+        logger.info('tearing down %s_%s', _test_ns(''))
         client.delete_namespace()
         logger.info('done cleaning up')
     request.addfinalizer(fin)

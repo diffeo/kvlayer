@@ -49,7 +49,6 @@ class AbstractStorage(object):
         self._app_name = config.get('app_name', None)
         if not self._app_name:
             raise ProgrammerError('kvlayer requires an app_name')
-        self._namespace = self._app_name + '_' + self._namespace
 
 
     @abc.abstractmethod
