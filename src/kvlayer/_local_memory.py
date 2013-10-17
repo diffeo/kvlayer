@@ -45,7 +45,7 @@ class LocalStorage(AbstractStorage):
         different table_names in order to expand the set of tables in
         the namespace.
         '''
-        logger.debug('creating tables: %r' % table_names)
+        logger.debug('creating tables: %r', table_names)
         self._table_names.update(table_names)
         ## just store everything in a dict
         for table in table_names:
@@ -65,12 +65,9 @@ class LocalStorage(AbstractStorage):
     def put(self, table_name, *keys_and_values, **kwargs):
         count = 0
         for key, val in keys_and_values:
-            assert isinstance(key, tuple)
-            if len(key) != self._table_names[table_name]:
-                raise BadKey('%r wants %r uuids in key, but got %r' % (table_name, self._table_names[table_name], len(key)))
-            for key_i in key:
-                if not isinstance(key_i, uuid.UUID):
-                    raise BadKey('wanted uuid.UUID but got %s' % (type(key_i),))
+            ex = self.check_put_key_value(key, val, table_name, self._table_names[table_name])
+            if ex:
+                raise ex
             self._data[table_name][key] = val
             count += 1
 

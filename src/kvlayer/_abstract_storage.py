@@ -8,7 +8,9 @@ Copyright 2012-2013 Diffeo, Inc.
 '''
 
 import abc
+import uuid
 
+from ._exceptions import BadKey
 
 class AbstractStorage(object):
     '''
@@ -38,6 +40,17 @@ class AbstractStorage(object):
     provide a set of generalized "tables" of this form.
     '''
     __metaclass__ = abc.ABCMeta
+
+    def check_put_key_value(self, key, value, table_name, num_uuids):
+        "check that (key, value) are ok. return Exception or None if okay."
+        if not isinstance(key, tuple):
+            return BadKey('key should be tuple, but got %s' % (type(key),))
+        if len(key) != num_uuids:
+            return BadKey('%r wants %r uuids in key, but got %r' % (table_name,  num_uuids, len(key)))
+        for key_i in key:
+            if not isinstance(key_i, uuid.UUID):
+                return BadKey('wanted uuid.UUID but got %s' % (type(key_i),))
+        return None
 
     @abc.abstractmethod
     def __init__(self, config):
