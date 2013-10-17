@@ -48,8 +48,8 @@ except Exception, exc:
 
 
 config_postgres = {
-    'namespace': 'test',
-    'storage_addresses': ['user=test host=localhost port=8832 dbname=test'],
+    'namespace': None,  # doesn't matter, gets clobbered below
+    'storage_addresses': None,  # doesn't matter, gets clobbered below
 }
 
 
@@ -58,7 +58,7 @@ config_postgres = {
     ('filestorage', '', 'config_file'),
     ('cassandra', 'test-cassandra-1.diffeo.com', 'config_cassandra'),
     ('accumulo', 'test-accumulo-1.diffeo.com', 'config_accumulo'),
-    ('postgres', 'user=test host=localhost port=8832 dbname=test', 'config_postgres'),
+    ('postgres', 'host=test-postgres.diffeo.com port=5432 user=test dbname=test password=test', 'config_postgres'),
 ])
 def client(request):
     config = globals()[request.param[2]]

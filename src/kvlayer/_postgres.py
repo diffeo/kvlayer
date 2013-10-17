@@ -3,6 +3,7 @@
 # pip install psycopg2
 
 import logging
+import re
 
 import psycopg2
 
@@ -11,21 +12,35 @@ from ._utils import join_uuids, split_uuids
 from ._exceptions import MissingID, BadKey
 
 
-# kv_${namespace}
+# SQL strings in this module use python3 style string.format() formatting to substitute the table name into the command.
+
+
+# this is not precisely right.
+# http://www.postgresql.org/docs/9.3/static/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS
+# super-ascii 'letter' chars are also allowed.
+# Perhaps in the all-unicode-all-the-time Python3 re package there will be
+# better support for characters classes needed to specify this right.
+_psql_identifier_re = re.compile(r'[a-z_][a-z0-9_$]*', re.IGNORECASE)
+
+def _valid_namespace(x):
+    return bool(_psql_identifier_re.match(x))
+
+
+# kv_{namespace}
 # table, key, value
-_CREATE_TABLE = '''CREATE TABLE kv_%(namespace)s (
+_CREATE_TABLE = '''CREATE TABLE kv_{namespace} (
   t text,
   k text,
   v bytea,
   PRIMARY KEY (t, k)
 );
 
-CREATE FUNCTION upsert_%(namespace)s(tname TEXT, key TEXT, data BYTEA) RETURNS VOID AS
+CREATE FUNCTION upsert_{namespace}(tname TEXT, key TEXT, data BYTEA) RETURNS VOID AS
 $$
 BEGIN
     LOOP
         -- first try to update the key
-        UPDATE kv_%(namespace)s SET v = data WHERE t = tname AND k = key;
+        UPDATE kv_{namespace} SET v = data WHERE t = tname AND k = key;
         IF found THEN
             RETURN;
         END IF;
@@ -33,7 +48,7 @@ BEGIN
         -- if someone else inserts the same key concurrently,
         -- we could get a unique-key failure
         BEGIN
-            INSERT INTO kv_%(namespace)s(t,k,v) VALUES (tname, key, data);
+            INSERT INTO kv_{namespace}(t,k,v) VALUES (tname, key, data);
             RETURN;
         EXCEPTION WHEN unique_violation THEN
             -- Do nothing, and loop to try the UPDATE again.
@@ -44,25 +59,23 @@ $$
 LANGUAGE plpgsql;
 '''
 
-_DROP_TABLE = "DROP FUNCTION upsert_%(namespace)s(TEXT,TEXT,BYTEA)"
-_DROP_TABLE_b = '''DROP TABLE kv_%(namespace)s'''
+_DROP_TABLE = "DROP FUNCTION upsert_{namespace}(TEXT,TEXT,BYTEA)"
+_DROP_TABLE_b = '''DROP TABLE kv_{namespace}'''
 
 _CLEAR_TABLE = '''DELETE FROM kv_{namespace} WHERE t = %s'''
 
-## Double-escaping %% because these strings are templates twice!
-## First we build literal table/function name strings
-## like kv_MyNamespace upsert_MyNamespace; then we pass values into psycopg2.
-
 # use cursor.callproc() instead of SELECT query.
-#_PUT = '''SELECT upsert_%(namespace)s (%%s, %%s, %%s);'''
+#_PUT = '''SELECT upsert_{namespace} (%s, %s, %s);'''
 
+# unused, we always _GET_RANGE
 #_GET = '''SELECT k, v FROM kv_{namespace} WHERE t = %s AND k = %s;'''
 
 _GET_RANGE = '''SELECT k, v FROM kv_{namespace} WHERE t = %s AND k >= %s AND k <= %s;'''
 
-_DELETE = '''DELETE FROM kv_%(namespace)s WHERE t = %%s AND k = %%s;'''
+_DELETE = '''DELETE FROM kv_{namespace} WHERE t = %s AND k = %s;'''
 
-#_DELETE_RANGE = '''DELETE FROM kv_%(namespace)s WHERE t = %%s AND k >= %%s AND K <= %%s;'''
+# unused, we always _DELETE single records by key
+#_DELETE_RANGE = '''DELETE FROM kv_{namespace} WHERE t = %s AND k >= %s AND K <= %s;'''
 
 
 MAX_BLOB_BYTES = 15000000
@@ -77,11 +90,13 @@ class PGStorage(AbstractStorage):
     def __init__(self, config):
         '''Initialize a storage instance for namespace.
         uses the single string specifier for a connectionn to a postgres db
-postgresql://[user[:password]@][netloc][:port][/dbname][?param1=value1&...]
+http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYWORDS
         '''
         self.config = config
         self.namespace = config['namespace']
         assert self.namespace, 'postgres kvlayer needs config["namespace"]'
+        if not _valid_namespace(self.namespace):
+            raise Exception('namespace must match re: %r' % (_psql_identifier_re.pattern,))
         self.storage_addresses = config['storage_addresses']
         assert self.storage_addresses, 'postgres kvlayer needs config["storage_addresses"]'
         #self.username = conifg['username']
@@ -119,7 +134,7 @@ postgresql://[user[:password]@][netloc][:port][/dbname][?param1=value1&...]
                 # already exists
                 logging.debug('namespace %r already exists, not creating', self.namespace)
                 return
-            cursor.execute(_CREATE_TABLE % {'namespace': self.namespace})
+            cursor.execute(_CREATE_TABLE.format(namespace=self.namespace))
 
     def delete_namespace(self):
         '''Deletes all data from namespace.'''
@@ -129,8 +144,8 @@ postgresql://[user[:password]@][netloc][:port][/dbname][?param1=value1&...]
                 logging.debug('namespace %r does not exist, not dropping', self.namespace)
                 return
             try:
-                cursor.execute(_DROP_TABLE % {'namespace': self.namespace})
-                cursor.execute(_DROP_TABLE_b % {'namespace': self.namespace})
+                cursor.execute(_DROP_TABLE.format(namespace=self.namespace))
+                cursor.execute(_DROP_TABLE_b.format(namespace=self.namespace))
             except:
                 logging.warn('error on delete_namespace(%r)', self.namespace, exc_info=True)
 
@@ -156,10 +171,11 @@ postgresql://[user[:password]@][netloc][:port][/dbname][?param1=value1&...]
         conn = self._conn()
         with conn.cursor() as cursor:
             for kv in keys_and_values:
-                if len(kv[0]) != num_uuids:
-                    raise BadKey('invalid key has %s uuids but wanted %s: %r' % (len(kv[0]), num_uuids, kv[0]))
+                ex = self.check_put_key_value(kv[0], kv[1], table_name, num_uuids)
+                if ex:
+                    raise ex
                 cursor.callproc(
-                    'upsert_%(namespace)s' % {'namespace': self.namespace},
+                    'upsert_{namespace}'.format(namespace=self.namespace),
                     (table_name, join_uuids(*kv[0]), kv[1]))
 
     def get(self, table_name, *key_ranges, **kwargs):
@@ -221,7 +237,7 @@ postgresql://[user[:password]@][netloc][:port][/dbname][?param1=value1&...]
         conn = self._conn()
         with conn.cursor() as cursor:
             cursor.executemany(
-                _DELETE % {'namespace': self.namespace},
+                _DELETE.format(namespace=self.namespace),
                 map(_delkey, keys))
                 
 

@@ -49,6 +49,7 @@ class FileStorage(AbstractStorage):
         self._data = shelve.open(filename,
                                 protocol= cPickle.HIGHEST_PROTOCOL,
                                 writeback=True)
+        self._table_names = {}
 
     def setup_namespace(self, table_names):
         '''creates tables in the namespace.  Can be run multiple times with
@@ -56,6 +57,7 @@ class FileStorage(AbstractStorage):
         the namespace.
         '''
         logger.debug('creating tables: %r', table_names)
+        self._table_names.update(table_names)
         ## just store everything in a dict
         for table in table_names:
             if table not in self._data:
@@ -74,9 +76,9 @@ class FileStorage(AbstractStorage):
     def put(self, table_name, *keys_and_values, **kwargs):
         count = 0
         for key, val in keys_and_values:
-            assert isinstance(key, tuple)
-            for key_i in key:
-                assert isinstance(key_i, uuid.UUID)
+            ex = self.check_put_key_value(key, val, table_name, self._table_names[table_name])
+            if ex:
+                raise ex
             self._data[table_name][key] = val
             count += 1
 
