@@ -16,3 +16,7 @@ class MissingID(Exception):
 
 class DatabaseEmpty(Exception):
     pass
+
+
+class BadKey(Exception):
+    pass

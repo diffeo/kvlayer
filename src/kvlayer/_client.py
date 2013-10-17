@@ -9,6 +9,12 @@ from kvlayer._cassandra import CStorage
 from kvlayer._local_memory import LocalStorage
 from kvlayer._file_storage import FileStorage
 
+try:
+    from ._postgres import PGStorage
+except:
+    PGStorage = None
+
+
 STORAGE_CLIENTS = dict(
     ## these strings deinfe the external API for selecting the kvlayer
     ## storage backends
@@ -17,6 +23,9 @@ STORAGE_CLIENTS = dict(
     local=LocalStorage,
     filestorage=FileStorage,
 )
+
+if PGStorage:
+    STORAGE_CLIENTS['postgres'] = PGStorage
 
 def client(config):
     '''

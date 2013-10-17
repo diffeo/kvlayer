@@ -5,7 +5,7 @@ import yaml
 import uuid
 import pytest
 import kvlayer
-from kvlayer import MissingID
+from kvlayer import MissingID, BadKey
 from kvlayer._local_memory import LocalStorage
 from tempfile import NamedTemporaryFile
 
@@ -47,12 +47,18 @@ except Exception, exc:
     sys.exit('failed to load %r: %s' % (config_path, exc))
 
 
+config_postgres = {
+    'namespace': 'test',
+    'storage_addresses': ['user=test host=localhost port=8832 dbname=test'],
+}
+
 
 @pytest.fixture(scope='function', params=[
     ('local', '', 'config_local'),
     ('filestorage', '', 'config_file'),
     ('cassandra', 'test-cassandra-1.diffeo.com', 'config_cassandra'),
     ('accumulo', 'test-accumulo-1.diffeo.com', 'config_accumulo'),
+    ('postgres', 'user=test host=localhost port=8832 dbname=test', 'config_postgres'),
 ])
 def client(request):
     config = globals()[request.param[2]]
@@ -89,11 +95,11 @@ def test_adding_tables(client):
     client.setup_namespace(dict(t1=2, t2=3))
     # use time-based UUID 1, so these are ordered
     u1, u2, u3 = uuid.uuid1(), uuid.uuid1(), uuid.uuid1()
-    client.put('t1', ((u1, u2), b'88'))
-    client.put('t2', ((u1, u2, u3), b'88'))
+    client.put('t1', ((u1, u2), b'11'))
+    client.put('t2', ((u1, u2, u3), b'22'))
 
     client.setup_namespace(dict(t3=1))
-    client.put('t3', ((u1,), b'88'))
+    client.put('t3', ((u1,), b'33'))
 
     assert 1 == len(list(client.get('t1')))
     assert 1 == len(list(client.get('t1', ((u1,), (u1,)))))
@@ -144,8 +150,7 @@ def test_storage_speed(client):
     client.setup_namespace(dict(t1=2, t2=3))
     num_rows = 10 ** 4
     t1 = time.time()
-    client.put('t1', *[((uuid.uuid4(), uuid.uuid4(),
-                         uuid.uuid4(), uuid.uuid4()), b'')
+    client.put('t1', *[((uuid.uuid4(), uuid.uuid4()), b'')
                        for i in xrange(num_rows)])
     t2 = time.time()
     results = list(client.get('t1', batch_size=num_rows))
@@ -162,17 +167,29 @@ def test_clear_table(client):
     client.setup_namespace(dict(t1=2, t2=3))
     num_rows = 10 ** 2
     # make two tables and reset only one
-    client.put('t1', *[((uuid.uuid4(), uuid.uuid4(),
-                        uuid.uuid4(), uuid.uuid4()), b'')
+    client.put('t1', *[((uuid.uuid4(), uuid.uuid4()), b'')
                        for i in xrange(num_rows)])
     client.put('t2', *[((uuid.uuid4(), uuid.uuid4(),
-                         uuid.uuid4(), uuid.uuid4()), b'')
+                         uuid.uuid4()), b'')
                        for i in xrange(num_rows)])
     client.clear_table('t1')
     assert len(list(client.get('t1'))) == 0
     assert len(list(client.get('t2'))) == num_rows
 
-    client.put('t1', *[((uuid.uuid4(), uuid.uuid4(),
-                         uuid.uuid4(), uuid.uuid4()), b'')
+    client.put('t1', *[((uuid.uuid4(), uuid.uuid4()), b'')
                        for i in xrange(num_rows)])
     assert len(list(client.get('t1'))) == num_rows
+
+
+def test_bogus_put(client):
+    client.setup_namespace(dict(t1=2, t2=3))
+    num_rows = 10 ** 2
+    # make two tables and reset only one
+    with pytest.raises(BadKey):
+        client.put('t1', *[((uuid.uuid4(), uuid.uuid4(),
+                             uuid.uuid4(), uuid.uuid4()), b'')
+                           for i in xrange(num_rows)])
+    with pytest.raises(BadKey):
+        client.put('t2', *[((uuid.uuid4(), uuid.uuid4(),
+                             uuid.uuid4(), uuid.uuid4()), b'')
+                           for i in xrange(num_rows)])

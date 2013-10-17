@@ -12,7 +12,7 @@ import uuid
 import logging
 import hashlib
 import traceback
-from kvlayer._exceptions import MissingID
+from kvlayer._exceptions import MissingID, BadKey
 from kvlayer._abstract_storage import AbstractStorage
 from kvlayer._utils import _requires_connection
 
@@ -66,8 +66,11 @@ class LocalStorage(AbstractStorage):
         count = 0
         for key, val in keys_and_values:
             assert isinstance(key, tuple)
+            if len(key) != self._table_names[table_name]:
+                raise BadKey('%r wants %r uuids in key, but got %r' % (table_name, self._table_names[table_name], len(key)))
             for key_i in key:
-                assert isinstance(key_i, uuid.UUID)
+                if not isinstance(key_i, uuid.UUID):
+                    raise BadKey('wanted uuid.UUID but got %s' % (type(key_i),))
             self._data[table_name][key] = val
             count += 1
 
