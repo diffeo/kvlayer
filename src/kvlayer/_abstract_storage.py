@@ -40,8 +40,14 @@ class AbstractStorage(object):
     __metaclass__ = abc.ABCMeta
 
     @abc.abstractmethod
-    def __init__(self, namespace, *args, **kwargs):
-        '''Initialize a storage instance for namespace'''
+    def __init__(self, config):
+        '''Initialize a storage instance with config dict.
+        Typical config fields:
+        'namespace': string name of set of tables this kvlayer instance refers to
+        'storage_addresses': [list of server specs]
+        'username'
+        'password'
+        '''
         return
 
     @abc.abstractmethod
