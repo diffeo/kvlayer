@@ -25,6 +25,8 @@ class AStorage(AbstractStorage):
     manages a set of tables as specified to setup_namespace
     '''
     def __init__(self, config):
+        super(AStorage, self).__init__(config)
+
         self._connected = False
         addresses = config.get('storage_addresses', [])
         if not addresses:
@@ -39,8 +41,6 @@ class AStorage(AbstractStorage):
         else:
             self._host, self._port = address.split(':')
             self._port = int(self._port)
-
-        self._table_names = {}
 
         ## The following are all parameters to the accumulo
         ## batch interfaces.
@@ -59,10 +59,6 @@ class AStorage(AbstractStorage):
         self.thrift_framed_transport_size_in_mb = \
             config['thrift_framed_transport_size_in_mb']
 
-        self._namespace = config.get('namespace', None)
-        if not self._namespace:
-            raise ProgrammerError('kvlayer requires a namespace')
-
         self._conn = None
 
     @property
@@ -80,11 +76,10 @@ class AStorage(AbstractStorage):
         achieve the same effect by creating tables with the namespace
         string appended to the end of the table name
         '''
-        return '%s_%s' % (table, self._namespace)
+        return '%s_%s_%s' % (self._app_name, self._namespace, table)
 
     def _create_table(self, table):
-        logger.info('creating accumulo table for %s: %r' %
-                    (self._namespace, table))
+        logger.info('creating %s', self._ns(table))
 
         self.conn.create_table(self._ns(table))
         logger.debug('conn.created_table(%s)', self._ns(table))
@@ -118,9 +113,9 @@ class AStorage(AbstractStorage):
         '''
         logger.debug('getting list of tables')
         tables = self.conn.list_tables()
-        logger.debug('searching through tables to find deletes for %s: %r',
-                     self._namespace, tables)
-        tables_to_delete = [x for x in tables if re.search(self._namespace, x)]
+        logger.debug('finding tables to delete from %s: %r',
+                     self._ns(''), tables)
+        tables_to_delete = [x for x in tables if re.search(self._ns(''), x)]
         for table in tables_to_delete:
             self.conn.delete_table(table)
 

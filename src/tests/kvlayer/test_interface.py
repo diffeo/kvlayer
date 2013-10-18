@@ -64,6 +64,7 @@ def client(request):
     config = globals()[request.param[2]]
     namespace = make_namespace_string()
     config['namespace'] = namespace
+    config['app_name'] = 'kvlayer'
     logger.info('config: %r' % config)
     config['storage_type'] = request.param[0]
     config['storage_addresses'] = [request.param[1]]
@@ -73,7 +74,7 @@ def client(request):
 
     def fin():
         client.delete_namespace()
-        logger.info('tearing down %r' % namespace)
+        logger.info('tearing down %r_%r', config['app_name'], namespace)
     request.addfinalizer(fin)
 
     return client

@@ -10,7 +10,7 @@ Copyright 2012-2013 Diffeo, Inc.
 import abc
 import uuid
 
-from ._exceptions import BadKey
+from ._exceptions import BadKey, ProgrammerError
 
 class AbstractStorage(object):
     '''
@@ -61,7 +61,14 @@ class AbstractStorage(object):
         'username'
         'password'
         '''
-        return
+        self._config = config
+        self._table_names = {}
+        self._namespace = config.get('namespace', None)
+        if not self._namespace:
+            raise ProgrammerError('kvlayer requires a namespace')
+        self._app_name = config.get('app_name', None)
+        if not self._app_name:
+            raise ProgrammerError('kvlayer requires an app_name')
 
     @abc.abstractmethod
     def setup_namespace(self, table_names):
