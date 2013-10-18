@@ -57,6 +57,7 @@ class AbstractStorage(object):
         '''Initialize a storage instance with config dict.
         Typical config fields:
         'namespace': string name of set of tables this kvlayer instance refers to
+        'app_name': string name of application code which is connecting
         'storage_addresses': [list of server specs]
         'username'
         'password'
