@@ -13,7 +13,8 @@ from _setup_logging import logger
 
 config_local = dict(
     storage_type='local',
-    ## LocalStorage does not need namespace
+    namespace='test',
+    app_name='test',
     )
 
 def test_local_storage_singleton():
