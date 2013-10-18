@@ -4,6 +4,8 @@ import time
 import yaml
 import uuid
 import pytest
+import random
+
 import kvlayer
 from kvlayer import MissingID, BadKey
 from kvlayer._local_memory import LocalStorage
@@ -194,3 +196,31 @@ def test_bogus_put(client):
         client.put('t2', *[((uuid.uuid4(), uuid.uuid4(),
                              uuid.uuid4(), uuid.uuid4()), b'')
                            for i in xrange(num_rows)])
+
+
+def sequence_to_one(iterable):
+    val = None
+    for tv in iterable:
+        if val is None:
+            val = tv
+        else:
+            raise Exception('expected one but got more than one value from %r' % (iterable,))
+    if val is None:
+        raise Exception('epected one value but got nothing from %r' % (iterable,))
+    return val
+
+
+def test_binary_clean(client):
+    '''Test binary integrity moving non-text bytes to db and back.'''
+    client.setup_namespace(dict(t1=2))
+    keya = (uuid.uuid4(), uuid.uuid4())
+    # every byte value from 0..255
+    vala = bytes(b''.join([chr(x) for x in xrange(0,256)]))
+    client.put('t1', (keya, vala))
+    keyb = (uuid.uuid4(), uuid.uuid4())
+    valb = bytes(b''.join([chr(random.randint(0,255)) for x in xrange(1000)]))
+    client.put('t1', (keyb, valb))
+    xvala = sequence_to_one(client.get('t1', (keya, keya)))
+    assert xvala[1] == vala
+    xvalb = sequence_to_one(client.get('t1', (keyb, keyb)))
+    assert xvalb[1] == valb
