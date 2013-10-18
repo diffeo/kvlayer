@@ -82,7 +82,7 @@ MAX_BLOB_BYTES = 15000000
 
 
 def _cursor_check_namespace_table(cursor, namespace):
-    cursor.execute('SELECT 1 FROM pg_tables WHERE tablename = %s', ('kv_' + namespace,))
+    cursor.execute('SELECT 1 FROM pg_tables WHERE tablename ILIKE %s', ('kv_' + namespace,))
     return cursor.rowcount > 0
 
 
@@ -172,7 +172,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                     raise ex
                 cursor.callproc(
                     'upsert_{namespace}'.format(namespace=self._namespace),
-                    (table_name, join_uuids(*kv[0]), kv[1]))
+                    (table_name, join_uuids(*kv[0]), psycopg2.Binary(kv[1])))
 
     def get(self, table_name, *key_ranges, **kwargs):
         '''Yield tuples of (key, value) from querying table_name for
