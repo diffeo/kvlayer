@@ -130,6 +130,7 @@ class AStorage(AbstractStorage):
 
     @retry([AccumuloSecurityException])
     def put(self, table_name, *keys_and_values, **kwargs):
+        num_uuids = self._table_names[table_name]
         cur_bytes = 0
         batch_writer = BatchWriter(conn=self.conn,
                                    table=self._ns(table_name),
@@ -138,6 +139,9 @@ class AStorage(AbstractStorage):
                                    timeout_ms=self._timeout_ms,
                                    threads=self._threads)
         for key, blob in keys_and_values:
+            ex = self.check_put_key_value(key, blob, table_name, num_uuids)
+            if ex:
+                raise ex
             if (len(blob) + cur_bytes >=
                     self.thrift_framed_transport_size_in_mb * 2 ** 19):
                 logger.debug('len(blob)=%d + cur_bytes=%d >= '

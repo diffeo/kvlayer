@@ -213,10 +213,14 @@ class CStorage(AbstractStorage):
         cur_bytes = 0
         tot_rows = 0
         cur_rows = 0
+        num_uuids = self._table_names[table_name]
         start = time.time()
         logger.debug('starting save')
         batch = self.tables[table_name].batch(queue_size=batch_size)
         for key, blob in keys_and_values:
+            ex = self.check_put_key_value(key, blob, table_name, num_uuids)
+            if ex:
+                raise ex
             if len(blob) + cur_bytes >= self.thrift_framed_transport_size_in_mb * 2**19:
                 logger.critical('len(blob)=%d + cur_bytes=%d >= thrift_framed_transport_size_in_mb/2 = %d'
                                 % (len(blob), cur_bytes, self.thrift_framed_transport_size_in_mb * 2**19))
