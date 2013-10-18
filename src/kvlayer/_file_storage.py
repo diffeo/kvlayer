@@ -36,7 +36,10 @@ class FileStorage(AbstractStorage):
     File storage for testing and development
     '''
     def __init__(self, config):
-        self._config = config
+        ## singleton prevents use of super
+        #super(FileStorage, self).__init__(config)
+        AbstractStorage.__init__(self, config)
+
         filename = config['filename']
         if config.get('copy_to_filename', False):
             copy_to_filename  = config['copy_to_filename']

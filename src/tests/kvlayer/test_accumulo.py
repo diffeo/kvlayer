@@ -49,35 +49,27 @@ def direct(request):
 def client(request):
 
     global config
+    config['app_name'] = 'kvlayer'
     config['namespace'] = make_namespace_string()
     config['storage_type'] = request.param
 
     logger.info('initializing client')
     client = kvlayer.client(config)
-    client._test_ns = lambda name: name + '_' + config['namespace']
+    def _test_ns(name):
+        return '_'.join([config['app_name'], config['namespace'], name])            
+    client._test_ns = _test_ns
 
     logger.info('deleting old namespace')
     #client.delete_namespace()
 
     def fin():
-        logger.info('tearing down %r' % config['namespace'])
+        logger.info('tearing down %s', _test_ns(''))
         client.delete_namespace()
         logger.info('done cleaning up')
     request.addfinalizer(fin)
 
     logger.info('starting test')
     return client
-
-
-def test_init_accumulo():
-    storage = AStorage(config)
-    assert storage
-
-
-def test_ns():
-    storage = AStorage(config)
-    ## default config sets namespace='test'
-    assert storage._ns('test') == 'test_test'
 
 
 def test_setup_namespace(client, direct):

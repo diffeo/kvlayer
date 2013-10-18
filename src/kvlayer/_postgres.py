@@ -9,7 +9,7 @@ import psycopg2
 
 from ._abstract_storage import AbstractStorage
 from ._utils import join_uuids, split_uuids
-from ._exceptions import MissingID, BadKey
+from ._exceptions import MissingID, BadKey, ProgrammerError
 
 
 # SQL strings in this module use python3 style string.format() formatting to substitute the table name into the command.
@@ -92,17 +92,13 @@ class PGStorage(AbstractStorage):
         uses the single string specifier for a connectionn to a postgres db
 http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYWORDS
         '''
-        self.config = config
-        self.namespace = config['namespace']
-        assert self.namespace, 'postgres kvlayer needs config["namespace"]'
-        if not _valid_namespace(self.namespace):
-            raise Exception('namespace must match re: %r' % (_psql_identifier_re.pattern,))
+        super(PGStorage, self).__init__(config)
+        if not _valid_namespace(self._namespace):
+            raise ProgrammerError('namespace must match re: %r' % (_psql_identifier_re.pattern,))
         self.storage_addresses = config['storage_addresses']
-        assert self.storage_addresses, 'postgres kvlayer needs config["storage_addresses"]'
-        #self.username = conifg['username']
-        #self.password = config['password']
+        if not self.storage_addresses:
+            raise ProgrammerError('postgres kvlayer needs config["storage_addresses"]')
         self.connection = None
-        self.tablespecs = {}  # map {table name: num uuids in key}
 
     def _conn(self):
         '''internal lazy connector'''
@@ -114,7 +110,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
     def _namespace_table_exists(self):
         conn = self._conn()
         with conn.cursor() as cursor:
-            return _cursor_check_namespace_table(cursor, self.namespace)
+            return _cursor_check_namespace_table(cursor, self._namespace)
 
     def setup_namespace(self, table_names):
         '''creates tables in the namespace.  Can be run multiple times with
@@ -127,34 +123,34 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
 
         :type table_names: dict(str = int)
         '''
-        self.tablespecs.update(table_names)
+        self._table_names.update(table_names)
         conn = self._conn()
         with conn.cursor() as cursor:
-            if _cursor_check_namespace_table(cursor, self.namespace):
+            if _cursor_check_namespace_table(cursor, self._namespace):
                 # already exists
-                logging.debug('namespace %r already exists, not creating', self.namespace)
+                logging.debug('namespace %r already exists, not creating', self._namespace)
                 return
-            cursor.execute(_CREATE_TABLE.format(namespace=self.namespace))
+            cursor.execute(_CREATE_TABLE.format(namespace=self._namespace))
 
     def delete_namespace(self):
         '''Deletes all data from namespace.'''
         conn = self._conn()
         with conn.cursor() as cursor:
-            if not _cursor_check_namespace_table(cursor, self.namespace):
-                logging.debug('namespace %r does not exist, not dropping', self.namespace)
+            if not _cursor_check_namespace_table(cursor, self._namespace):
+                logging.debug('namespace %r does not exist, not dropping', self._namespace)
                 return
             try:
-                cursor.execute(_DROP_TABLE.format(namespace=self.namespace))
-                cursor.execute(_DROP_TABLE_b.format(namespace=self.namespace))
+                cursor.execute(_DROP_TABLE.format(namespace=self._namespace))
+                cursor.execute(_DROP_TABLE_b.format(namespace=self._namespace))
             except:
-                logging.warn('error on delete_namespace(%r)', self.namespace, exc_info=True)
+                logging.warn('error on delete_namespace(%r)', self._namespace, exc_info=True)
 
     def clear_table(self, table_name):
         'Delete all data from one table'
         conn = self._conn()
         with conn.cursor() as cursor:
             cursor.execute(
-                _CLEAR_TABLE.format(namespace=self.namespace),
+                _CLEAR_TABLE.format(namespace=self._namespace),
                 (table_name,)
             )
 
@@ -167,7 +163,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         number of (key, value) paris gathered into each batch for
         communication with DB.
         '''
-        num_uuids = self.tablespecs[table_name]
+        num_uuids = self._table_names[table_name]
         conn = self._conn()
         with conn.cursor() as cursor:
             for kv in keys_and_values:
@@ -175,7 +171,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                 if ex:
                     raise ex
                 cursor.callproc(
-                    'upsert_{namespace}'.format(namespace=self.namespace),
+                    'upsert_{namespace}'.format(namespace=self._namespace),
                     (table_name, join_uuids(*kv[0]), kv[1]))
 
     def get(self, table_name, *key_ranges, **kwargs):
@@ -187,14 +183,14 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                             ^^^^^^^^^^^^^^^^^^^^^^^^
                             start        finish of one range
         '''
-        num_uuids = self.tablespecs[table_name]
+        num_uuids = self._table_names[table_name]
         failOnEmptyResult = True
         if not key_ranges:
             key_ranges = [['', '']]
             failOnEmptyResult = False
         def _pgkeyrange(kr):
             return (table_name, kmin, kmax)
-        cmd = _GET_RANGE.format(namespace=self.namespace)
+        cmd = _GET_RANGE.format(namespace=self._namespace)
         conn = self._conn()
         with conn.cursor() as cursor:
             for kr in key_ranges:
@@ -229,7 +225,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         number of (key, value) paris gathered into each batch for
         communication with DB.
         '''
-        num_uuids = self.tablespecs[table_name]
+        num_uuids = self._table_names[table_name]
         def _delkey(k):
             if len(k) != num_uuids:
                 raise Exception('invalid key has %s uuids but wanted %s: %r' % (len(k), num_uuids, k))
@@ -237,7 +233,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         conn = self._conn()
         with conn.cursor() as cursor:
             cursor.executemany(
-                _DELETE.format(namespace=self.namespace),
+                _DELETE.format(namespace=self._namespace),
                 map(_delkey, keys))
                 
 

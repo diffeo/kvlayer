@@ -1,20 +1,26 @@
-class ConfigurationError(Exception):
+
+
+class KVLayerError(Exception):
     pass
 
 
-class ProgrammerError(Exception):
+class ConfigurationError(KVLayerError):
     pass
 
 
-class StorageClosed(Exception):
+class ProgrammerError(KVLayerError):
     pass
 
 
-class MissingID(Exception):
+class StorageClosed(KVLayerError):
     pass
 
 
-class DatabaseEmpty(Exception):
+class MissingID(KVLayerError):
+    pass
+
+
+class DatabaseEmpty(KVLayerError):
     pass
 
 
