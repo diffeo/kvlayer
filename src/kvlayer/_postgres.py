@@ -229,7 +229,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         def _delkey(k):
             if len(k) != num_uuids:
                 raise Exception('invalid key has %s uuids but wanted %s: %r' % (len(k), num_uuids, k))
-            return (table_name, join_uuids(k))
+            return (table_name, join_uuids(*k))
         conn = self._conn()
         with conn.cursor() as cursor:
             cursor.executemany(
