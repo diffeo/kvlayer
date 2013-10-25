@@ -91,6 +91,11 @@ def test_basic_storage(client):
     assert 1 == len(list(client.get('t1')))
     assert 1 == len(list(client.get('t1', ((u1,), (u1,)))))
 
+    client.delete('t1', (u1, u2))
+    assert 0 == len(list(client.get('t1')))
+    with pytest.raises(MissingID):
+        list(client.get('t1', ((u1,), (u1,))))
+
     with pytest.raises(MissingID):
         list(client.get('t2', ((u2,), (u3,))))
 
