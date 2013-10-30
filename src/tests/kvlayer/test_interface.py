@@ -8,14 +8,11 @@ import random
 
 import kvlayer
 from kvlayer import MissingID, BadKey
-from kvlayer._local_memory import LocalStorage
 from tempfile import NamedTemporaryFile
 
 from _setup_logging import logger
 
 from make_namespace_string import make_namespace_string
-
-from _setup_logging import logger
 
 config_local = dict(
     storage_type='local',
@@ -54,14 +51,21 @@ config_postgres = {
     'storage_addresses': None,  # doesn't matter, gets clobbered below
 }
 
-
-@pytest.fixture(scope='function', params=[
+params= [
     ('local', '', 'config_local'),
     ('filestorage', '', 'config_file'),
     ('cassandra', 'test-cassandra-1.diffeo.com', 'config_cassandra'),
     ('accumulo', 'test-accumulo-1.diffeo.com', 'config_accumulo'),
-    ('postgres', 'host=test-postgres.diffeo.com port=5432 user=test dbname=test password=test', 'config_postgres'),
-])
+]
+
+try:
+    from kvlayer._postgres import PGStorage
+    params.append(('postgres', 'host=test-postgres.diffeo.com port=5432 user=test dbname=test password=test', 'config_postgres'))
+    postgres_missing = 'False'
+except ImportError:
+    postgres_missing = 'True'
+
+@pytest.fixture(scope='function', params=params)
 def client(request):
     config = globals()[request.param[2]]
     namespace = make_namespace_string()
