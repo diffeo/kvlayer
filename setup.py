@@ -108,7 +108,7 @@ setup(
     ],
     # psycopg2 may be commented out to operate without postgres support
     install_requires=[
-        'psycopg2',
+        # 'psycopg2',
         'pycassa >= 1.10',
         'pyaccumulo_dev >= 1.5.0-SNAPSHOT.1',
         'pyyaml',
