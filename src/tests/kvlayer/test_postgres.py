@@ -1,6 +1,5 @@
 import pytest
 
-from kvlayer._postgres import PGStorage, _valid_namespace
 
 config_postgres = {
     'namespace': 'test',
@@ -8,6 +7,13 @@ config_postgres = {
 }
 
 
+try:
+    from kvlayer._postgres import PGStorage, _valid_namespace
+    postgres_missing = 'False'
+except ImportError:
+    postgres_missing = 'True'
+
+@pytest.mark.skipif(postgres_missing)
 @pytest.mark.parametrize(
     "badnamespace",
     [None,
@@ -21,6 +27,7 @@ def test_illegal_namespaces(badnamespace):
         pg = PGStorage(config)
 
 
+@pytest.mark.skipif(postgres_missing)
 @pytest.mark.parametrize(
     "namespace",
     ['_ok', 'Aok', 'aok'])
