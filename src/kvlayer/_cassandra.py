@@ -257,7 +257,7 @@ class CStorage(AbstractStorage):
 
     @_requires_connection
     def get(self, table_name, *key_ranges, **kwargs):
-        batch_size = kwargs.pop('batch_size', 100)
+        kwargs.pop('batch_size', 100)
         if not key_ranges:
             ## get all columns
             key_ranges = [['', '']]
@@ -307,26 +307,11 @@ class CStorage(AbstractStorage):
         if not columns:
             assert start is not None and finish is not None
             assert start <= finish
-            #logger.debug('cassandra xget(%r...)' % row_name)
-            num_yielded = 0
-            for key, val in self.tables[table_name].xget(
-                    row_name,
-                    column_start=start,
-                    column_finish=finish):
-                key = split_uuids(key)
-                #logger.debug('cassandra get(%r) yielding key %r = %d bytes' % (table_name, key, len(val)))
-                yield key, val
-                num_yielded += 1
 
-            if num_yielded == 0:
-                raise pycassa.NotFoundException
-                #'c* get: table_name=%r row_name=%r columns=%r start=%r finish=%r' % (
-                #    table_name, row_name, columns, start, finish))
-            return
-
-	while True:
+        num_yielded = 0
+        while True:
             ## if we have
-	    prev_start = start
+            prev_start = start
             #logger.debug('cassandra get(%r...)' % row_name)
             for key, val in self.tables[table_name].get(
                     row_name,
@@ -338,6 +323,7 @@ class CStorage(AbstractStorage):
                 key = split_uuids(key)
                 #logger.critical('cassandra get(%r) yielding %r %d' % (table_name, key, len(val)))
                 yield key, val
+                num_yielded += 1
                 #logger.debug('c* get: table_name=%r row_name=%r columns=%r start=%r finish=%r' % (
                 #    table_name, row_name, columns, start, finish))
 
@@ -352,11 +338,18 @@ class CStorage(AbstractStorage):
                 break
             #logger.debug('paging forward from %r to %r' % (prev_start, start))
 
+        ## We need to raise a not found exception if the caller asked for
+        ## a specific column and we didn't yield any results
+        if not columns and num_yielded == 0:
+            raise pycassa.NotFoundException
+            #'c* get: table_name=%r row_name=%r columns=%r start=%r finish=%r' % (
+            #    table_name, row_name, columns, start, finish))
+
+
     @_requires_connection
     def delete(self, table_name, *keys, **kwargs):
         batch_size = kwargs.pop('batch_size', 1000)
         batch = self.tables[table_name].batch(queue_size=batch_size)
-        num_uuids = self._table_names[table_name]
         count = 0
         for key in keys:
             joined_key = join_uuids(*key)
