@@ -10,8 +10,8 @@ def test_persistence(tmpdir):
     ## Test that we can persist data to a file
     config = dict(
         filename = str(tmpdir.join('original')),
-	namespace = namespace,
-	app_name = namespace 
+    namespace = namespace,
+    app_name = namespace
         )
 
     storage = FileStorage(config)
@@ -20,14 +20,14 @@ def test_persistence(tmpdir):
 
     storage.put('table1', *[((uuid.uuid4(), uuid.uuid4(),
                         uuid.uuid4(), uuid.uuid4()), b'test_data')])
-    results = list(storage.get('table1'))
+    results = list(storage.scan('table1'))
     assert len(results) == 1
     assert results[0][1] == 'test_data'
 
 
     ## Test that we can get same data to from file
     storage = FileStorage(config)
-    results2 = list(storage.get('table1'))
+    results2 = list(storage.scan('table1'))
     assert len(results) == 1
     assert results2[0][1] == 'test_data'
 
@@ -38,7 +38,7 @@ def test_persistence(tmpdir):
         )
 
     storage = FileStorage(config)
-    results3 = list(storage.get('table1'))
+    results3 = list(storage.scan('table1'))
     assert len(results) == 1
     assert results3[0][1] == 'test_data'
 

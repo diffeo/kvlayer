@@ -7,34 +7,45 @@ Your use of this software is governed by your license agreement.
 Copyright 2012-2013 Diffeo, Inc.
 '''
 
-import math
-import uuid
+import abc
 import logging
-import hashlib
-import traceback
-from kvlayer._exceptions import MissingID, BadKey
+from kvlayer._exceptions import MissingID
 from kvlayer._abstract_storage import AbstractStorage
 from kvlayer._utils import _requires_connection
 
 logger = logging.getLogger('kvlayer')
 
-## make LocalStorage a singleton, so it looks like a client to db
-def _local_storage_singleton(cls):
-    instances = {}
-    def getinstance(*args, **kwargs):
-        if cls not in instances:
-            instances[cls] = cls(*args, **kwargs)
-        ## make LocalStorage look like other storage clients by having
-        ## it not be connected until you re-access it:
-        instances[cls]._connected = True
-        return instances[cls]
-    return getinstance
+class StorageSingleton(type):
 
-@_local_storage_singleton
+    __metaclass__ = abc.ABCMeta
+
+    _instances = {}
+
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._instances:
+            cls._instances[cls] = super(StorageSingleton, cls).__call__(*args, **kwargs)
+        cls._instances[cls]._connected = True
+        return cls._instances[cls]
+
+
+class ABCMeta_StorageSingleton(abc.ABCMeta, StorageSingleton):
+    '''
+    A class can only have one meta class.  Since AbstractStorage
+    has a metaclass of abc.ABCMeta, and we want local storage to
+    be a signleton, we create a metaclass here which combines
+    both and will be used by LocalStorage and all classes that
+    inherit from it (e.g. FileStorage.)
+    '''
+    pass
+
+
 class LocalStorage(AbstractStorage):
     '''
     local in-memory storage for testing
     '''
+
+    __metaclass__ = ABCMeta_StorageSingleton
+
     def __init__(self, config):
         ## singleton prevents use of super
         #super(LocalStorage, self).__init__(config)
@@ -73,7 +84,7 @@ class LocalStorage(AbstractStorage):
             count += 1
 
     @_requires_connection
-    def get(self, table_name, *key_ranges, **kwargs):
+    def scan(self, table_name, *key_ranges, **kwargs):
         key_ranges = list(key_ranges)
         if not key_ranges:
             key_ranges = [[('',), ('',)]]
@@ -101,9 +112,19 @@ class LocalStorage(AbstractStorage):
                 raise MissingID()
 
     @_requires_connection
+    def get(self, table_name, *keys, **kwargs):
+        for key in keys:
+            try:
+                key, value = key, self._data[table_name][key]
+            except KeyError:
+                raise MissingID('table_name=%r key: %r' % ( table_name, key))
+            yield key, value
+
+
+    @_requires_connection
     def delete(self, table_name, *keys):
         for key in keys:
-            deleted = self._data[table_name].pop(key, None)
+            self._data[table_name].pop(key, None)
 
     def close(self):
         ## prevent reading until connected again

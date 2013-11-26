@@ -56,7 +56,7 @@ def client(request):
     logger.info('initializing client')
     client = kvlayer.client(config)
     def _test_ns(name):
-        return '_'.join([config['app_name'], config['namespace'], name])            
+        return '_'.join([config['app_name'], config['namespace'], name])
     client._test_ns = _test_ns
 
     logger.info('deleting old namespace')
@@ -127,21 +127,21 @@ def test_put_get(client, direct):
     values = kv_dict.values()
     for entry in direct.scan(client._test_ns('table1')):
         assert entry.val in values
-    generator = client.get('table1', (keys[0], keys[0]))
+    generator = client.scan('table1', (keys[0], keys[0]))
     key, value = generator.next()
     assert kv_dict[key] == value
     for x in xrange(10):
-        for key, value in client.get('table1', (keys[x], keys[x])):
+        for key, value in client.scan('table1', (keys[x], keys[x])):
             assert kv_dict[key] == value
 
 
-def test_get_all_keys(client, direct):
+def test_scan_all_keys(client, direct):
     client.setup_namespace({'table1': 1, 'table2': 1})
     kv_dict = {(uuid.uuid4(),): 'value' + str(x) for x in xrange(10)}
     keys_and_values = [(key, value) for key, value in kv_dict.iteritems()]
     client.put('table1', *keys_and_values)
 
-    for key, val in client.get('table1'):
+    for key, val in client.scan('table1'):
         assert kv_dict[key] == val
         del kv_dict[key]
 
@@ -159,10 +159,10 @@ def test_delete(client, direct):
     assert set(delete_keys)
     client.delete('table1', *delete_keys)
     for key in save_keys:
-        for key, value in client.get('table1', (key, key)):
+        for key, value in client.scan('table1', (key, key)):
             assert kv_dict[key] == value
     for key in delete_keys:
-        generator = client.get('table1', (key, key))
+        generator = client.scan('table1', (key, key))
         with pytest.raises(MissingID):
             row = generator.next()
             assert not row
