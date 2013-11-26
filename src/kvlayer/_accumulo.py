@@ -87,7 +87,7 @@ class AStorage(AbstractStorage):
                                           self._ns(table),
                                           'table.bloom.enabled',
                                           'true')
-        logger.debug("conn.client.setTableProperty(%r, %s, table.bloom.enabled', 'true'", 
+        logger.debug("conn.client.setTableProperty(%r, %s, table.bloom.enabled', 'true'",
                      self.conn.login, self._ns(table))
 
         i = RowDeletingIterator()
@@ -153,7 +153,7 @@ class AStorage(AbstractStorage):
             cur_bytes += len(blob)
         batch_writer.close()
 
-    def get(self, table_name, *key_ranges, **kwargs):
+    def scan(self, table_name, *key_ranges, **kwargs):
         num_uuids = self._table_names[table_name]
         if not key_ranges:
             key_ranges = [['', '']]
@@ -179,6 +179,19 @@ class AStorage(AbstractStorage):
                     raise MissingID('table_name=%r start=%r finish=%r' % (
                                     table_name, start_key, stop_key))
 
+    def get(self, table_name, *keys, **kwargs):
+        for key in keys:
+            gen = self.scan(table_name, (key, key))
+            yield gen.next()
+
+    def close(self):
+        self._connected = False
+        if hasattr(self, 'pool') and self.pool:
+            self.pool.dispose()
+
+    def __del__(self):
+        self.close()
+
     def _preceeding_key(self, key):
         num = (int(key, 16) - 1)
         if num < 0:
@@ -198,6 +211,3 @@ class AStorage(AbstractStorage):
             mut.put(cf='', cq='', val='DEL_ROW')
             batch_writer.add_mutation(mut)
         batch_writer.close()
-
-    def close(self):
-        self._connected = False

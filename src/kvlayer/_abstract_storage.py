@@ -12,6 +12,7 @@ import uuid
 
 from ._exceptions import BadKey, ProgrammerError
 
+
 class AbstractStorage(object):
     '''
     base class for all low-level storage implementations
@@ -108,7 +109,7 @@ class AbstractStorage(object):
         return
 
     @abc.abstractmethod
-    def get(self, table_name, *key_ranges, **kwargs):
+    def scan(self, table_name, *key_ranges, **kwargs):
         '''Yield tuples of (key, value) from querying table_name for
         items with keys within the specified ranges.  If no key_ranges
         are provided, then yield all (key, value) pairs in table.
@@ -116,6 +117,16 @@ class AbstractStorage(object):
         :type key_ranges: (((UUID, ...), (UUID, ...)), ...)
                             ^^^^^^^^^^^^^^^^^^^^^^^^
                             start        finish of one range
+        '''
+        return
+
+    @abc.abstractmethod
+    def get(self, table_name, *keys, **kwargs):
+        '''Yield tuples of (key, value) from querying table_name for
+        items with keys
+
+        :type keys: (((UUID, ...), (UUID, ...)), ...)
+
         '''
         return
 

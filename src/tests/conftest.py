@@ -8,6 +8,8 @@ def pytest_addoption(parser):
                      help="run slow tests")
     parser.addoption("--runperf", action="store_true",
                      help="run performance tests")
+    parser.addoption("--runload", action="store_true",
+                     help="run load tests")
 
 
 def pytest_runtest_setup(item):
@@ -15,3 +17,5 @@ def pytest_runtest_setup(item):
         pytest.skip("need --runslow option to run")
     if 'performance' in item.keywords and not item.config.getoption("--runperf"):
         pytest.skip("need --runperf option to run")
+    if 'load' in item.keywords and not item.config.getoption("--runload"):
+        pytest.skip("need --runload option to run")

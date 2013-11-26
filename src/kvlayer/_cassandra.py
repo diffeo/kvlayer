@@ -11,6 +11,7 @@ import time
 import random
 import logging
 import traceback
+from collections import defaultdict
 from kvlayer._utils import join_uuids, split_uuids
 from kvlayer._exceptions import MissingID
 from kvlayer._abstract_storage import AbstractStorage
@@ -21,6 +22,7 @@ logger = logging.getLogger('kvlayer')
 
 ## get the Cassandra client library
 import pycassa
+from pycassa import NotFoundException
 from pycassa.pool import ConnectionPool
 from pycassa.system_manager import SystemManager, SIMPLE_STRATEGY, \
     ASCII_TYPE, BYTES_TYPE
@@ -46,19 +48,7 @@ class _PycassaListener(object):
         logger.critical('connection_failed: %s:' % str(dic))
         #self.storage.recreate_pool()
 
-def _singleton(cls):
-    '''
-    generic singleton decorator for a class
-    '''
-    instances = {}
-    def getinstance(*args, **kwargs):
-        if cls not in instances:
-            instances[cls] = cls(*args, **kwargs)
-        return instances[cls]
 
-    return getinstance
-
-#@_singleton
 class CStorage(AbstractStorage):
     """
     Cassandra storage implements a set of table-like structures using
@@ -205,7 +195,7 @@ class CStorage(AbstractStorage):
 
     @_requires_connection
     def put(self, table_name, *keys_and_values, **kwargs):
-        batch_size = kwargs.pop('batch_size', 100)
+        batch_size = kwargs.pop('batch_size', None)
         tot_bytes = 0
         cur_bytes = 0
         tot_rows = 0
@@ -242,7 +232,7 @@ class CStorage(AbstractStorage):
                                 % (len(blob), self.thrift_framed_transport_size_in_mb * 2**19))
             batch.insert(row_name, {joined_key: blob})
             #logger.critical('saving %s %r %r' % (table_name, key, blob))
-            if tot_rows % batch_size == 0:
+            if tot_rows % 500 == 0:
                 logger.debug('num rows=%d, num MB=%d, thrift_framed_transport_size_in_mb=%d' % (
                     tot_rows, float(tot_bytes) / 2**20, self.thrift_framed_transport_size_in_mb))
 
@@ -256,7 +246,7 @@ class CStorage(AbstractStorage):
                 table_name, tot_rows, tot_bytes, elapsed, row_rate, MB_rate))
 
     @_requires_connection
-    def get(self, table_name, *key_ranges, **kwargs):
+    def scan(self, table_name, *key_ranges, **kwargs):
         kwargs.pop('batch_size', 100)
         if not key_ranges:
             ## get all columns
@@ -301,8 +291,8 @@ class CStorage(AbstractStorage):
 
     def _get_from_one_row(self, table_name, row_name, columns, start, finish, num_uuids):
 
-        #logger.debug('c* get: table_name=%r row_name=%r columns=%r start=%r finish=%r' % (
-        #    table_name, row_name, columns, start, finish))
+        logger.debug('c* get: table_name=%r row_name=%r columns=%r start=%r finish=%r' % (
+            table_name, row_name, columns, start, finish))
 
         if not columns:
             assert start is not None and finish is not None
@@ -312,20 +302,24 @@ class CStorage(AbstractStorage):
         while True:
             ## if we have
             prev_start = start
-            #logger.debug('cassandra get(%r...)' % row_name)
+            logger.debug('cassandra get(%r...)' % row_name)
+            ## if table_name == 'inbound':
+            ##     import ipdb
+            ##     ipdb.set_trace()
             for key, val in self.tables[table_name].get(
                     row_name,
                     columns=columns,
                     column_start=start,
                     column_finish=finish,
-                    column_count=100,
+                    column_count=1,
                     ).iteritems():
+
                 key = split_uuids(key)
-                #logger.critical('cassandra get(%r) yielding %r %d' % (table_name, key, len(val)))
+                logger.critical('cassandra get(%r) yielding %r %d' % (table_name, key, len(val)))
                 yield key, val
                 num_yielded += 1
-                #logger.debug('c* get: table_name=%r row_name=%r columns=%r start=%r finish=%r' % (
-                #    table_name, row_name, columns, start, finish))
+                logger.debug('c* get: table_name=%r row_name=%r columns=%r start=%r finish=%r' % (
+                    table_name, row_name, columns, start, finish))
 
             ## prepare to page ahead to next batch
             if columns:
@@ -336,7 +330,7 @@ class CStorage(AbstractStorage):
 
             if start == prev_start or start > finish:
                 break
-            #logger.debug('paging forward from %r to %r' % (prev_start, start))
+            logger.debug('paging forward from %r to %r' % (prev_start, start))
 
         ## We need to raise a not found exception if the caller asked for
         ## a specific column and we didn't yield any results
@@ -344,6 +338,41 @@ class CStorage(AbstractStorage):
             raise pycassa.NotFoundException
             #'c* get: table_name=%r row_name=%r columns=%r start=%r finish=%r' % (
             #    table_name, row_name, columns, start, finish))
+
+
+    @_requires_connection
+    def get(self, table_name, *keys, **kwargs):
+        num_uuids = self._table_names[table_name]
+        ## A mapping between shards and columns to retrieve from each shard
+        shards = defaultdict(list)
+
+        ## Track the keys that we find
+        found_keys = set()
+
+        ## Determine all the shards that we need to contact
+        for key in keys:
+            joined_key = join_uuids(*key,  num_uuids=num_uuids)
+            row_names = [self._make_shard_name(table_name, joined_key)]
+            for row_name in row_names:
+                shards[row_name].append(joined_key)
+
+        ## For each shard we contact, get all the keys it may hold
+        for row_name, columns in shards.iteritems():
+            try:
+                for key, val in self.tables[table_name].get(row_name, columns=columns,).iteritems():
+                    key = split_uuids(key)
+                    logger.critical('cassandra get(%r) yielding %r %d' % (table_name, key, len(val)))
+                    ## key is a list [(uuid, uuid)]
+                    assert not any(k in found_keys for k in key)
+                    found_keys.add(tuple(key))
+                    yield tuple(key), val
+            except NotFoundException:
+                raise MissingID('table_name=%r keys: %r' % (table_name, columns))
+
+        ## Raise an exception if we don't retrieve all the keys that were requested
+        missing_keys = set(keys) - found_keys
+        if missing_keys:
+            raise MissingID('table_name=%r keys: %r' % ( table_name, missing_keys))
 
 
     @_requires_connection

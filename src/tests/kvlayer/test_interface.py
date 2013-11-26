@@ -92,16 +92,41 @@ def test_basic_storage(client):
     u1, u2, u3 = uuid.uuid1(), uuid.uuid1(), uuid.uuid1()
     client.put('t1', ((u1, u2), b'88'))
     client.put('t2', ((u1, u2, u3), b'88'))
-    assert 1 == len(list(client.get('t1')))
-    assert 1 == len(list(client.get('t1', ((u1,), (u1,)))))
+    assert 1 == len(list(client.scan('t1')))
+    assert 1 == len(list(client.scan('t1', ((u1,), (u1,)))))
 
     client.delete('t1', (u1, u2))
-    assert 0 == len(list(client.get('t1')))
+    assert 0 == len(list(client.scan('t1')))
     with pytest.raises(MissingID):
-        list(client.get('t1', ((u1,), (u1,))))
+        list(client.scan('t1', ((u1,), (u1,))))
 
     with pytest.raises(MissingID):
-        list(client.get('t2', ((u2,), (u3,))))
+        list(client.scan('t2', ((u2,), (u3,))))
+
+def test_get(client):
+    client.setup_namespace(dict(t1=1, t2=2, t3=3))
+    # use time-based UUID 1, so these are ordered
+    u1, u2, u3 = uuid.uuid1(), uuid.uuid1(), uuid.uuid1()
+
+    client.put('t1', ((u1,), b'81'))
+    res = list(client.get('t1', (u1, )))
+    assert len(res) == 1
+    assert res[0][0] == (u1,)
+    assert res[0][1] == b'81'
+
+    client.put('t2', ((u1, u2), b'82'))
+    res = list(client.get('t2', (u1, u2)))
+    assert len(res) == 1
+    assert res[0][0] == (u1, u2)
+    assert res[0][1] == b'82'
+
+    client.put('t3', ((u1, u2, u3), b'83'))
+    res = list(client.get('t3', (u1, u2, u3)))
+    assert len(res) == 1
+    assert res[0][0] == (u1, u2, u3)
+    assert res[0][1] == b'83'
+
+
 
 def test_adding_tables(client):
     client.setup_namespace(dict(t1=2, t2=3))
@@ -113,12 +138,12 @@ def test_adding_tables(client):
     client.setup_namespace(dict(t3=1))
     client.put('t3', ((u1,), b'33'))
 
-    assert 1 == len(list(client.get('t1')))
-    assert 1 == len(list(client.get('t1', ((u1,), (u1,)))))
-    assert 1 == len(list(client.get('t3', ((u1,), (u1,)))))
+    assert 1 == len(list(client.scan('t1')))
+    assert 1 == len(list(client.scan('t1', ((u1,), (u1,)))))
+    assert 1 == len(list(client.scan('t3', ((u1,), (u1,)))))
 
     with pytest.raises(MissingID):
-        list(client.get('t2', ((u2,), (u3,))))
+        list(client.scan('t2', ((u2,), (u3,))))
 
 @pytest.mark.performance
 def test_large_writes(client):
@@ -144,18 +169,18 @@ def test_setup_namespace_idempotent(client):
     client.setup_namespace(dict(t1=2))
     u1, u2, u3 = uuid.uuid1(), uuid.uuid1(), uuid.uuid1()
     client.put('t1', ((u1, u2), b'88'))
-    assert 1 == len(list(client.get('t1')))
-    assert 1 == len(list(client.get('t1', ((u1,), (u1,)))))
+    assert 1 == len(list(client.scan('t1')))
+    assert 1 == len(list(client.scan('t1', ((u1,), (u1,)))))
 
     client.setup_namespace(dict(t1=2))
-    assert 1 == len(list(client.get('t1')))
-    assert 1 == len(list(client.get('t1', ((u1,), (u1,)))))
+    assert 1 == len(list(client.scan('t1')))
+    assert 1 == len(list(client.scan('t1', ((u1,), (u1,)))))
 
     client.delete_namespace()
     client.setup_namespace(dict(t1=2))
-    assert 0 == len(list(client.get('t1')))
+    assert 0 == len(list(client.scan('t1')))
     with pytest.raises(MissingID):
-        list(client.get('t1', ((u1,), (u1,))))
+        list(client.scan('t1', ((u1,), (u1,))))
 
 
 def test_storage_speed(client):
@@ -165,7 +190,7 @@ def test_storage_speed(client):
     client.put('t1', *[((uuid.uuid4(), uuid.uuid4()), b'')
                        for i in xrange(num_rows)])
     t2 = time.time()
-    results = list(client.get('t1', batch_size=num_rows))
+    results = list(client.scan('t1', batch_size=num_rows))
     t3 = time.time()
     assert num_rows == len(results)
     put_rate = float(num_rows) / (t2 - t1)
@@ -185,12 +210,12 @@ def test_clear_table(client):
                          uuid.uuid4()), b'')
                        for i in xrange(num_rows)])
     client.clear_table('t1')
-    assert len(list(client.get('t1'))) == 0
-    assert len(list(client.get('t2'))) == num_rows
+    assert len(list(client.scan('t1'))) == 0
+    assert len(list(client.scan('t2'))) == num_rows
 
     client.put('t1', *[((uuid.uuid4(), uuid.uuid4()), b'')
                        for i in xrange(num_rows)])
-    assert len(list(client.get('t1'))) == num_rows
+    assert len(list(client.scan('t1'))) == num_rows
 
 
 def test_bogus_put(client):
@@ -229,7 +254,7 @@ def test_binary_clean(client):
     keyb = (uuid.uuid4(), uuid.uuid4())
     valb = bytes(b''.join([chr(random.randint(0,255)) for x in xrange(1000)]))
     client.put('t1', (keyb, valb))
-    xvala = sequence_to_one(client.get('t1', (keya, keya)))
+    xvala = sequence_to_one(client.scan('t1', (keya, keya)))
     assert xvala[1] == vala
-    xvalb = sequence_to_one(client.get('t1', (keyb, keyb)))
+    xvalb = sequence_to_one(client.scan('t1', (keyb, keyb)))
     assert xvalb[1] == valb

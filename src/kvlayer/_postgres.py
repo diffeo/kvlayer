@@ -9,7 +9,7 @@ import psycopg2
 
 from ._abstract_storage import AbstractStorage
 from ._utils import join_uuids, split_uuids
-from ._exceptions import MissingID, BadKey, ProgrammerError
+from ._exceptions import MissingID, ProgrammerError
 
 
 # SQL strings in this module use python3 style string.format() formatting to substitute the table name into the command.
@@ -68,7 +68,7 @@ _CLEAR_TABLE = '''DELETE FROM kv_{namespace} WHERE t = %s'''
 #_PUT = '''SELECT upsert_{namespace} (%s, %s, %s);'''
 
 # unused, we always _GET_RANGE
-#_GET = '''SELECT k, v FROM kv_{namespace} WHERE t = %s AND k = %s;'''
+_GET = '''SELECT k, v FROM kv_{namespace} WHERE t = %s AND k = %s;'''
 
 _GET_RANGE = '''SELECT k, v FROM kv_{namespace} WHERE t = %s AND k >= %s AND k <= %s;'''
 
@@ -174,7 +174,34 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                     'upsert_{namespace}'.format(namespace=self._namespace),
                     (table_name, join_uuids(*kv[0]), psycopg2.Binary(kv[1])))
 
-    def get(self, table_name, *key_ranges, **kwargs):
+    def get(self, table_name, *keys, **kwargs):
+        '''Yield tuples of (key, value) from querying table_name for
+        items with specified keys.
+        '''
+        num_uuids = self._table_names[table_name]
+        cmd = _GET.format(namespace=self._namespace)
+        conn = self._conn()
+        with conn.cursor() as cursor:
+            for key in keys:
+                key = join_uuids(*key, num_uuids=num_uuids, padding='f')
+                cursor.execute(cmd, (table_name, key))
+                if not (cursor.rowcount > 0):
+                    raise MissingID()
+                results = cursor.fetchmany()
+                while results:
+                    for row in results:
+                        val = row[1]
+                        if isinstance(val, buffer):
+                            if len(val) > MAX_BLOB_BYTES:
+                                logging.error('key=%r has blob of size %r over limit of %r', row[0], len(val), MAX_BLOB_BYTES)
+                                continue  # TODO: raise instead of drop?
+                            val = val[:]
+                        yield tuple(split_uuids(row[0])), val
+                    results = cursor.fetchmany()
+
+
+
+    def scan(self, table_name, *key_ranges, **kwargs):
         '''Yield tuples of (key, value) from querying table_name for
         items with keys within the specified ranges.  If no key_ranges
         are provided, then yield all (key, value) pairs in table.
@@ -235,7 +262,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
             cursor.executemany(
                 _DELETE.format(namespace=self._namespace),
                 map(_delkey, keys))
-                
+
 
     def close(self):
         '''
