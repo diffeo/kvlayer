@@ -18,7 +18,7 @@ install: build
 
 test:
 	py.test --genscript=runtests.py
-	cd src && python ../runtests.py -vvs -n 3 tests
+	cd src && python ../runtests.py -vvs tests
 
 register:
 	python setup.py sdist bdist_egg upload -r internal
