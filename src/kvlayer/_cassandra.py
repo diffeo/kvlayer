@@ -263,7 +263,7 @@ class CStorage(AbstractStorage):
                 finish = None
             else:
                 columns = None
-                start  = len(start)>0  and join_uuids(*start,  num_uuids=num_uuids)              or '0' * 32 * num_uuids
+                start  = len(start)>0  and join_uuids(*start,  num_uuids=num_uuids, padding='0') or '0' * 32 * num_uuids
                 finish = len(finish)>0 and join_uuids(*finish, num_uuids=num_uuids, padding='f') or 'f' * 32 * num_uuids
                 row_names = self._make_shard_names(table_name, start, finish)
             total_count = 0

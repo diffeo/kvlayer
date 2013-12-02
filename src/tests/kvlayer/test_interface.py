@@ -262,5 +262,22 @@ def test_binary_clean(client):
 
 def test_scan(client):
     client.setup_namespace(dict(t1=2))
-    keya = (uuid.UUID(int=10), uuid.UUID(int=20))
-    client.put('t1', (keya, 'a'))
+    for x in xrange(0,100,10):
+        key = (uuid.UUID(int=x), uuid.UUID(int=x))
+        client.put('t1', (key, '%d' % x))
+    count = 0
+    for key, value in client.scan('t1', ((uuid.UUID(int=80),),())):
+        count += 1
+    assert count == 2 # 80, 90
+    count = 0
+    for key, value in client.scan('t1', ((uuid.UUID(int=40),), (uuid.UUID(int=75),))):
+        count += 1
+    assert count == 4 # 40, 50, 60, 70
+    count = 0
+    for key, value in client.scan('t1', ((uuid.UUID(int=0),), (uuid.UUID(int=15),))):
+        count += 1
+    assert count == 2 # 0, 10
+    count = 0
+    for key, value in client.scan('t1', ((uuid.UUID(int=0),), (uuid.UUID(int=75),))):
+        count += 1
+    assert count == 8 # 0, 10, 20, 30, 40, 50, 60, 70
