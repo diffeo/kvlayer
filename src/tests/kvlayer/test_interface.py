@@ -258,3 +258,9 @@ def test_binary_clean(client):
     assert xvala[1] == vala
     xvalb = sequence_to_one(client.scan('t1', (keyb, keyb)))
     assert xvalb[1] == valb
+
+
+def test_scan(client):
+    client.setup_namespace(dict(t1=2))
+    keya = (uuid.UUID(int=10), uuid.UUID(int=20))
+    client.put('t1', (keya, 'a'))

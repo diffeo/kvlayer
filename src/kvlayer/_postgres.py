@@ -220,11 +220,9 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         cmd = _GET_RANGE.format(namespace=self._namespace)
         conn = self._conn()
         with conn.cursor() as cursor:
-            for kr in key_ranges:
-                kmin = kr[0]
-                kmin = join_uuids(*kmin, num_uuids=num_uuids, padding='0')
-                kmax = kr[1]
-                kmax = join_uuids(*kmax, num_uuids=num_uuids, padding='f')
+            for kmin, kmax in key_ranges:
+                kmin = len(kmin)>0 and join_uuids(*kmin,  num_uuids=num_uuids) or '0' * 32 * num_uuids
+                kmax = len(kmax)>0 and join_uuids(*kmax, num_uuids=num_uuids, padding='f') or 'f' * 32 * num_uuids
                 logging.debug('pg t=%r %r<=k<=%r', table_name, kmin, kmax)
                 cursor.execute(cmd, (table_name, kmin, kmax))
                 logging.debug('%r rows from %r', cursor.rowcount, cmd)

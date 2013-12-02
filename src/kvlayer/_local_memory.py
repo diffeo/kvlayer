@@ -11,7 +11,7 @@ import abc
 import logging
 from kvlayer._exceptions import MissingID
 from kvlayer._abstract_storage import AbstractStorage
-from kvlayer._utils import _requires_connection
+from kvlayer._utils import _requires_connection, join_uuids
 
 logger = logging.getLogger('kvlayer')
 
@@ -85,31 +85,27 @@ class LocalStorage(AbstractStorage):
 
     @_requires_connection
     def scan(self, table_name, *key_ranges, **kwargs):
+        num_uuids = self._table_names[table_name]
         key_ranges = list(key_ranges)
+        specific_key_range = True
         if not key_ranges:
             key_ranges = [[('',), ('',)]]
+            specific_key_range = False
         for start, finish in key_ranges:
-            found_in_range = []
+            total_count = 0
+            start = len(start)>0  and join_uuids(*start,  num_uuids=num_uuids, padding='0') or '0' * 32 * num_uuids
+            finish = len(finish)>0 and join_uuids(*finish, num_uuids=num_uuids, padding='f') or 'f' * 32 * num_uuids
             for key, val in self._data[table_name].iteritems():
-                if start == ('',) == finish:
-                    ## this is the base case
-                    yield key, val
-                    continue
                 ## given a range, mimic the behavior of DBs that tell
                 ## you if they failed to find a key
-                within_range = True
-                for i in range(len(start)):
-                    if not (start[i] <= key[i] <= finish[i]):
-                        within_range = False
-                        break
-                if within_range:
-                    found_in_range.append( (key, val) )
-            if found_in_range:
-                for key, val in found_in_range:
+                joined_key = join_uuids(*key)
+                if start <= joined_key <= finish:
+                    total_count += 1
                     yield key, val
-            elif start != ('',):
-                ## specified a key range, but found none
-                raise MissingID()
+            else:
+                if specific_key_range and total_count == 0:
+                    ## specified a key range, but found none
+                    raise MissingID()
 
     @_requires_connection
     def get(self, table_name, *keys, **kwargs):

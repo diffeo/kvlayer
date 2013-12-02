@@ -163,8 +163,8 @@ class AStorage(AbstractStorage):
             if specific_key_range:
                 joined_key = join_uuids(*start_key, num_uuids=num_uuids,
                                         padding='0')
-                srow = self._preceeding_key(joined_key)
-                erow = join_uuids(*stop_key, num_uuids=num_uuids, padding='f')
+                srow = len(start_key)>0 and self._preceeding_key(joined_key) or '0' * 32 * num_uuids
+                erow = len(stop_key)>0 and join_uuids(*stop_key, num_uuids=num_uuids, padding='f') or 'f' * 32 * num_uuids
                 key_range = Range(srow=srow, erow=erow)
                 scanner = self.conn.scan(self._ns(table_name),
                                          scanrange=key_range)
