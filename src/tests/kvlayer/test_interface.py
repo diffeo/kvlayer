@@ -278,6 +278,6 @@ def test_scan(client):
         count += 1
     assert count == 2 # 0, 10
     count = 0
-    for key, value in client.scan('t1', ((uuid.UUID(int=0),), (uuid.UUID(int=75),))):
+    for key, value in client.scan('t1', ((), (uuid.UUID(int=75),))):
         count += 1
     assert count == 8 # 0, 10, 20, 30, 40, 50, 60, 70

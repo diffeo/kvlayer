@@ -163,7 +163,10 @@ class AStorage(AbstractStorage):
             if specific_key_range:
                 joined_key = join_uuids(*start_key, num_uuids=num_uuids,
                                         padding='0')
-                srow = len(start_key)>0 and self._preceeding_key(joined_key) or '0' * 32 * num_uuids
+                ## If there is no start key we need to scan from the beginning of the range.  To include any value
+                ## stored at UUID(int=0) we need a key that occurs before the key with all zeros.  The key we use
+                ## to accomplish this is '.' just like the _preceeding_key function.
+                srow = len(start_key)>0 and self._preceeding_key(joined_key) or '.'
                 erow = len(stop_key)>0 and join_uuids(*stop_key, num_uuids=num_uuids, padding='f') or 'f' * 32 * num_uuids
                 key_range = Range(srow=srow, erow=erow)
                 scanner = self.conn.scan(self._ns(table_name),
