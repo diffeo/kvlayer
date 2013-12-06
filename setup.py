@@ -107,8 +107,12 @@ setup(
         'pytest-capturelog',
     ],
     # psycopg2 may be commented out to operate without postgres support
+    # Might be nice to have a conditional install_requires which determines
+    # what underlying database connectors can actually be supported on the install
+    # box. Perhaps something like:
+    # http://stackoverflow.com/questions/14036181/provide-a-complex-condition-in-install-requires-python-setuptoolss-setup-py
     install_requires=[
-        # 'psycopg2',
+        'psycopg2',
         'pycassa >= 1.10',
         'pyaccumulo_dev >= 1.5.0-SNAPSHOT.1',
         'pyyaml',

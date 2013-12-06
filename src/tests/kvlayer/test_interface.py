@@ -56,14 +56,8 @@ params= [
     ('filestorage', '', 'config_file'),
     ('cassandra', 'test-cassandra-1.diffeo.com', 'config_cassandra'),
     ('accumulo', 'test-accumulo-1.diffeo.com', 'config_accumulo'),
+    ('postgres', 'host=test-postgres.diffeo.com port=5432 user=test dbname=test password=test', 'config_postgres')
 ]
-
-try:
-    from kvlayer._postgres import PGStorage
-    params.append(('postgres', 'host=test-postgres.diffeo.com port=5432 user=test dbname=test password=test', 'config_postgres'))
-    postgres_missing = 'False'
-except ImportError:
-    postgres_missing = 'True'
 
 @pytest.fixture(scope='function', params=params)
 def client(request):
