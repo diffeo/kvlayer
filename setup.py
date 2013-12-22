@@ -7,6 +7,8 @@ import subprocess
 
 ## prepare to run PyTest as a command
 from distutils.core import Command
+from distutils.dir_util import remove_tree
+from distutils.util import spawn, newer, execute
 
 from setuptools import setup, find_packages
 
@@ -41,6 +43,39 @@ def recursive_glob_with_tree(treeroot, pattern):
             one_dir_results.append(os.path.join(base, f))
         results.append((base, one_dir_results))
     return results
+
+class Thrift(Command):
+    '''run thrift'''
+    description = 'run thrift generator from IDL to generated python'
+
+    user_options = [
+        ('force', 'f',
+         "run all the build commands even if we don't need to")
+        ]
+
+    boolean_options = ['force']
+
+    def initialize_options(self):
+        self.force = 0
+    def finalize_options(self):
+        pass
+    def run(self):
+        self.maybe_thrift_gen('src/kvlayer/instance_collection/blob_collection.thrift', 'src/kvlayer/instance_collection')
+
+    def maybe_thrift_gen(self, thrift_src, outdir, renamefunc=None):
+        if renamefunc is None:
+            renamefunc = lambda x: x
+        self.make_file(
+            thrift_src,
+            os.path.join(outdir, renamefunc('ttypes.py')),
+            self._run_thrift,
+            [thrift_src, outdir, renamefunc])
+
+    def _run_thrift(self, thrift_src, outdir, renamefunc):
+        self.spawn(['thrift', '--gen', 'py:new_style,slots', thrift_src])
+        for fname in ('constants.py', 'ttypes.py'):
+            self.copy_file('gen-py/blob_collection/' + fname, os.path.join(outdir, renamefunc(fname)))
+        remove_tree('gen-py')
 
 def _myinstall(pkgspec):
     setup(
@@ -90,7 +125,10 @@ setup(
     url=URL,
     packages=find_packages('src'),
     package_dir={'': 'src'},
-    cmdclass={'test': PyTest},
+    cmdclass={
+        'test': PyTest,
+        'thrift': Thrift,
+    },
     # We can select proper classifiers later
     classifiers=[
         'Development Status :: 3 - Alpha',
