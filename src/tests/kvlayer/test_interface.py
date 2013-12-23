@@ -23,6 +23,7 @@ tempfile = NamedTemporaryFile(delete=True)
 new_tempfile = NamedTemporaryFile(delete=True)
 
 config_file= dict(
+    storage_type = 'filestorage',
     filename = tempfile.name,
     copy_to_filename =new_tempfile.name
     )
@@ -47,6 +48,7 @@ except Exception, exc:
 
 
 config_postgres = {
+    'storage_type': 'postgres',
     'namespace': None,  # doesn't matter, gets clobbered below
     'storage_addresses': None,  # doesn't matter, gets clobbered below
 }
@@ -74,7 +76,7 @@ def client(request):
 
     def fin():
         client.delete_namespace()
-        logger.info('tearing down %r_%r', config['app_name'], namespace)
+        logger.info('tearing down %s_%s', config['app_name'], namespace)
     request.addfinalizer(fin)
 
     return client
