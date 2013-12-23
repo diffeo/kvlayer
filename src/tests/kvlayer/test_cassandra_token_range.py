@@ -6,6 +6,7 @@ import time
 import uuid
 import random
 import pytest
+import kvlayer
 import getpass
 import pycassa
 import logging
@@ -20,26 +21,26 @@ from make_namespace_string import make_namespace_string
 from _setup_logging import logger
 
 one_mb = ' ' * 2**20
-namespace = make_namespace_string('test_cql_token_range')
 
-config_path = os.path.join(os.path.dirname(__file__), 'config_cassandra.yaml')
-if not os.path.exists(config_path):
-    sys.exit('failed to find %r' % config_path)
-
-try:
-    config = yaml.load(open(config_path))
-except Exception, exc:
-    sys.exit('failed to load %r: %s' % (config_path, exc))
-
-chosen_server = random.choice(config['storage_addresses'])
-
-def teardown_function(func):
-    sm = SystemManager(chosen_server)
+@pytest.fixture(scope='function')
+def client(request):
+    config_path = os.path.join(os.path.dirname(__file__), 'config_cassandra.yaml')
+    if not os.path.exists(config_path):
+        sys.exit('failed to find %r' % config_path)
     try:
-        sm.drop_keyspace(namespace)
-    except:
-        pass
-    sm.close()
+        config = yaml.load(open(config_path))
+    except Exception, exc:
+        sys.exit('failed to load %r: %s' % (config_path, exc))
+    namespace = make_namespace_string('cql_token_range')
+    config['namespace'] = namespace
+    config['app_name'] = 'kvlayer_tests'
+    logger.info('config: %r' % config)
+    client = kvlayer.client(config)
+    def fin():
+        client.delete_namespace()
+        logger.info('tearing down %s_%s', config['app_name'], namespace)
+    request.addfinalizer(fin)
+    return client
 
 def grouper(iterable, n, fillvalue=None):
     "Collect data into fixed-length chunks or blocks"
@@ -47,7 +48,7 @@ def grouper(iterable, n, fillvalue=None):
     args = [iter(iterable)] * n
     return itertools.izip_longest(fillvalue=fillvalue, *args)
 
-def test_composite_column_names():
+def test_composite_column_names(client):
     '''
     examine the unique nature of cassandras "wide sorted rows";
 
@@ -55,6 +56,9 @@ def test_composite_column_names():
     less good at the simpler kind of key=value storage that we were
     doing earlier.
     '''
+    config = client._config
+    namespace = client._app_namespace
+    chosen_server = client._chosen_server
     sm = SystemManager(chosen_server)
     sm.create_keyspace(namespace, SIMPLE_STRATEGY, {'replication_factor': '1'})
 
@@ -127,11 +131,14 @@ def test_composite_column_names():
 
     sm.close()
 
-def test_composite_column_names_with_decomposited_keys():
+def test_composite_column_names_with_decomposited_keys(client):
     '''
     examine the unique nature of cassandras "wide sorted rows" using
     concatenated keys
     '''
+    config = client._config
+    namespace = client._app_namespace
+    chosen_server = client._chosen_server
     sm = SystemManager(chosen_server)
     sm.create_keyspace(namespace, SIMPLE_STRATEGY, {'replication_factor': '1'})
 
@@ -204,11 +211,14 @@ def test_composite_column_names_with_decomposited_keys():
     sm.close()
 
 @pytest.mark.xfail
-def test_composite_column_names_second_level_range_query():
+def test_composite_column_names_second_level_range_query(client):
     '''
     check that we can execute range queries on the second part of a
     CompositeType column name
     '''
+    config = client._config
+    namespace = client._app_namespace
+    chosen_server = client._chosen_server
     sm = SystemManager(chosen_server)
     sm.create_keyspace(namespace, SIMPLE_STRATEGY, {'replication_factor': '1'})
 
@@ -275,12 +285,15 @@ def join_uuids(*uuids, **kwargs):
 def split_uuids(uuid_str):
     return map(lambda s: uuid.UUID(hex=''.join(s)), grouper(uuid_str, 32))
 
-def test_composite_column_names_second_level_range_query_with_decomposited_keys():
+def test_composite_column_names_second_level_range_query_with_decomposited_keys(client):
     '''
     check that we can execute range queries on the second part of a
     CompositeType column name after we unpack the composite key into a
     long string of concatenated hex forms of the UUIDs
     '''
+    config = client._config
+    namespace = client._app_namespace
+    chosen_server = client._chosen_server
     sm = SystemManager(chosen_server)
     sm.create_keyspace(namespace, SIMPLE_STRATEGY, {'replication_factor': '1'})
 
@@ -338,24 +351,25 @@ def test_composite_column_names_second_level_range_query_with_decomposited_keys(
 
     sm.close()
 
-def test_cql_paging():
+def test_cql_paging(client):
     '''
     read rows from a range of tokens in Cassandra
     '''
+    config = client._config
     server = config['storage_addresses'][0]
     server = server.split(':')[0]
     conn = cql.connect(server, cql_version='3.0.1')
     cursor = conn.cursor()
 
     try:
-        cursor.execute('DROP KEYSPACE %s;' % config['namespace'])
+        cursor.execute('DROP KEYSPACE %s;' % client._app_namespace)
     except:
         pass
 
     ## make a keyspace and a simple table
-    ## cursor.execute("CREATE KEYSPACE %s WITH strategy_class = 'SimpleStrategy' AND strategy_options:replication_factor = 1;" % config['namespace'])
-    cursor.execute("CREATE KEYSPACE %s WITH REPLICATION = {'class' : 'SimpleStrategy', 'replication_factor' : 1};" % config['namespace'])
-    cursor.execute("USE %s;" % config['namespace'])
+    ## cursor.execute("CREATE KEYSPACE %s WITH strategy_class = 'SimpleStrategy' AND strategy_options:replication_factor = 1;" % client._app_namespace)
+    cursor.execute("CREATE KEYSPACE %s WITH REPLICATION = {'class' : 'SimpleStrategy', 'replication_factor' : 1};" % client._app_namespace)
+    cursor.execute("USE %s;" % client._app_namespace)
     cursor.execute('CREATE TABLE data (k int PRIMARY KEY, v varchar);')
 
     ## put some data in the table
@@ -383,7 +397,7 @@ def test_cql_paging():
 
     ## remove this test keyspace
     try:
-        cursor.execute('DROP KEYSPACE %s;' % config['namespace'])
+        cursor.execute('DROP KEYSPACE %s;' % client._app_namespace)
     except:
         pass
 
@@ -391,24 +405,27 @@ def test_cql_paging():
     conn.close()
 
 
-def test_cql_token_range():
+def test_cql_token_range(client):
     '''
     read rows from a range of tokens in Cassandra
     '''
+    config = client._config
+    namespace = client._app_namespace
+    chosen_server = client._chosen_server
     server = config['storage_addresses'][0]
     server = server.split(':')[0]
     conn = cql.connect(server, cql_version='3.0.1')
     cursor = conn.cursor()
 
     ## make a keyspace and a simple table
-    ## cursor.execute("CREATE KEYSPACE %s WITH strategy_class = 'SimpleStrategy' AND strategy_options:replication_factor = 1;" % config['namespace'])
+    ## cursor.execute("CREATE KEYSPACE %s WITH strategy_class = 'SimpleStrategy' AND strategy_options:replication_factor = 1;" % client._app_namespace)
     try:
         ## remove this test keyspace
-        cursor.execute('DROP KEYSPACE %s;' % config['namespace'])
+        cursor.execute('DROP KEYSPACE %s;' % client._app_namespace)
     except:
         pass
-    cursor.execute("CREATE KEYSPACE %s WITH REPLICATION = {'class' : 'SimpleStrategy', 'replication_factor' : 1};" % config['namespace'])
-    cursor.execute("USE %s;" % config['namespace'])
+    cursor.execute("CREATE KEYSPACE %s WITH REPLICATION = {'class' : 'SimpleStrategy', 'replication_factor' : 1};" % client._app_namespace)
+    cursor.execute("USE %s;" % client._app_namespace)
     cursor.execute('CREATE TABLE data (k int PRIMARY KEY, v varchar);')
 
     ## put some data in the table
@@ -457,7 +474,7 @@ def test_cql_token_range():
     assert total_count == total_inbound
 
     ## remove this test keyspace
-    cursor.execute('DROP KEYSPACE %s;' % config['namespace'])
+    cursor.execute('DROP KEYSPACE %s;' % client._app_namespace)
 
     cursor.close()
     conn.close()
