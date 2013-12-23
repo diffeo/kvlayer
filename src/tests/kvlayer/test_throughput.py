@@ -11,7 +11,9 @@ from tests.kvlayer.test_interface import client # fixture
 from tests.kvlayer._setup_logging import logger
 
 
-def worker(operation, i_queue, o_queue, tasks_remaining):
+def worker(operation, i_queue, o_queue, tasks_remaining,
+           class_config=None,
+    ):
     '''simple worker used by run_many below
 
 @operation(task, o_queue): callable that takes "task" received from
@@ -20,7 +22,14 @@ i_queue and optionally passes something to o_queue
 @i_queue: a multiprocessing Queue provided by run_many
 @o_queue: a multiprocessing Queue provided by run_many
 @tasks_remaining: a multiprocessing Event provided by run_many
+
+@class_config: if not None, then operation is initialized by calling
+operation(class_config) before using it inside each worker.
+
     '''
+    if class_config is not None:
+        ## operation is a class with __call__ so initialize it
+        operation = operation(class_config)
     while 1:
         try:
             task = i_queue.get(timeout=0.3)
@@ -31,7 +40,9 @@ i_queue and optionally passes something to o_queue
             else:
                 break
 
-def run_many(operation, task_generator, num_workers=1, timeout=None):
+def run_many(operation, task_generator, num_workers=1, timeout=None,
+             class_config=None,
+    ):
     '''test harness that runs num_workers as child processes and sends
 them tasks from task_generator via queue.  Results are harvested from
 o_queue and yielded by this function, so typical usage is:
@@ -46,6 +57,8 @@ for response from run_many(do_search, queries, num_workers=10, timeout=5):
 @num_workers: number of child processes to run in parallel, default is 1
 
 @timeout: (required) tests must set an explicit timeout in seconds
+
+@class_config: defined above
     '''
     if timeout is None:
         raise Exception('tests must set an explicit timeout')
@@ -81,7 +94,7 @@ for response from run_many(do_search, queries, num_workers=10, timeout=5):
     for x in range(num_workers):
         async_res = pool.apply_async(
             worker, 
-            args=(operation, i_queue, o_queue, tasks_remaining))
+            args=(operation, i_queue, o_queue, tasks_remaining, class_config))
         async_results.append(async_res)
 
     start_time = time.time()
@@ -171,6 +184,23 @@ def random_inserts(config, o_queue):
         o_queue.put(u)
         logger.info('put one_mb at %r', u)
 
+
+class many_gets(object):
+    def __init__(self, config):
+        self.client = kvlayer.client(config)
+        self.client.setup_namespace(dict(t1=1))
+
+    def __call__(self, u, o_queue):
+        try:
+            kvs = list(self.client.get('t1', (u,)))
+        except Exception, exc:
+            logger.critical('client failed!', exc_info=True)
+            raise exc
+        assert len(kvs[0][1]) == 2**20
+        o_queue.put((True, u))
+        logger.info('retrievied one_mb at %r', u)
+
+
 def test_throughput_insert_random(client):
     client.setup_namespace(dict(t1=1))
     
@@ -185,7 +215,22 @@ def test_throughput_insert_random(client):
     elapsed = time.time() - start_time
     assert len(ret_vals) == num_inserts
     rate = num_inserts / elapsed
-    logger.info('%d MB in %.1f seconds --> %.1f MB/sec across %d workers for storage_type=%s',
+    logger.info('%d MB written in %.1f seconds --> %.1f MB/sec across %d workers for storage_type=%s',
+                num_inserts, elapsed, rate, num_workers, client._config['storage_type'])
+
+    if client._config['storage_type'] in ['postgres', 'accumulo', 'cassandra']:
+        start_time = time.time()
+        count = 0
+        for (found, u) in run_many(many_gets, ret_vals, 
+                                   class_config=client._config,
+                                   num_workers=num_workers, timeout=num_inserts):
+            if not found:
+                raise Exception('failed to find %r' % u)
+            count += 1
+        elapsed = time.time() - start_time
+        assert count == num_inserts
+        rate = num_inserts / elapsed
+        logger.info('%d MB read in %.1f seconds --> %.1f MB/sec across %d workers for storage_type=%s',
                 num_inserts, elapsed, rate, num_workers, client._config['storage_type'])
 
     #client.delete('t1', (u1, u2))
