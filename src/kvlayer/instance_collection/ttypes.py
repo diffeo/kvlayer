@@ -20,29 +20,21 @@ except:
 class BlobCollection(object):
   """
   Attributes:
-   - loader_names
    - blobs
   """
 
   __slots__ = [ 
-    'loader_names',
     'blobs',
    ]
 
   thrift_spec = (
     None, # 0
-    (1, TType.MAP, 'loader_names', (TType.STRING,None,TType.STRING,None), {
+    (1, TType.MAP, 'blobs', (TType.STRING,None,TType.STRING,None), {
     }, ), # 1
-    (2, TType.MAP, 'blobs', (TType.STRING,None,TType.STRING,None), {
-    }, ), # 2
   )
 
-  def __init__(self, loader_names=thrift_spec[1][4], blobs=thrift_spec[2][4],):
-    if loader_names is self.thrift_spec[1][4]:
-      loader_names = {
-    }
-    self.loader_names = loader_names
-    if blobs is self.thrift_spec[2][4]:
+  def __init__(self, blobs=thrift_spec[1][4],):
+    if blobs is self.thrift_spec[1][4]:
       blobs = {
     }
     self.blobs = blobs
@@ -58,23 +50,12 @@ class BlobCollection(object):
         break
       if fid == 1:
         if ftype == TType.MAP:
-          self.loader_names = {}
+          self.blobs = {}
           (_ktype1, _vtype2, _size0 ) = iprot.readMapBegin() 
           for _i4 in xrange(_size0):
             _key5 = iprot.readString();
             _val6 = iprot.readString();
-            self.loader_names[_key5] = _val6
-          iprot.readMapEnd()
-        else:
-          iprot.skip(ftype)
-      elif fid == 2:
-        if ftype == TType.MAP:
-          self.blobs = {}
-          (_ktype8, _vtype9, _size7 ) = iprot.readMapBegin() 
-          for _i11 in xrange(_size7):
-            _key12 = iprot.readString();
-            _val13 = iprot.readString();
-            self.blobs[_key12] = _val13
+            self.blobs[_key5] = _val6
           iprot.readMapEnd()
         else:
           iprot.skip(ftype)
@@ -88,20 +69,12 @@ class BlobCollection(object):
       oprot.trans.write(fastbinary.encode_binary(self, (self.__class__, self.thrift_spec)))
       return
     oprot.writeStructBegin('BlobCollection')
-    if self.loader_names is not None:
-      oprot.writeFieldBegin('loader_names', TType.MAP, 1)
-      oprot.writeMapBegin(TType.STRING, TType.STRING, len(self.loader_names))
-      for kiter14,viter15 in self.loader_names.items():
-        oprot.writeString(kiter14)
-        oprot.writeString(viter15)
-      oprot.writeMapEnd()
-      oprot.writeFieldEnd()
     if self.blobs is not None:
-      oprot.writeFieldBegin('blobs', TType.MAP, 2)
+      oprot.writeFieldBegin('blobs', TType.MAP, 1)
       oprot.writeMapBegin(TType.STRING, TType.STRING, len(self.blobs))
-      for kiter16,viter17 in self.blobs.items():
-        oprot.writeString(kiter16)
-        oprot.writeString(viter17)
+      for kiter7,viter8 in self.blobs.items():
+        oprot.writeString(kiter7)
+        oprot.writeString(viter8)
       oprot.writeMapEnd()
       oprot.writeFieldEnd()
     oprot.writeFieldStop()

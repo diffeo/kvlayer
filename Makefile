@@ -4,6 +4,7 @@ clean:
 
 .PHONY : build
 build: clean
+	python setup.py thrift
 	python setup.py build
 
 build_eggs: build

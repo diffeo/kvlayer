@@ -3,12 +3,14 @@ Your use of this software is governed by your license agreement.
 
 Copyright 2012-2013 Diffeo, Inc.
 '''
-import imp
 import collections
+import cPickle as pickle
 from cStringIO import StringIO
 from kvlayer._exceptions import ProgrammerError
+
+## this enables 
+#streamcorpus.Chunk(..., message=kvlayer.instance_collection.BlobCollection)
 from kvlayer.instance_collection.ttypes import BlobCollection
-from kvlayer.instance_collection._import import import_hook
 
 from thrift.transport import TTransport
 from thrift.protocol.TBinaryProtocol import TBinaryProtocol, TBinaryProtocolAccelerated
@@ -72,7 +74,7 @@ class InstanceCollection(collections.Mapping):
         
     def dump(self):
         for key, obj in self._instances.items():
-            self._bc.blobs[key] = obj.dump()
+            self._bc.blobs[key] = pickle.dumps(obj, protocol=2)
         o_fh = StringIO()
         o_transport = TTransport.TBufferedTransport(o_fh)
         o_protocol = protocol(o_transport)
@@ -82,20 +84,17 @@ class InstanceCollection(collections.Mapping):
         
     def __getitem__(self, key):
         if key not in self._instances:
-            if key not in self._bc.loader_names:
+            if key not in self._bc.blobs:
                 raise KeyError('%r not in bc.loader_names=%r' % 
-                               (key, self._bc.loader_names.keys()))
-            ## find module that can load the blob
-            loader_name = self._bc.loader_names[key]
-            _class = import_hook(loader_name, fromlist=['foo'])
+                               (key, self._bc.blobs.keys()))
             ## save the deserialized instance for repeated use
-            self._instances[key] = _class.load(self._bc.blobs.pop(key))
+            self._instances[key] = pickle.loads(self._bc.blobs.pop(key))
         return self._instances[key]
 
     def __setitem__(self, key, value):
         self._instances[key] = value
-        self._bc.loader_names[key] = value.__module__
-        assert hasattr(value, 'dump')
+        ## discard previous blob value, if present
+        self._bc.blobs.pop(key, None)
 
     def __iter__(self):
         for key in self._bc.blobs.keys():
