@@ -74,7 +74,7 @@ class Thrift(Command):
     def _run_thrift(self, thrift_src, outdir, renamefunc):
         self.spawn(['thrift', '--gen', 'py:new_style,slots', thrift_src])
         for fname in ('constants.py', 'ttypes.py'):
-            self.copy_file('gen-py/blob_collection/' + fname, os.path.join(outdir, renamefunc(fname)))
+            self.copy_file('gen-py/kvlayer/instance_collection/blob_collection/' + fname, os.path.join(outdir, renamefunc(fname)))
         remove_tree('gen-py')
 
 def _myinstall(pkgspec):

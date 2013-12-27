@@ -4,13 +4,12 @@ Your use of this software is governed by your license agreement.
 Copyright 2012-2013 Diffeo, Inc.
 '''
 import collections
-import cPickle as pickle
 from cStringIO import StringIO
 from kvlayer._exceptions import ProgrammerError
 
 ## this enables 
 #streamcorpus.Chunk(..., message=kvlayer.instance_collection.BlobCollection)
-from kvlayer.instance_collection.ttypes import BlobCollection
+from kvlayer.instance_collection.ttypes import BlobCollection, TypedBlob
 
 from thrift.transport import TTransport
 from thrift.protocol.TBinaryProtocol import TBinaryProtocol, TBinaryProtocolAccelerated
@@ -54,15 +53,32 @@ class AugmentedStringIO(object):
 
         return buff
 
+import json
+import yaml
+yaml.loads = yaml.load
+yaml.dumps = yaml.dump
+
+## global singleton dict of registered serializers
+registered_serializers = dict(
+    ## include "yaml" and "json" as defaults
+    # must provide a callable that returns a thing with dumps/loads
+    yaml=lambda: yaml,
+    json=lambda: json,
+    )
+
+def register(name, serializer):
+    global registered_serializers
+    registered_serializers[name] = serializer
+
 class InstanceCollection(collections.Mapping):
     '''
     '''
     def __init__(self, blob_collection_blob=None):
         self._instances = dict()
         self._bc = None
-        self.load(blob_collection_blob)
+        self.loads(blob_collection_blob)
 
-    def load(self, blob_collection_blob):
+    def loads(self, blob_collection_blob):
         '''read raw blob of a BlobCollection
         '''
         self._bc = BlobCollection()
@@ -72,9 +88,18 @@ class InstanceCollection(collections.Mapping):
             i_protocol = protocol(i_transport)
             self._bc.read( i_protocol )
         
-    def dump(self):
+    def dumps(self):
         for key, obj in self._instances.items():
-            self._bc.blobs[key] = pickle.dumps(obj, protocol=2)
+            ## save the deserialized instance for repeated use
+            serializer_name = self._bc.typed_blobs[key].serializer
+            serializer_class = registered_serializers.get(serializer_name)
+            if not serializer_class:
+                raise ProgrammerError('%r has serializer=%r, but that is not registered'
+                                      % (key, serializer_name))
+            serializer = serializer_class()
+            if self._bc.typed_blobs[key].config:
+                serializer.configure(self._bc.typed_blobs[key].config)
+            self._bc.typed_blobs[key].blob = serializer.dumps(obj)
         o_fh = StringIO()
         o_transport = TTransport.TBufferedTransport(o_fh)
         o_protocol = protocol(o_transport)
@@ -84,21 +109,38 @@ class InstanceCollection(collections.Mapping):
         
     def __getitem__(self, key):
         if key not in self._instances:
-            if key not in self._bc.blobs:
-                raise KeyError('%r not in bc.loader_names=%r' % 
-                               (key, self._bc.blobs.keys()))
+            if key not in self._bc.typed_blobs:
+                raise KeyError('%r not in bc.typed_blobs=%r' % 
+                               (key, self._bc.typed_blobs.keys()))
             ## save the deserialized instance for repeated use
-            self._instances[key] = pickle.loads(self._bc.blobs.pop(key))
+            serializer_name = self._bc.typed_blobs[key].serializer
+            serializer_class = registered_serializers.get(serializer_name)
+            if not serializer_class:
+                raise ProgrammerError('%r has serializer=%r, but that is not registered'
+                                      % (key, serializer_name))
+            serializer = serializer_class()
+            if self._bc.typed_blobs[key].config:
+                serializer.configure(self._bc.typed_blobs[key].config)
+            self._instances[key] = serializer.loads(self._bc.typed_blobs[key].blob)
         return self._instances[key]
 
     def __setitem__(self, key, value):
+        raise ProgrammerError('use InstanceCollection.insert(key, value, serializer_name) instead of directly setting an item')
+
+    def insert(self, key, value, serializer_name, config=None):
+        global registered_serializers
+        if serializer_name not in registered_serializers:
+            raise ProgrammerError('serializer_name=%r is not registered'
+                                  % serializer_name)
         self._instances[key] = value
-        ## discard previous blob value, if present
-        self._bc.blobs.pop(key, None)
+        if config is None:
+            config = {}
+        self._bc.typed_blobs[key] = TypedBlob(serializer = serializer_name,
+                                        config = config)
 
     def __iter__(self):
-        for key in self._bc.blobs.keys():
+        for key in self._bc.typed_blobs.keys():
             yield key
 
     def __len__(self):
-        return len(self._bc.blobs)
+        return len(self._bc.typed_blobs)

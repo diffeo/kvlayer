@@ -3,21 +3,23 @@ import sys
 import json
 import yaml
 import time
+import gzip
 import pytest
 import tempfile
 import streamcorpus
-from kvlayer.instance_collection import InstanceCollection, BlobCollection
+from cStringIO import StringIO
+from kvlayer.instance_collection import InstanceCollection, BlobCollection, register
 
 class Thing(object):
     def __init__(self, blob=None):
         self.data = dict()
         if blob is not None:
-            self.load(blob)
+            self.loads(blob)
 
-    def dump(self):
+    def dumps(self):
         return yaml.dump(self.data)
 
-    def load(self, blob):
+    def loads(self, blob):
         self.data = yaml.load(blob)
 
     def __getitem__(self, key):
@@ -29,48 +31,113 @@ class Thing(object):
     def do_more_things(self):
         self.data['doing'] = 'something'
 
-    def __getstate__(self):
-        '''generate a state string for pickle'''
-        return json.dumps(self.data)
+class ThingSerializer(object):
 
-    def __setstate__(self, state):
-        self.data = json.loads(state)
-        self.used_setstate = True
+    def __init__(self):
+        self.config = {}
 
+    def loads(self, blob):
+        if self.config.get('compress') == 'gz':
+            fh = StringIO(blob)
+            gz = gzip.GzipFile(fileobj=fh, mode='rb')
+            blob = gz.read()
+        return Thing(blob)
+
+    def dumps(self, thing):
+        blob = thing.dumps()        
+        if self.config.get('compress') == 'gz':
+            fh = StringIO()
+            gz = gzip.GzipFile(fileobj=fh, mode='wb')
+            gz.write(blob)
+            gz.flush()
+            gz.close()
+            blob = fh.getvalue()
+        return blob
+
+    def configure(self, config):
+        self.config = config
 
 def test_instance_collection():
+
+    register('Thing', ThingSerializer)
+
     ic = InstanceCollection()
-    ic['thing1'] = Thing(yaml.dump(dict(hello='people')))
+    ic.insert('thing1', Thing(yaml.dump(dict(hello='people'))), 'Thing')
     ic['thing1']['another'] = 'more'
     ic['thing1'].do_more_things()
-    ic_str = ic.dump()
+    ic_str = ic.dumps()
     
     ic2 = InstanceCollection(ic_str)
 
     ## check laziness
-    assert 'thing1' in ic2._bc.blobs
     assert 'thing1' not in ic2._instances
 
     assert ic2['thing1']['another'] == 'more'
-    assert 'thing1' not in ic2._bc.blobs
     assert 'thing1' in ic2._instances
-    assert ic2['thing1'].used_setstate
+
+    assert ic2['thing1']['hello'] == 'people'
+    assert ic2['thing1']['doing'] == 'something'
+
+def test_instance_collection_gzip():
+
+    register('Thing', ThingSerializer)
+
+    ic = InstanceCollection()
+    ic.insert('thing1', Thing(yaml.dump(dict(hello='people'))), 'Thing', config=dict(compress='gz'))
+    ic['thing1']['another'] = 'more'
+    ic['thing1'].do_more_things()
+    ic_str = ic.dumps()
+    
+    ic2 = InstanceCollection(ic_str)
+    
+    fh = StringIO(ic2._bc.typed_blobs['thing1'].blob)
+    gz = gzip.GzipFile(fileobj=fh, mode='rb')
+    blob = gz.read()
+    tb_data = yaml.load(blob)
+    assert 'hello' in tb_data
+    assert isinstance(tb_data, dict)
+
+    ## check laziness
+    assert 'thing1' not in ic2._instances
+
+    assert ic2['thing1']['another'] == 'more'
+    assert 'thing1' in ic2._instances
 
     assert ic2['thing1']['hello'] == 'people'
     assert ic2['thing1']['doing'] == 'something'
 
 
+def test_instance_collection_yaml_json():
+
+    ic = InstanceCollection()
+    ic.insert('thing2', dict(hello='people'), 'yaml')
+    ic['thing2']['another'] = 'more'
+    ic.insert('thing3', dict(hello='people2'), 'json')
+    ic_str = ic.dumps()
+    
+    ic2 = InstanceCollection(ic_str)
+
+    ## check laziness
+    assert 'thing2' not in ic2._instances
+
+    assert ic2['thing2']['another'] == 'more'
+    assert 'thing2' in ic2._instances
+
+    assert ic2['thing2']['hello'] == 'people'
+    assert ic2['thing3']['hello'] == 'people2'
+
+
 @pytest.mark.performance
 def test_throughput_instance_collection():
     ic = InstanceCollection()
-    ic['thing1'] = Thing(yaml.dump(dict(one_mb=' ' * 2**20)))
-    ic_str = ic.dump()
+    ic.insert('thing1', Thing(yaml.dump(dict(one_mb=' ' * 2**20))), 'Thing')
+    ic_str = ic.dumps()
     
     start_time = time.time()
     num = 100
     for i in range(num):
         ic2 = InstanceCollection(ic_str)
-        ic2.dump()
+        ic2.dumps()
     elapsed = time.time() - start_time
     rate = float(num) / elapsed
     print '%d MB in %.1f sec --> %.1f MB per sec' % (num, elapsed, rate)
