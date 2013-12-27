@@ -75,8 +75,11 @@ class InstanceCollection(collections.Mapping):
     '''
     def __init__(self, blob_collection_blob=None):
         self._instances = dict()
-        self._bc = None
-        self.loads(blob_collection_blob)
+        if isinstance(blob_collection_blob, BlobCollection):
+            self._bc = blob_collection_blob
+        else:
+            self._bc = None
+            self.loads(blob_collection_blob)
 
     def loads(self, blob_collection_blob):
         '''read raw blob of a BlobCollection
@@ -144,3 +147,31 @@ class InstanceCollection(collections.Mapping):
 
     def __len__(self):
         return len(self._bc.typed_blobs)
+
+
+def InstanceCollection_write_wrapper(ic):
+    '''cause the BlobCollection to get populated (or refreshed) with
+    current serialized data, and return it.
+    '''
+    s = ic.dumps()
+    return ic._bc
+
+## Use the Chunk implementation from streamcorpus, which handles
+## reading and writing of new chunk files.
+from streamcorpus import Chunk as _Chunk
+
+class Chunk(_Chunk):
+    def __init__(self, path=None, data=None, file_obj=None, mode='rb',
+                 ## must override the constructor to make our message
+                 ## type the default.
+                 message=BlobCollection,
+                 read_wrapper=InstanceCollection, 
+                 write_wrapper=InstanceCollection_write_wrapper,
+                 ):
+        _Chunk.__init__(
+            self, path, data, file_obj, mode, 
+            message=message,
+            read_wrapper=read_wrapper,
+            write_wrapper=write_wrapper,
+        )
+

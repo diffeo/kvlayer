@@ -6,9 +6,8 @@ import time
 import gzip
 import pytest
 import tempfile
-import streamcorpus
 from cStringIO import StringIO
-from kvlayer.instance_collection import InstanceCollection, BlobCollection, register
+from kvlayer.instance_collection import InstanceCollection, BlobCollection, register, Chunk
 
 class Thing(object):
     def __init__(self, blob=None):
@@ -30,6 +29,9 @@ class Thing(object):
 
     def do_more_things(self):
         self.data['doing'] = 'something'
+
+    def __eq__(self, other):
+        return self.data == other.data
 
 class ThingSerializer(object):
 
@@ -129,6 +131,8 @@ def test_instance_collection_yaml_json():
 
 @pytest.mark.performance
 def test_throughput_instance_collection():
+
+    register('Thing', ThingSerializer)
     ic = InstanceCollection()
     ic.insert('thing1', Thing(yaml.dump(dict(one_mb=' ' * 2**20))), 'Thing')
     ic_str = ic.dumps()
@@ -143,22 +147,22 @@ def test_throughput_instance_collection():
     print '%d MB in %.1f sec --> %.1f MB per sec' % (num, elapsed, rate)
     assert rate > 100
 
-@pytest.mark.xfail ## need to enhance streamcorpus.Chunk to have
-                   ## 'wrapper' kwarg
+
 def test_chunk_blob_collection():
     tmp = tempfile.NamedTemporaryFile(mode='wb')
-    o_chunk = streamcorpus.Chunk(file_obj=tmp, mode='wb', message=BlobCollection)
+    o_chunk = Chunk(file_obj=tmp, mode='wb')
 
+    register('Thing', ThingSerializer)
     ic = InstanceCollection()
-    ic['thing1'] = Thing(yaml.dump(dict(hello='people')))
+    ic.insert('thing1', Thing(yaml.dump(dict(hello='people'))), 'Thing')
     ic['thing1']['another'] = 'more'
 
     o_chunk.add(ic)
-    tmp.flush()
+    o_chunk.flush()
 
-    for ic2 in streamcorpus.Chunk(tmp.name, message=BlobCollection):
-        pass
+    ic2 = list(Chunk(tmp.name, mode='rb'))[0]
+    assert ic2['thing1'].data
 
-    assert ic['thing1'] == ic2['thing1']
+    assert ic['thing1'] == ic2['thing1'], (ic['thing1'].data, ic2['thing1'].data)
 
     
