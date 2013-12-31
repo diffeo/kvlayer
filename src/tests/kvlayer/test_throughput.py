@@ -170,14 +170,15 @@ def test_multiprocessing_harness_control_C():
     assert len(ret_vals) == 0
 
 
-def random_inserts(config, o_queue):
-    client = kvlayer.client(config)
-    client.setup_namespace(dict(t1=1))
-    one_mb = ' ' * 2**20
-    for i in xrange(config['num_random_inserts']):
-        u = uuid.uuid4()
+class random_inserts(object):
+    def __init__(self, config):
+        self.client = kvlayer.client(config)
+        self.client.setup_namespace(dict(t1=1))
+        self.one_mb = ' ' * 2**20
+
+    def __call__(self, u, o_queue):
         try:
-            client.put('t1', ((u,), one_mb))
+            self.client.put('t1', ((u,), self.one_mb))
         except Exception, exc:
             logger.critical('client failed!', exc_info=True)
             raise exc
@@ -205,18 +206,18 @@ def test_throughput_insert_random(client):
     client.setup_namespace(dict(t1=1))
     
     num_workers = 5
-    num_random_inserts = 100
-    num_inserts = num_workers * num_random_inserts
-    client._config['num_random_inserts'] = num_random_inserts
-    task_generator = [client._config for x in xrange(num_workers)]
+    num_inserts = 100
+    total_inserts = num_workers * num_inserts
+    task_generator = [uuid.uuid4() for x in xrange(total_inserts)]
     start_time = time.time()
     ret_vals = list(run_many(random_inserts, task_generator, 
-                             num_workers=num_workers, timeout=num_inserts/2))
+                             class_config=client._config,
+                             num_workers=num_workers, timeout=total_inserts/2))
     elapsed = time.time() - start_time
-    assert len(ret_vals) == num_inserts
-    rate = num_inserts / elapsed
+    assert len(ret_vals) == total_inserts
+    rate = total_inserts / elapsed
     logger.info('%d MB written in %.1f seconds --> %.1f MB/sec across %d workers for storage_type=%s',
-                num_inserts, elapsed, rate, num_workers, client._config['storage_type'])
+                total_inserts, elapsed, rate, num_workers, client._config['storage_type'])
 
     if client._config['storage_type'] in ['postgres', 'accumulo', 'cassandra']:
         start_time = time.time()
@@ -228,14 +229,80 @@ def test_throughput_insert_random(client):
                 raise Exception('failed to find %r' % u)
             count += 1
         elapsed = time.time() - start_time
-        assert count == num_inserts
-        rate = num_inserts / elapsed
-        logger.info('%d MB read in %.1f seconds --> %.1f MB/sec across %d workers for storage_type=%s',
-                num_inserts, elapsed, rate, num_workers, client._config['storage_type'])
+        assert len(ret_vals) == total_inserts
+        rate = total_inserts / elapsed
+        logger.info('%d MB written in %.1f seconds --> %.1f MB/sec across %d workers for storage_type=%s',
+                    total_inserts, elapsed, rate, num_workers, client._config['storage_type'])
 
-    #client.delete('t1', (u1, u2))
-    #assert 0 == len(list(client.scan('t1')))
-    #with pytest.raises(MissingID):
-    #    list(client.scan('t1', ((u1,), (u1,))))
-    #with pytest.raises(MissingID):
-    #    list(client.scan('t2', ((u2,), (u3,))))
+
+class indexer(object):
+    '''
+    rapidly changes an index in t2
+    '''
+    def __init__(self, config):
+        self.client = kvlayer.client(config)
+        self.client.setup_namespace(dict(t1=1, t2=2))
+
+    def __call__(self, u, o_queue):
+        try:
+            kvs = list(self.client.scan('t2', ((u,), (u,))))
+        except Exception, exc:
+            logger.critical('client failed!', exc_info=True)
+            raise exc
+        u1, u2 = kvs[0][0]
+        assert u == u1
+
+        ... need to populate t2 initially, and then flow records through it from 0 to 1-8, to 9-24, 25-57, 58-121, etc.
+
+
+class joiner(object):
+    def __init__(self, config):
+        self.client = kvlayer.client(config)
+        self.client.setup_namespace(dict(t1=1, t2=2))
+
+    def __call__(self, u, o_queue):
+        try:
+            kvs = list(self.client.scan('t2', ((u,), (u,))))
+        except Exception, exc:
+            logger.critical('client failed!', exc_info=True)
+            raise exc
+        u1, u2 = kvs[0][0]
+        assert u == u1
+        try:
+            kvs = list(self.client.get('t1', (u2,)))
+        except Exception, exc:
+            logger.critical('client failed!', exc_info=True)
+            raise exc
+        assert len(kvs[0][1]) == 2**20
+        o_queue.put((True, u2))
+        logger.info('retrievied one_mb at %r', u2)
+
+@pytest.mark.skipif('True')
+def test_throughput_join(client):
+    '''measure throughput of reading data from t1 by first looking up the
+    key in t2, while t2 is under write load
+    '''
+    client.setup_namespace(dict(t1=1, t2=2))
+    
+    num_workers = 10
+    num_inserts = 100
+    total_inserts = num_workers * num_inserts
+    data_ids = [uuid.uuid4() for x in xrange(total_inserts)]
+    start_time = time.time()
+    ret_vals = list(run_many(random_inserts, data_ids, 
+                             class_config=client._config,
+                             num_workers=num_workers, timeout=total_inserts/2))
+    elapsed = time.time() - start_time
+    assert len(ret_vals) == total_inserts
+    rate = total_inserts / elapsed
+    logger.info('%d MB written in %.1f seconds --> %.1f MB/sec across %d workers for storage_type=%s',
+                total_inserts, elapsed, rate, num_workers, client._config['storage_type'])
+
+    ## start tool subprocesses that each run a pool
+    writers = multiprocessing.Process(
+        target=run_many,
+        args=(indexer, data_ids, 
+              class_config=client._config,
+              num_workers=num_workers, timeout=total_inserts/2))))
+
+    ### finish writing this test...
