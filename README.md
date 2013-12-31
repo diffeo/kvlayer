@@ -7,5 +7,5 @@ compound UUID keys.
 
 Also contains thrift-based InstanceCollection for storing
 self-describing data in a key-value store.  See
-[this test of InstanceCollection](kvlayer/src/tests/kvlayer/instance_collection/test_instance_blob_collection.py)
+[this test of InstanceCollection](src/tests/kvlayer/instance_collection/test_instance_blob_collection.py)
 for details.
