@@ -154,7 +154,8 @@ setup(
         'pycassa >= 1.10',
         'pyaccumulo_dev >= 1.5.0-SNAPSHOT.1',
         'pyyaml',
-        'cql'
+        'cql',
+        'streamcorpus',
     ],
     # include_package_data = True,
     package_data={
