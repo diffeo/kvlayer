@@ -299,10 +299,10 @@ def test_throughput_join(client):
                 total_inserts, elapsed, rate, num_workers, client._config['storage_type'])
 
     ## start tool subprocesses that each run a pool
-    writers = multiprocessing.Process(
-        target=run_many,
-        args=(indexer, data_ids, 
-              class_config=client._config,
-              num_workers=num_workers, timeout=total_inserts/2))))
+    #writers = multiprocessing.Process(
+        #target=run_many,
+        #args=(indexer, data_ids, 
+              #class_config=client._config,
+              #num_workers=num_workers, timeout=total_inserts/2))))
 
     ### finish writing this test...
