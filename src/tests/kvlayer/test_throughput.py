@@ -252,7 +252,7 @@ class indexer(object):
         u1, u2 = kvs[0][0]
         assert u == u1
 
-        ... need to populate t2 initially, and then flow records through it from 0 to 1-8, to 9-24, 25-57, 58-121, etc.
+        #... need to populate t2 initially, and then flow records through it from 0 to 1-8, to 9-24, 25-57, 58-121, etc.
 
 
 class joiner(object):
