@@ -1,0 +1,21 @@
+include:
+  ~/.saltcloud-ec2.conf
+
+my-amz:
+  extends: my-amz-credentials
+  provider: ec2
+  securitygroupid:
+    - default
+  del_root_vol_on_destroy: True
+  del_all_vols_on_destroy: True
+  location: us-east-1
+  availability_zone: us-east-1a
+  ssh_username: ubuntu
+
+  minion:
+    mine_functions:
+      network.interfaces: []
+      network.ip_addrs: []
+      test.ping: []
+      grains.items: []
+    mine_interval: 2

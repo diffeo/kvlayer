@@ -1,0 +1,72 @@
+
+my-accumulo-slave:
+  provider: my-amz
+  image: ami-a73264ce
+  size: m1.large
+  display_ssh_output: False
+  make_master: False
+  sync_after_install: all
+  grains:
+    clusterdomain: accumulo-ec2-test.com
+    roles:
+      - hadoop_slave
+      - accumulo_slave
+    hdfs_data_disks:
+      - /data1
+      - /data2
+  minion:
+    master_finger: null
+
+my-accumulo-saltmaster:
+  provider: my-amz
+  image: ami-a73264ce
+  size: m1.medium
+  display_ssh_output: False
+  make_master: True
+  sync_after_install: all
+  grains:
+    clusterdomain: accumulo-ec2-test.com
+    roles:
+      - hadoop_master
+      - accumulo_master
+      - zookeeper
+      - accumulo_proxy
+      - hadoop_slave
+      - accumulo_slave
+    java:
+      source_url: http://main.woitasen.com.ar/diegows/jdk-7u45-linux-x64.tar.gz
+      source_hash: md5=92f56f903483750818ffc3a4f41fe779
+      version_name: jdk1.7.0_45
+    accumulo_profile: 2GB
+    hdfs_data_disks:
+      - /data1
+  minion:
+    master_finger: null
+  master:
+    user: root
+    log_level: info
+    syndic_master: ip-10-178-32-61.ec2.internal
+    peer:
+      .*:
+        - test.*
+        - grains.*
+    fileserver_backend:
+      - roots
+      - git
+    file_roots:
+      base:
+        - /srv/salt
+    gitfs_remotes:
+      - https://github.com/accumulo/hostsfile-formula.git
+      - https://github.com/accumulo/accumulo-saltstack.git
+      - https://github.com/saltstack-formulas/ntp-formula.git
+      - https://github.com/accumulo/accumulo-demo-formula.git
+      - https://github.com/vhgroup/accumulo-formula.git
+      - https://github.com/accumulo/zookeeper-formula.git
+      - https://github.com/accumulo/hadoop-formula.git
+      - https://github.com/accumulo/sun-java-formula.git
+      - https://github.com/accumulo/mvn-formula.git
+      - https://github.com/accumulo/jmxtrans-formula.git
+    ext_pillar:
+      - git: master https://github.com/accumulo/accumulo-saltstack-pillar.git
+
