@@ -1,0 +1,20 @@
+<%
+
+import os
+
+instances = int(os.environ["CLUSTER_SIZE"])
+
+%>
+
+my-accumulo-saltmaster:
+  - systest01-master.accumulo-ec2-test.com
+
+% if instances > 1:
+
+my-accumulo-slave:
+% for i in xrange(1, instances):
+  - systest01-slave-0${i}.accumulo-ec2-test.com
+% endfor
+
+%endif
+
