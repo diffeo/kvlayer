@@ -45,3 +45,10 @@ cluster: $(ENVDIR)
 		--out=yaml > tmp/salt-cloud.out && \
 	python cloud/launch.py
 
+cluster-destroy: $(ENVDIR)
+	. $(ENVDIR)/bin/activate && \
+	CLUSTER_SIZE=$(CLUSTER_SIZE) salt-cloud \
+		-C cloud/cloud -m cloud/cloud.map \
+		--providers-config=cloud/cloud.providers \
+		--profiles=cloud/cloud.profiles -y -d
+
