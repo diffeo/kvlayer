@@ -24,7 +24,8 @@ check:
 	pylint -i y --output-format=parseable src/`git remote -v | grep origin | head -1 | cut -d':' -f 2 | cut -d'.' -f 1`
 
 $(ENVDIR):
-	sudo apt-get install python-m2crypto
+	sudo apt-get install python-m2crypto python-dev python-virtualenv \
+		python-pip build-essential
 	virtualenv --system-site-packages $(ENVDIR)
 	. $(ENVDIR)/bin/activate && \
         pip install apache-libcloud && \
