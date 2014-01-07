@@ -37,7 +37,9 @@ my-accumulo-saltmaster:
       source_url: http://main.woitasen.com.ar/diegows/jdk-7u45-linux-x64.tar.gz
       source_hash: md5=92f56f903483750818ffc3a4f41fe779
       version_name: jdk1.7.0_45
-    accumulo_profile: 2GB
+    accumulo:
+      config:
+        memory_profile: 2GB
     hdfs_data_disks:
       - /data1
   minion:

@@ -1,3 +1,4 @@
+# Read ec2 credentials from an external location
 include:
   ~/.saltcloud-ec2.conf
 

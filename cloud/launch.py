@@ -1,3 +1,9 @@
+#
+# Script to launch Accumulo clusters.
+#
+# It uses the output of salt-cloud to determine the IP address of the master
+# and connects to it to apply the accumulo-saltstack recipes.
+#
 
 import sys
 import yaml
@@ -9,7 +15,9 @@ from fabric.api import sudo, execute, env, settings
 saltconf_file = os.path.expanduser('~/.saltcloud-ec2.conf')
 
 def launch_cluster(**kwargs):
+    """Command to connect to the master to apply the states."""
     sudo("apt-get update")
+    #Required pkgs to download recipes from git (salt gitfs).
     sudo("apt-get install -y --force-yes git python-pip")
     sudo("pip install gitpython")
     with settings(warn_only=True):
@@ -23,13 +31,15 @@ def launch_cluster(**kwargs):
     sudo("salt \* test.ping")
     sudo("salt \* state.highstate")
 
-cloudmap = yaml.load(open('tmp/salt-cloud.out'))
+# Use the credentials from the current salt-cloud conf.
 saltconf = yaml.load(open(saltconf_file))
 keyfilename = saltconf["my-amz-credentials"]["private_key"]
 env["key_filename"] = keyfilename
 env["user"] = "ubuntu"
 
+cloudmap = yaml.load(open('tmp/salt-cloud.out'))
 master_ip = None
+# The output is different for single node and multi-node clusters, try both.
 try:
     for name, data in cloudmap['my-amz']['ec2'].iteritems():
         if 'master' in name:
