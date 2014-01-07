@@ -2,7 +2,7 @@
 
 import os
 
-instances = int(os.environ["CLUSTER_SIZE"])
+instances = int(os.environ.get("CLUSTER_SIZE", 1))
 
 %>
 
