@@ -109,7 +109,15 @@ class InstanceCollection(collections.Mapping):
         self._bc.write( o_protocol )
         o_transport.flush()
         return o_fh.getvalue()
-        
+
+    def __contains__(self, key):
+        if key in self._instances:
+            return True
+        elif key in self._bc.typed_blobs:
+            return True
+        else:
+            return False        
+
     def __getitem__(self, key):
         if key not in self._instances:
             if key not in self._bc.typed_blobs:

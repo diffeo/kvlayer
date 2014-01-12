@@ -155,7 +155,7 @@ setup(
         'pyaccumulo_dev >= 1.5.0-SNAPSHOT.1',
         'pyyaml',
         'cql',
-        'streamcorpus',
+        'streamcorpus >= 0.3.23',
     ],
     # include_package_data = True,
     package_data={
