@@ -1,9 +1,9 @@
 '''
 Implementation of AbstractStorage using Cassandra
 
-Your use of this software is governed by your license agreement.
+This software is released under an MIT/X11 open source license.
 
-Copyright 2012-2013 Diffeo, Inc.
+Copyright 2012-2014 Diffeo, Inc.
 '''
 
 import uuid
@@ -18,7 +18,7 @@ from kvlayer._abstract_storage import AbstractStorage
 from kvlayer._utils import _requires_connection
 from thrift.transport.TTransport import TTransportException
 
-logger = logging.getLogger('kvlayer')
+logger = logging.getLogger('kvlayer.CStorage')
 
 ## get the Cassandra client library
 import pycassa
