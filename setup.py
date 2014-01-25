@@ -150,6 +150,7 @@ setup(
     # box. Perhaps something like:
     # http://stackoverflow.com/questions/14036181/provide-a-complex-condition-in-install-requires-python-setuptoolss-setup-py
     install_requires=[
+        'yakonfig',
         'psycopg2',
         'pycassa >= 1.10',
         'pyaccumulo_dev >= 1.5.0-SNAPSHOT.1',
