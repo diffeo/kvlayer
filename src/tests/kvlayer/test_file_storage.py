@@ -1,7 +1,8 @@
+from __future__ import absolute_import
 import uuid
 from kvlayer._file_storage import FileStorage
-from _setup_logging import logger
-from make_namespace_string import make_namespace_string
+from tests.kvlayer._setup_logging import logger
+from tests.kvlayer.make_namespace import make_namespace_string
 
 namespace = make_namespace_string()
 

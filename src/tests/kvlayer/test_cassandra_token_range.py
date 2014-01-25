@@ -16,7 +16,7 @@ from pycassa.pool import ConnectionPool
 from pycassa.system_manager import SystemManager, SIMPLE_STRATEGY, \
     LEXICAL_UUID_TYPE, ASCII_TYPE, BYTES_TYPE
 from pycassa.types import CompositeType, TimeUUIDType, LexicalUUIDType, UUIDType, UTF8Type
-from make_namespace_string import make_namespace_string
+from make_namespace import make_namespace_string
 
 from _setup_logging import logger
 

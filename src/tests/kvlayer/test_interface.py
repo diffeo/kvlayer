@@ -12,7 +12,7 @@ from tempfile import NamedTemporaryFile
 
 from _setup_logging import logger
 
-from make_namespace_string import make_namespace_string
+from make_namespace import make_namespace_string
 
 config_local = dict(
     storage_type='local',

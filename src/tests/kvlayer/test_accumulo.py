@@ -12,7 +12,7 @@ from _setup_logging import logger
 
 from kvlayer._accumulo import AStorage
 from kvlayer._exceptions import MissingID
-from make_namespace_string import make_namespace_string
+from make_namespace import make_namespace_string
 
 config_path = os.path.join(os.path.dirname(__file__), 'config_accumulo.yaml')
 if not os.path.exists(config_path):
