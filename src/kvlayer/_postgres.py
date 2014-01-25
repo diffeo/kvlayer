@@ -1,15 +1,25 @@
-# easy_install psycopg2
-# OR
-# pip install psycopg2
+'''
+Implementation of AbstractStorage using Postgres
 
+Requires that you have the psycopg2 module installed in your environment:
+
+  easy_install psycopg2
+OR
+  pip install psycopg2
+
+This software is released under an MIT/X11 open source license.
+
+Copyright 2012-2014 Diffeo, Inc.
+'''
+from __future__ import absolute_import
 import logging
 import re
 
 import psycopg2
 
-from ._abstract_storage import AbstractStorage
-from ._utils import join_uuids, split_uuids
-from ._exceptions import MissingID, ProgrammerError
+from kvlayer._abstract_storage import AbstractStorage
+from kvlayer._utils import join_uuids, split_uuids
+from kvlayer._exceptions import MissingID, ProgrammerError
 
 
 # SQL strings in this module use python3 style string.format() formatting to substitute the table name into the command.
