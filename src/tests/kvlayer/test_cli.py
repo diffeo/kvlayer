@@ -1,5 +1,4 @@
 '''
-kvlayer provides no command line interface of its own, however
 applications using kvlayer can call kvlayer.add_arguments(parser) to
 get sensible defaults and help messages for command line options.
 
@@ -56,13 +55,7 @@ def main():
 
         yakonfig.set_runtime_args_object(args)
 
-        fh = StringIO('''
-    kvlayer:
-      app_name: !runtime app_name
-      namespace: !runtime namespace
-      storage_type: !runtime storage_type
-      storage_addresses: !runtime storage_addresses
-    ''')
+        fh = StringIO(kvlayer.default_yaml())
         config = yakonfig.set_global_config(stream=fh)
 
         assert config['kvlayer'] == yakonfig.get_global_config('kvlayer')

@@ -150,7 +150,7 @@ setup(
     # box. Perhaps something like:
     # http://stackoverflow.com/questions/14036181/provide-a-complex-condition-in-install-requires-python-setuptoolss-setup-py
     install_requires=[
-        'yakonfig',
+        'yakonfig >= 0.2',
         'psycopg2',
         'pycassa >= 1.10',
         'pyaccumulo_dev >= 1.5.0-SNAPSHOT.1',
@@ -158,6 +158,11 @@ setup(
         'cql',
         'streamcorpus >= 0.3.23',
     ],
+    entry_points={
+        'console_scripts': [
+            'kvlayer = kvlayer._client:main',
+        ]
+    },
     # include_package_data = True,
     package_data={
         # If any package contains *.txt or *.rst files, include them:
