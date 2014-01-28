@@ -121,9 +121,10 @@ class InstanceCollection(collections.Mapping):
     def __getitem__(self, key):
         if key not in self._instances:
             if key not in self._bc.typed_blobs:
+                if hasattr(self, '__missing__'):
+                    return self.__missing__(key)
                 raise KeyError('%r not in bc.typed_blobs=%r' % 
                                (key, self._bc.typed_blobs.keys()))
-            ## save the deserialized instance for repeated use
             serializer_name = self._bc.typed_blobs[key].serializer
             serializer_class = registered_serializers.get(serializer_name)
             if not serializer_class:
@@ -132,6 +133,7 @@ class InstanceCollection(collections.Mapping):
             serializer = serializer_class()
             if self._bc.typed_blobs[key].config:
                 serializer.configure(self._bc.typed_blobs[key].config)
+            ## hold on to the deserialized instance for repeated use
             self._instances[key] = serializer.loads(self._bc.typed_blobs[key].blob)
         return self._instances[key]
 
