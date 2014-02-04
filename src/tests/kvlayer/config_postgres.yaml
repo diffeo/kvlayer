@@ -1,0 +1,4 @@
+storage_type: postgres
+storage_addresses: 
+  - 'host=test-postgres.diffeo.com port=5432 user=test dbname=test password=test'
+namespace: test

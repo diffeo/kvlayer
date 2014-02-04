@@ -14,6 +14,7 @@ from kvlayer._accumulo import AStorage
 from kvlayer._cassandra import CStorage
 from kvlayer._local_memory import LocalStorage
 from kvlayer._file_storage import FileStorage
+from kvlayer._redis import RedisStorage
 import yakonfig
 
 try:
@@ -30,6 +31,7 @@ STORAGE_CLIENTS = dict(
     accumulo=AStorage,
     local=LocalStorage,
     filestorage=FileStorage,
+    redis=RedisStorage
 )
 
 if PGStorage:

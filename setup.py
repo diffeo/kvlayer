@@ -143,6 +143,7 @@ setup(
         'pytest-timeout',
         'pytest-incremental',
         'pytest-capturelog',
+        'rejester'
     ],
     # psycopg2 may be commented out to operate without postgres support
     # Might be nice to have a conditional install_requires which determines
@@ -157,6 +158,7 @@ setup(
         'pyyaml',
         'cql',
         'streamcorpus >= 0.3.23',
+        'redis',
     ],
     entry_points={
         'console_scripts': [

@@ -1,0 +1,5 @@
+
+namespace: test
+storage_addresses: ['redis.diffeo.com:6379']
+storage_type: redis
+

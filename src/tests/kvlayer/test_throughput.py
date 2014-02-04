@@ -7,7 +7,7 @@ import kvlayer
 import multiprocessing
 from signal import alarm, signal, SIGHUP, SIGTERM, SIGABRT, SIGALRM
 from kvlayer import MissingID
-from tests.kvlayer.test_interface import client # fixture
+from tests.kvlayer.test_interface import client, config, backend # fixture
 from tests.kvlayer._setup_logging import logger
 
 
@@ -202,7 +202,7 @@ class many_gets(object):
         logger.info('retrievied one_mb at %r', u)
 
 
-def test_throughput_insert_random(client):
+def test_throughput_insert_random(client, config):
     client.setup_namespace(dict(t1=1))
     
     num_workers = 5
@@ -211,7 +211,7 @@ def test_throughput_insert_random(client):
     task_generator = [uuid.uuid4() for x in xrange(total_inserts)]
     start_time = time.time()
     ret_vals = list(run_many(random_inserts, task_generator, 
-                             class_config=client._config,
+                             class_config=config,
                              num_workers=num_workers, timeout=total_inserts/2))
     elapsed = time.time() - start_time
     assert len(ret_vals) == total_inserts

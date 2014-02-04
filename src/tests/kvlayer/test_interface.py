@@ -1,82 +1,66 @@
+"""Basic functional tests for all of the kvlayer backends.
+
+Your use of this software is governed by your license agreement.
+
+Copyright 2012-2014 Diffeo, Inc.
+
+"""
+
+import errno
+import logging
 import os
+import random
 import sys
 import time
-import yaml
 import uuid
+
+import py
 import pytest
-import random
+import yaml
 
 import kvlayer
 from kvlayer import MissingID, BadKey
-from tempfile import NamedTemporaryFile
 
-from _setup_logging import logger
+logger = logging.getLogger(__name__)
 
-from make_namespace import make_namespace_string
+@pytest.fixture(scope='module',
+                params=['local', 'filestorage', 'cassandra', 'accumulo',
+                        'postgres', 'redis'])
+def backend(request):
+    return request.param
 
-config_local = dict(
-    storage_type='local',
-    ## LocalStorage does not need namespace
-    )
+@pytest.fixture(scope='module')
+def config(backend, request):
+    config_path = request.fspath.new(basename='config_{}.yaml'.format(backend))
+    try:
+        with config_path.open('r') as f:
+            return yaml.load(f)
+    except py.error.ENOENT:
+        return { 'storage_type': backend,
+                 'namespace': None,
+                 'storage_addresses': None }
 
-tempfile = NamedTemporaryFile(delete=True)
-new_tempfile = NamedTemporaryFile(delete=True)
-
-config_file= dict(
-    storage_type = 'filestorage',
-    filename = tempfile.name,
-    copy_to_filename =new_tempfile.name
-    )
-
-config_path = os.path.join(os.path.dirname(__file__), 'config_cassandra.yaml')
-if not os.path.exists(config_path):
-    sys.exit('failed to find %r' % config_path)
-
-try:
-    config_cassandra = yaml.load(open(config_path))
-except Exception, exc:
-    sys.exit('failed to load %r: %s' % (config_path, exc))
-
-config_path = os.path.join(os.path.dirname(__file__), 'config_accumulo.yaml')
-if not os.path.exists(config_path):
-    sys.exit('failed to find %r' % config_path)
-
-try:
-    config_accumulo = yaml.load(open(config_path))
-except Exception, exc:
-    sys.exit('failed to load %r: %s' % (config_path, exc))
-
-
-config_postgres = {
-    'storage_type': 'postgres',
-    'namespace': None,  # doesn't matter, gets clobbered below
-    'storage_addresses': None,  # doesn't matter, gets clobbered below
-}
-
-params= [
-    ('local', '', 'config_local'),
-    ('filestorage', '', 'config_file'),
-    ('cassandra', 'test-cassandra-1.diffeo.com', 'config_cassandra'),
-    ('accumulo', 'test-accumulo-1.diffeo.com', 'config_accumulo'),
-    ('postgres', 'host=test-postgres.diffeo.com port=5432 user=test dbname=test password=test', 'config_postgres')
-]
-
-@pytest.fixture(scope='function', params=params)
-def client(request):
-    config = globals()[request.param[2]]
-    namespace = make_namespace_string()
-    config['namespace'] = namespace
+@pytest.fixture(scope='function')
+def client(config, request, tmpdir, _rejester_namespace):
+    config['namespace'] = _rejester_namespace
     config['app_name'] = 'kvlayer'
+
+    # this is hacky but must go somewhere
+    if config['storage_type'] == 'filestorage':
+        local = tmpdir.join('local')
+        with local.open('w') as f: pass
+        config['filename'] = str(local)
+
+        copy = tmpdir.join('copy')
+        config['copy_to_filename'] = str(copy)
+
     logger.info('config: %r' % config)
-    config['storage_type'] = request.param[0]
-    config['storage_addresses'] = [request.param[1]]
 
     client = kvlayer.client(config)
     client.delete_namespace()
 
     def fin():
         client.delete_namespace()
-        logger.info('tearing down %s_%s', config['app_name'], namespace)
     request.addfinalizer(fin)
 
     return client
@@ -98,6 +82,25 @@ def test_basic_storage(client):
 
     with pytest.raises(MissingID):
         list(client.scan('t2', ((u2,), (u3,))))
+
+def test_delete(client):
+    client.setup_namespace({'table1': 1})
+    kv_dict = {(uuid.uuid4(),): 'value' + str(x) for x in xrange(10)}
+    keys_and_values = [(key, value) for key, value in kv_dict.iteritems()]
+    client.put('table1', *keys_and_values)
+    keys = kv_dict.keys()
+    delete_keys = keys[0:len(keys):2]
+    save_keys = keys[1:len(keys):2]
+    assert set(delete_keys)
+    client.delete('table1', *delete_keys)
+    for key in save_keys:
+        for key, value in client.get('table1', key):
+            assert kv_dict[key] == value
+    for key in delete_keys:
+        generator = client.get('table1', key)
+        with pytest.raises(MissingID):
+            row = generator.next()
+            assert not row
 
 def test_get(client):
     client.setup_namespace(dict(t1=1, t2=2, t3=3))
