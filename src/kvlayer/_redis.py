@@ -327,6 +327,8 @@ class RedisStorage(AbstractStorage):
         # cleared in between checking for the table's existence
         # (which, remember, could be cached) and actually fetching keys,
         # then this yields nothing, which is consistent.
+        if not keys:
+            raise StopIteration
         conn = self._connection()
         key = self._table_key(conn, table_name)
         if key is None:
@@ -362,6 +364,8 @@ class RedisStorage(AbstractStorage):
         # deleting single rows from it, and in that case since the
         # entire table is deleted, all of the specific things we wanted
         # gone, are gone.
+        if not keys:
+            return
         conn = self._connection()
         key = self._table_key(conn, table_name)
         if key is None:
