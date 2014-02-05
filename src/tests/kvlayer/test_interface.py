@@ -41,8 +41,8 @@ def config(backend, request):
                  'storage_addresses': None }
 
 @pytest.fixture(scope='function')
-def client(config, request, tmpdir, _rejester_namespace):
-    config['namespace'] = _rejester_namespace
+def client(config, request, tmpdir, _namespace_string):
+    config['namespace'] = _namespace_string
     config['app_name'] = 'kvlayer'
 
     # this is hacky but must go somewhere
