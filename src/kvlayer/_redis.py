@@ -67,16 +67,17 @@ class RedisStorage(AbstractStorage):
         """
         super(RedisStorage, self).__init__(config)
         storage_addresses = config.get('storage_addresses', [])
+        db_num = config.get('redis_db_num', 0)
         if len(storage_addresses) == 0:
             raise ProgrammerError('config lacks storage_addresses')
         if len(storage_addresses) > 1:
             logger.warning('multiple storage_addresses, only first will be used')
         address = storage_addresses[0]
         if ':' in address:
-            (host,port) = address.split(':')
-            conn_kwargs = { 'host': host, 'port': int(port) }
+            (host, port) = address.split(':')
+            conn_kwargs = { 'host': host, 'port': int(port), 'db': db_num }
         else:
-            conn_kwargs = { 'host': address }
+            conn_kwargs = { 'host': address, 'db': db_num }
 
         logger.debug('will connect to redis {!r}'.format(conn_kwargs))
         self._pool = redis.ConnectionPool(**conn_kwargs)
@@ -334,7 +335,7 @@ class RedisStorage(AbstractStorage):
         ks = [join_uuids(*k) for k in keys]
         vs = conn.hmget(key, *ks)
         found = False
-        for (k,v) in zip(ks,vs):
+        for (k, v) in zip(ks, vs):
             if v is not None:
                 found = True
                 yield (tuple(split_uuids(k)),v)
