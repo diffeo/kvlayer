@@ -41,8 +41,8 @@ def config(backend, request):
                  'storage_addresses': None }
 
 @pytest.fixture(scope='function')
-def client(config, request, tmpdir, _rejester_namespace):
-    config['namespace'] = _rejester_namespace
+def client(config, request, tmpdir, _namespace_string):
+    config['namespace'] = _namespace_string
     config['app_name'] = 'kvlayer'
 
     # this is hacky but must go somewhere
@@ -294,3 +294,22 @@ def test_scan(client):
     ## Scan from unspecified start value to middle value
     expected_results=set([0, 10, 20, 30, 40, 50, 60, 70])
     verify_scan_range(client, expected_results, end=(uuid.UUID(int=75),))
+
+def test_no_keys(client):
+    """Test that standard kvlayer APIs work correctly when not passed keys"""
+    client.setup_namespace({'t1': 1})
+    u = (uuid.uuid4(),)
+    # this is a bug in several backend responses but we'll accept it for now
+    uu = [u[0]]
+    client.put('t1', (u, 'value'))
+    assert list(client.get('t1', u)) == [(u, 'value')]
+    assert list(client.scan('t1')) in [ [(u, 'value')], [(uu, 'value')] ]
+
+    client.delete('t1')
+    assert list(client.scan('t1')) in [ [(u, 'value')], [(uu, 'value')] ]
+
+    client.get('t1')
+    assert list(client.scan('t1')) in [ [(u, 'value')], [(uu, 'value')] ]
+
+    client.put('t1')
+    assert list(client.scan('t1')) in [ [(u, 'value')], [(uu, 'value')] ]
