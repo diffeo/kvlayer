@@ -138,7 +138,7 @@ def main():
     yakonfig.set_runtime_args_object(args)
 
     fh = StringIO('kvlayer: !include_func kvlayer.default_yaml')
-    config = yakonfig.set_global_config(stream=fh)
+    config = yakonfig.set_global_config(fh)
 
     kvlayer_client = client(config['kvlayer'])
 
