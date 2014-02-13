@@ -14,7 +14,7 @@ build: clean
 install: build
 	python setup.py install
 
-test: install
+test: 
 	python setup.py test
 
 register:
