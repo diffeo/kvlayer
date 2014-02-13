@@ -100,14 +100,8 @@ class PyTest(Command):
             for ir in self.distribution.tests_require:
                 _myinstall(ir)
 
-        # reload sys.path for any new libraries installed
-        import site
-        site.main()
-        # use pytest to run tests
-        pytest = __import__('pytest')
-        ## always run all the tests
-        if pytest.main(['-n', '3', '-s', 'src', '--runslow', '--runperf']):
-            sys.exit(1)
+        errno = subprocess.call(['py.test', '-n', '3', '-s', 'src', '--runslow', '--runperf'])
+        raise SystemExit(errno)
 
 setup(
     name=PROJECT,
