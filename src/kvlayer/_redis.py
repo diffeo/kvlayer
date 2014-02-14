@@ -295,11 +295,11 @@ class RedisStorage(AbstractStorage):
             return False
         res = conn.hgetall(key)
         found = False
-        for (k,v) in res.iteritems():
+        for k in sorted(res.iterkeys()):
             if valid(k):
                 found = True
                 uuids = split_uuids(k)
-                yield (uuids,v)
+                yield (uuids,res[k])
         if len(ranges) > 0 and not found:
             raise MissingID(key_ranges)
 

@@ -258,15 +258,6 @@ def test_binary_clean(client):
     xvalb = sequence_to_one(client.scan('t1', (keyb, keyb)))
     assert xvalb[1] == valb
 
-def verify_scan_range(client, expected_results=None, start=(), end=()):
-    results = set()
-    count = 0
-    for key, value in client.scan('t1', (start, end)):
-        results.add(int(value))
-        count += 1
-    assert count == len(expected_results)
-    assert results == expected_results
-
 def test_scan(client):
     client.setup_namespace(dict(t1=2))
 
@@ -276,24 +267,35 @@ def test_scan(client):
         client.put('t1', (key, '%d' % x))
 
     ## Scan entire range
-    expected_results= set([0, 10, 20, 30, 40, 50, 60, 70, 80, 90])
-    verify_scan_range(client, expected_results)
+    expected_results = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90]
+    actual_results = [int(v) for k,v in client.scan('t1', ((), ()))]
+    assert actual_results == expected_results
 
     ## Scan with specified start and stop values
-    expected_results=set([40, 50, 60, 70])
-    verify_scan_range(client, expected_results, start=(uuid.UUID(int=40),), end=(uuid.UUID(int=75),))
+    expected_results = [40, 50, 60, 70]
+    actual_results = [int(v) for k,v in
+                      client.scan('t1', ((uuid.UUID(int=40),),
+                                         (uuid.UUID(int=75),)))]
+    assert actual_results == expected_results
 
     ## Scan to unspecified end of range from start key
-    expected_results= set([80, 90])
-    verify_scan_range(client, expected_results, start=(uuid.UUID(int=80),))
+    expected_results = [80, 90]
+    actual_results = [int(v) for k,v in
+                      client.scan('t1', ((uuid.UUID(int=80),),()))]
+    assert actual_results == expected_results
 
     ## Scan from minimum value to specified middle value
-    expected_results=set([0, 10])
-    verify_scan_range(client, expected_results, start=(uuid.UUID(int=0),), end=(uuid.UUID(int=15),))
+    expected_results = [0, 10]
+    actual_results = [int(v) for k,v in
+                      client.scan('t1', ((uuid.UUID(int=0),),
+                                         (uuid.UUID(int=15),)))]
+    assert actual_results == expected_results
 
     ## Scan from unspecified start value to middle value
-    expected_results=set([0, 10, 20, 30, 40, 50, 60, 70])
-    verify_scan_range(client, expected_results, end=(uuid.UUID(int=75),))
+    expected_results = [0, 10, 20, 30, 40, 50, 60, 70]
+    actual_results = [int(v) for k,v in
+                      client.scan('t1', ((),(uuid.UUID(int=75),)))]
+    assert actual_results == expected_results
 
 def test_no_keys(client):
     """Test that standard kvlayer APIs work correctly when not passed keys"""
