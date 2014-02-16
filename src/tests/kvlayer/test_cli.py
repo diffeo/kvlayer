@@ -27,7 +27,7 @@ kvlayer:
   storage_type: local
   storage_addresses: []
 ''' % namespace)
-    config = yakonfig.set_global_config(stream=fh)
+    config = yakonfig.set_global_config(fh)
 
     assert config['kvlayer'] == yakonfig.get_global_config('kvlayer')
     assert config['kvlayer']['app_name'] == 'streamcorpus_pipeline'
