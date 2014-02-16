@@ -8,7 +8,6 @@ import subprocess
 ## prepare to run PyTest as a command
 from distutils.core import Command
 from distutils.dir_util import remove_tree
-from distutils.util import spawn, newer, execute
 
 from setuptools import setup, find_packages
 
@@ -78,10 +77,7 @@ class Thrift(Command):
         remove_tree('gen-py')
 
 def _myinstall(pkgspec):
-    setup(
-        script_args = ['-q', 'easy_install', '-v', pkgspec],
-        script_name = 'easy_install'
-    )
+    subprocess.check_call(['pip', 'install', pkgspec])
 
 class PyTest(Command):
     '''run py.test'''
@@ -104,15 +100,8 @@ class PyTest(Command):
             for ir in self.distribution.tests_require:
                 _myinstall(ir)
 
-        # reload sys.path for any new libraries installed
-        import site
-        site.main()
-        print sys.path
-        # use pytest to run tests
-        pytest = __import__('pytest')
-        ## always run all the tests
-        if pytest.main(['-n', '3', '-s', 'src', '--runslow', '--runperf']):
-            sys.exit(1)
+        errno = subprocess.call(['py.test', '-n', '3', '-s', 'src', '--runslow', '--runperf'])
+        raise SystemExit(errno)
 
 setup(
     name=PROJECT,

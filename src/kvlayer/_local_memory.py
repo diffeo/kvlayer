@@ -95,13 +95,13 @@ class LocalStorage(AbstractStorage):
             total_count = 0
             start = len(start)>0  and join_uuids(*start,  num_uuids=num_uuids, padding='0') or '0' * 32 * num_uuids
             finish = len(finish)>0 and join_uuids(*finish, num_uuids=num_uuids, padding='f') or 'f' * 32 * num_uuids
-            for key, val in self._data[table_name].iteritems():
+            for key in sorted(self._data[table_name].iterkeys()):
                 ## given a range, mimic the behavior of DBs that tell
                 ## you if they failed to find a key
                 joined_key = join_uuids(*key)
                 if start <= joined_key <= finish:
                     total_count += 1
-                    yield key, val
+                    yield key, self._data[table_name][key]
             else:
                 if specific_key_range and total_count == 0:
                     ## specified a key range, but found none
