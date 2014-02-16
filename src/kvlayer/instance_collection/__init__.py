@@ -81,6 +81,9 @@ class InstanceCollection(collections.Mapping):
             self._bc = None
             self.loads(blob_collection_blob)
 
+    def __repr__(self):
+        return 'InstanceCollection(keys=%r)' % self._bc.typed_blobs.keys()
+
     def loads(self, blob_collection_blob):
         '''read raw blob of a BlobCollection
         '''
