@@ -73,13 +73,25 @@ def register(name, serializer):
 class InstanceCollection(collections.Mapping):
     '''
     '''
-    def __init__(self, blob_collection_blob=None):
+    def __init__(self, data=None):
+        '''
+        initialization data can be None, BlobCollection, a seralized
+        BlobCollection, or a mapping.  If a mapping, then a
+        __missing__ method must be provided by subclassing
+        InstanceCollection.
+        '''
         self._instances = dict()
-        if isinstance(blob_collection_blob, BlobCollection):
-            self._bc = blob_collection_blob
+        if isinstance(data, BlobCollection):
+            self._bc = data
+        elif isinstance(data, collections.Mapping):
+            if not hasattr(self, '__missing__'):
+                raise Exception('InstanceCollection(%r) without __missing__ method' % data)
+            self._bc = BlobCollection()
+            for key, value in data.iteritems():
+                self[key] = value            
         else:
             self._bc = None
-            self.loads(blob_collection_blob)
+            self.loads(data)
 
     def __repr__(self):
         return 'InstanceCollection(keys=%r)' % self._bc.typed_blobs.keys()
@@ -141,7 +153,21 @@ class InstanceCollection(collections.Mapping):
         return self._instances[key]
 
     def __setitem__(self, key, value):
-        raise ProgrammerError('use InstanceCollection.insert(key, value, serializer_name) instead of directly setting an item')
+        if not hasattr(self, '__missing__'):
+            raise ProgrammerError('use InstanceCollection.insert(key, value, serializer_name) instead of directly setting an item')
+        self.__missing__(key)
+        self._instances[key] = value
+
+    def pop(self, key, default=None):
+        if key in self:
+            value = self.__getitem__(key)
+            self._bc.typed_blobs.pop(key)
+            self._instances.pop(key)
+            return value
+        elif default:
+            return default
+        else:
+            raise IndexError('%r is not in %r' % (key, self))
 
     def insert(self, key, value, serializer_name, config=None):
         global registered_serializers
