@@ -226,7 +226,7 @@ class RedisStorage(AbstractStorage):
             raise BadKey(key)
         params = []
         for (k,v) in keys_and_values:
-            logger.debug('put {} {!r} {}'.format(table_name, k, v))
+            #logger.debug('put {} {!r} {}'.format(table_name, k, v))
             ex = self.check_put_key_value(k, v, table_name,
                                           self._table_sizes[table_name])
             if ex is not None:
@@ -333,7 +333,7 @@ class RedisStorage(AbstractStorage):
         key = self._table_key(conn, table_name)
         if key is None:
             raise BadKey(key)
-        logger.debug('get {} {!r}'.format(table_name, keys))
+        #logger.debug('get {} {!r}'.format(table_name, keys))
         ks = [join_uuids(*k) for k in keys]
         vs = conn.hmget(key, *ks)
         found = False
