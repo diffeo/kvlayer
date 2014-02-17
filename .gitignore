@@ -3,5 +3,5 @@
 RELEASE-VERSION
 build/
 dist/
-src/kvlayer.egg-info/
+kvlayer.egg-info/
 tmp/*

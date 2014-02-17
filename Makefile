@@ -5,7 +5,7 @@ CLUSTER_SIZE?=1
 
 clean:
 	python setup.py clean --all
-	rm -rf build dist src/*.egg-info/
+	rm -rf build dist *.egg-info/
 
 build: clean
 	python setup.py thrift
@@ -21,7 +21,7 @@ register:
 	python setup.py sdist bdist_egg upload
 
 check:
-	pylint -i y --output-format=parseable src/`git remote -v | grep origin | head -1 | cut -d':' -f 2 | cut -d'.' -f 1`
+	pylint -i y --output-format=parseable `git remote -v | grep origin | head -1 | cut -d':' -f 2 | cut -d'.' -f 1`
 
 $(ENVDIR):
 	sudo apt-get install python-m2crypto python-dev python-virtualenv \

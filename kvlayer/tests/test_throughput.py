@@ -7,8 +7,8 @@ import kvlayer
 import multiprocessing
 from signal import alarm, signal, SIGHUP, SIGTERM, SIGABRT, SIGALRM
 from kvlayer import MissingID
-from tests.kvlayer.test_interface import client, config, backend # fixture
-from tests.kvlayer._setup_logging import logger
+from kvlayer.tests.test_interface import client, config, backend # fixture
+from kvlayer.tests._setup_logging import logger
 
 
 def worker(operation, i_queue, o_queue, tasks_remaining,

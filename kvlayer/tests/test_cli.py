@@ -15,8 +15,8 @@ import uuid
 import kvlayer
 import yakonfig
 
-from tests.kvlayer.make_namespace import namespace
-from tests.kvlayer._setup_logging import logger
+from kvlayer.tests.make_namespace import namespace
+from kvlayer.tests._setup_logging import logger
 
 
 def test_config(namespace):
@@ -74,7 +74,7 @@ def test_fake_app(namespace):
     test pretends to be an app using kvlayer.add_arguments
     '''
     p = subprocess.Popen(
-        ['python', '-m', 'tests.kvlayer.test_cli', 
+        ['python', '-m', 'kvlayer.tests.test_cli', 
          'foo',
          '--app-name', 'streamcorpus_pipeline',
          '--namespace', namespace,

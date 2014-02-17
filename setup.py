@@ -100,7 +100,7 @@ class PyTest(Command):
             for ir in self.distribution.tests_require:
                 _myinstall(ir)
 
-        errno = subprocess.call(['py.test', '-n', '3', '-s', 'src', '--runslow', '--runperf'])
+        errno = subprocess.call(['py.test', '-n', '3', '-s', 'kvlayer/tests', '--runslow', '--runperf'])
         raise SystemExit(errno)
 
 setup(
@@ -112,8 +112,7 @@ setup(
     license='MIT/X11 license http://opensource.org/licenses/MIT',
     author_email=AUTHOR_EMAIL,
     url=URL,
-    packages=find_packages('src'),
-    package_dir={'': 'src'},
+    packages=find_packages(),
     cmdclass={
         'test': PyTest,
         'thrift': Thrift,
@@ -123,16 +122,6 @@ setup(
         'Development Status :: 3 - Alpha',
         'Topic :: Utilities',
         'License :: OSI Approved :: MIT License',  ## MIT/X11 license http://opensource.org/licenses/MIT
-    ],
-    tests_require=[
-        'guppy',
-        'pytest',
-        'pytest-cov',
-        'pytest-xdist',
-        'pytest-timeout',
-        'pytest-incremental',
-        'pytest-capturelog',
-        'rejester'
     ],
     # psycopg2 may be commented out to operate without postgres support
     # Might be nice to have a conditional install_requires which determines
@@ -148,6 +137,15 @@ setup(
         'cql',
         'streamcorpus >= 0.3.23',
         'redis',
+        # test dependencies
+        'guppy',
+        'pytest',
+        'pytest-cov',
+        'pytest-xdist',
+        'pytest-timeout',
+        'pytest-incremental',
+        'pytest-capturelog',
+        'rejester'
     ],
     entry_points={
         'console_scripts': [
