@@ -77,8 +77,11 @@ def add_arguments(parser, defaults=None, include_app_name=False, include_namespa
     ## standard flags that are unique to kvlayer
     parser.add_argument('--storage-type', default=default_config.get('storage_type'), 
                         help='backend type for kvlayer, e.g. "local" or "accumulo"')
-    parser.add_argument('--storage-addresses', action='append', default=[], 
+    parser.add_argument('--storage-address', action='append', default=[], dest='storage_addresses',
                         help='network addresses for kvlayer, can be repeated')
+
+    parser.add_argument('--username', help='username for kvlayer accumulo')
+    parser.add_argument('--password', help='password for kvlayer accumulo')
 
     parser.add_argument('--connection-pool-size', default=default_config.get('connection_pool_size'),
                         help='number of connections for kvlayer to open in advance')
@@ -97,6 +100,8 @@ def default_yaml():
     return '''
 app_name:  !runtime app_name
 namespace: !runtime namespace
+username: !runtime username
+password: !runtime password
 storage_type: !runtime storage_type
 storage_addresses: !runtime storage_addresses
 connection_pool_size: !runtime connection_pool_size
