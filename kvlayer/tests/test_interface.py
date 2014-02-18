@@ -23,9 +23,11 @@ from kvlayer import MissingID, BadKey
 
 logger = logging.getLogger(__name__)
 
+backends = ['local', 'filestorage', 'cassandra', 'accumulo', 'postgres',
+            'redis']
+
 @pytest.fixture(scope='module',
-                params=['local', 'filestorage', 'cassandra', 'accumulo',
-                        'postgres', 'redis'])
+                params=backends)
 def backend(request):
     return request.param
 
@@ -41,8 +43,8 @@ def config(backend, request):
                  'storage_addresses': None }
 
 @pytest.fixture(scope='function')
-def client(config, request, tmpdir, _namespace_string):
-    config['namespace'] = _namespace_string
+def client(config, request, tmpdir, namespace_string):
+    config['namespace'] = namespace_string
     config['app_name'] = 'kvlayer'
 
     # this is hacky but must go somewhere

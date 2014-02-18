@@ -1,18 +1,16 @@
 from __future__ import absolute_import
+import logging
 import uuid
 from kvlayer._file_storage import FileStorage
-from kvlayer.tests._setup_logging import logger
-from kvlayer.tests.make_namespace import make_namespace_string
 
-namespace = make_namespace_string()
+logger = logging.getLogger(__name__)
 
-
-def test_persistence(tmpdir):
+def test_persistence(tmpdir, namespace_string):
     ## Test that we can persist data to a file
     config = dict(
         filename = str(tmpdir.join('original')),
-    namespace = namespace,
-    app_name = namespace
+    namespace = namespace_string,
+    app_name = namespace_string
         )
 
     storage = FileStorage(config)

@@ -4,12 +4,13 @@ import time
 import Queue
 import pytest
 import kvlayer
+import logging
 import multiprocessing
 from signal import alarm, signal, SIGHUP, SIGTERM, SIGABRT, SIGALRM
 from kvlayer import MissingID
 from kvlayer.tests.test_interface import client, config, backend # fixture
-from kvlayer.tests._setup_logging import logger
 
+logger = logging.getLogger(__name__)
 
 def worker(operation, i_queue, o_queue, tasks_remaining,
            class_config=None,

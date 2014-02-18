@@ -8,16 +8,16 @@ Copyright 2012-2014 Diffeo, Inc.
 '''
 import argparse
 from cStringIO import StringIO
+import logging
 import subprocess
 import sys
 import uuid
 
 import kvlayer
+from kvlayer.tests.make_namespace import namespace
 import yakonfig
 
-from kvlayer.tests.make_namespace import namespace
-from kvlayer.tests._setup_logging import logger
-
+logger = logging.getLogger(__name__)
 
 def test_config(namespace):
     fh = StringIO('''
