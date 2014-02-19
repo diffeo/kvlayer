@@ -1,4 +1,8 @@
 import uuid
+
+import pytest
+
+from kvlayer._exceptions import MissingID
 from kvlayer._local_memory import LocalStorage
 
 
@@ -45,3 +49,18 @@ def test_get_complex_keys():
         if res_key == key:
             assert res_value == value
     assert key in [rk for rk, rv in res]
+
+def test_delete_namespace():
+    """Test that delete_namespace() actually clears the shared storage"""
+    u = (uuid.uuid4(),)
+
+    local_storage = LocalStorage(config_local)
+    local_storage.setup_namespace(dict(meta=1))
+    local_storage.put('meta', (u, b'hi'))
+    assert list(local_storage.get('meta', u)) == [(u, b'hi')]
+    local_storage.delete_namespace()
+
+    local_storage = LocalStorage(config_local)
+    local_storage.setup_namespace(dict(meta=1))
+    with pytest.raises(MissingID):
+        assert list(local_storage.get('meta', u)) == []

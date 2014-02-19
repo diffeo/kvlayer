@@ -109,4 +109,4 @@ class LocalStorage(AbstractLocalStorage):
         super(LocalStorage, self).__init__(config)
 
     def delete_namespace(self):
-        self._data = {}
+        self._data.clear()
