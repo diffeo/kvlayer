@@ -56,6 +56,11 @@ def client(config, request, tmpdir, namespace_string):
         copy = tmpdir.join('copy')
         config['copy_to_filename'] = str(copy)
 
+    if config['storage_type'] == 'redis':
+        redis_address = request.config.getoption('--redis-address')
+        if redis_address is not None:
+            config['storage_addresses'] = [redis_address]
+
     logger.info('config: %r' % config)
 
     client = kvlayer.client(config)
