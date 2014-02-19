@@ -3,28 +3,25 @@ Implementation of AbstractStorage using python shelve module
 
 Your use of this software is governed by your license agreement.
 
-Copyright 2012-2013 Diffeo, Inc.
+Copyright 2012-2014 Diffeo, Inc.
 '''
 
+from __future__ import absolute_import
 import os
 import shutil
 import shelve
 import logging
 import cPickle
-from kvlayer._local_memory import LocalStorage
-from kvlayer._abstract_storage import AbstractStorage
-from kvlayer._utils import _requires_connection
+from kvlayer._local_memory import AbstractLocalStorage
 
-logger = logging.getLogger('kvlayer')
+logger = logging.getLogger(__name__)
 
-class FileStorage(LocalStorage):
+class FileStorage(AbstractLocalStorage):
     '''
     File storage for testing and development
     '''
     def __init__(self, config):
-        ## singleton prevents use of super
-        #super(FileStorage, self).__init__(config)
-        AbstractStorage.__init__(self, config)
+        super(FileStorage, self).__init__(config)
 
         filename = config['filename']
         if config.get('copy_to_filename', False):
@@ -40,22 +37,5 @@ class FileStorage(LocalStorage):
                                 writeback=True)
         self._table_names = {}
 
-    def setup_namespace(self, table_names):
-        '''creates tables in the namespace.  Can be run multiple times with
-        different table_names in order to expand the set of tables in
-        the namespace.
-        '''
-        logger.debug('creating tables: %r', table_names)
-        self._table_names.update(table_names)
-        ## just store everything in a dict
-        for table in table_names:
-            if table not in self._data:
-                self._data[table] = dict()
-        self._connected = True
-
     def delete_namespace(self):
         self._data.clear()
-
-    def delete(self, table_name, *keys):
-        for key in keys:
-            self._data[table_name].pop(key, None)

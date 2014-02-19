@@ -9,11 +9,6 @@ config_local = dict(
     )
 
 
-def test_singleton():
-    a = LocalStorage(config_local)
-    b = LocalStorage(config_local)
-    assert a is b
-
 def test_local_storage_singleton():
     local_storage = LocalStorage(config_local)
     local_storage.setup_namespace(dict(meta=1))
@@ -23,6 +18,7 @@ def test_local_storage_singleton():
     meta = list(local_storage.scan('meta', key_range))
     assert meta[0][1] == b'hi'
     local_storage2 = LocalStorage(config_local)
+    local_storage2.setup_namespace(dict(meta=1))
     meta = list(local_storage2.scan('meta', key_range))
     assert meta[0][1] == b'hi'
 
