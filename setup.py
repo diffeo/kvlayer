@@ -150,6 +150,7 @@ setup(
     entry_points={
         'console_scripts': [
             'kvlayer = kvlayer._client:main',
+            'kvlayer_test = kvlayer.tests.run:main',
         ]
     },
     # include_package_data = True,
