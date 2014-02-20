@@ -59,7 +59,7 @@ class Thrift(Command):
     def finalize_options(self):
         pass
     def run(self):
-        self.maybe_thrift_gen('src/kvlayer/instance_collection/blob_collection.thrift', 'src/kvlayer/instance_collection')
+        self.maybe_thrift_gen('kvlayer/instance_collection/blob_collection.thrift', 'kvlayer/instance_collection')
 
     def maybe_thrift_gen(self, thrift_src, outdir, renamefunc=None):
         if renamefunc is None:
