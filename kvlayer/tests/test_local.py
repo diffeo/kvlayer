@@ -1,4 +1,8 @@
 import uuid
+
+import pytest
+
+from kvlayer._exceptions import MissingID
 from kvlayer._local_memory import LocalStorage
 
 
@@ -9,11 +13,6 @@ config_local = dict(
     )
 
 
-def test_singleton():
-    a = LocalStorage(config_local)
-    b = LocalStorage(config_local)
-    assert a is b
-
 def test_local_storage_singleton():
     local_storage = LocalStorage(config_local)
     local_storage.setup_namespace(dict(meta=1))
@@ -23,6 +22,7 @@ def test_local_storage_singleton():
     meta = list(local_storage.scan('meta', key_range))
     assert meta[0][1] == b'hi'
     local_storage2 = LocalStorage(config_local)
+    local_storage2.setup_namespace(dict(meta=1))
     meta = list(local_storage2.scan('meta', key_range))
     assert meta[0][1] == b'hi'
 
@@ -49,3 +49,18 @@ def test_get_complex_keys():
         if res_key == key:
             assert res_value == value
     assert key in [rk for rk, rv in res]
+
+def test_delete_namespace():
+    """Test that delete_namespace() actually clears the shared storage"""
+    u = (uuid.uuid4(),)
+
+    local_storage = LocalStorage(config_local)
+    local_storage.setup_namespace(dict(meta=1))
+    local_storage.put('meta', (u, b'hi'))
+    assert list(local_storage.get('meta', u)) == [(u, b'hi')]
+    local_storage.delete_namespace()
+
+    local_storage = LocalStorage(config_local)
+    local_storage.setup_namespace(dict(meta=1))
+    with pytest.raises(MissingID):
+        assert list(local_storage.get('meta', u)) == []

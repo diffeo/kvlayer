@@ -1,18 +1,19 @@
+import logging
 import os
 import re
 import sys
 import uuid
-import yaml
-import pytest
-import kvlayer
 
 from pyaccumulo import Accumulo, Mutation
+import pytest
+import yaml
 
-from _setup_logging import logger
-
+import kvlayer
 from kvlayer._accumulo import AStorage
 from kvlayer._exceptions import MissingID
-from make_namespace import make_namespace_string
+import kvlayer.tests.make_namespace
+
+logger = logging.getLogger(__name__)
 
 config_path = os.path.join(os.path.dirname(__file__), 'config_accumulo.yaml')
 if not os.path.exists(config_path):
@@ -36,7 +37,9 @@ def direct(request):
         for table in tables:
             ## would need to get namespace variable here for this
             ## finalizer to work...
-            if re.search(namespace, table):
+            ## ...this *should* work via namespace_string fixture,
+            ## but I'm not going to turn it on right now...?
+            if re.search(namespace_string, table):
                 conn.delete_table(table)
 
     ## see comment above about why this does not work
@@ -46,11 +49,11 @@ def direct(request):
 
 
 @pytest.fixture(scope='function', params=['accumulo'])
-def client(request):
+def client(namespace_string, request):
 
     global config
     config['app_name'] = 'kvlayer'
-    config['namespace'] = make_namespace_string()
+    config['namespace'] = namespace_string
     config['storage_type'] = request.param
 
     logger.info('initializing client')

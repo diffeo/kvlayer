@@ -8,16 +8,16 @@ Copyright 2012-2014 Diffeo, Inc.
 '''
 import argparse
 from cStringIO import StringIO
+import logging
 import subprocess
 import sys
 import uuid
 
 import kvlayer
+from kvlayer.tests.make_namespace import namespace
 import yakonfig
 
-from tests.kvlayer.make_namespace import namespace
-from tests.kvlayer._setup_logging import logger
-
+logger = logging.getLogger(__name__)
 
 def test_config(namespace):
     fh = StringIO('''
@@ -74,7 +74,7 @@ def test_fake_app(namespace):
     test pretends to be an app using kvlayer.add_arguments
     '''
     p = subprocess.Popen(
-        ['python', '-m', 'tests.kvlayer.test_cli', 
+        ['python', '-m', 'kvlayer.tests.test_cli', 
          'foo',
          '--app-name', 'streamcorpus_pipeline',
          '--namespace', namespace,

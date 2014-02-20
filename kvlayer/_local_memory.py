@@ -13,44 +13,19 @@ from kvlayer._exceptions import MissingID
 from kvlayer._abstract_storage import AbstractStorage
 from kvlayer._utils import _requires_connection, join_uuids
 
-logger = logging.getLogger('kvlayer')
+logger = logging.getLogger(__name__)
 
-class StorageSingleton(type):
+class AbstractLocalStorage(AbstractStorage):
+    """Local in-memory storage for testing.
 
-    __metaclass__ = abc.ABCMeta
+    This is a base class for storage implementations that use a
+    dictionary-like object for actually holding data.
 
-    _instances = {}
-
-    def __call__(cls, *args, **kwargs):
-        if cls not in cls._instances:
-            cls._instances[cls] = super(StorageSingleton, cls).__call__(*args, **kwargs)
-        cls._instances[cls]._connected = True
-        return cls._instances[cls]
-
-
-class ABCMeta_StorageSingleton(abc.ABCMeta, StorageSingleton):
-    '''
-    A class can only have one meta class.  Since AbstractStorage
-    has a metaclass of abc.ABCMeta, and we want local storage to
-    be a signleton, we create a metaclass here which combines
-    both and will be used by LocalStorage and all classes that
-    inherit from it (e.g. FileStorage.)
-    '''
-    pass
-
-
-class LocalStorage(AbstractStorage):
-    '''
-    local in-memory storage for testing
-    '''
-
-    __metaclass__ = ABCMeta_StorageSingleton
+    """
 
     def __init__(self, config):
-        ## singleton prevents use of super
-        #super(LocalStorage, self).__init__(config)
-        AbstractStorage.__init__(self, config)
-        self._data = {}
+        super(AbstractLocalStorage, self).__init__(config)
+        self._connected = False
 
     def setup_namespace(self, table_names):
         '''creates tables in the namespace.  Can be run multiple times with
@@ -64,10 +39,6 @@ class LocalStorage(AbstractStorage):
             if table not in self._data:
                 self._data[table] = dict()
         self._connected = True
-
-    @_requires_connection
-    def delete_namespace(self):
-        self._data = {}
 
     @_requires_connection
     def clear_table(self, table_name):
@@ -125,3 +96,17 @@ class LocalStorage(AbstractStorage):
     def close(self):
         ## prevent reading until connected again
         self._connected = False
+
+class LocalStorage(AbstractLocalStorage):
+    """Local in-memory storage for testing.
+
+    All instances of LocalStorage share the same underlying data.
+    """
+
+    _data = {}
+
+    def __init__(self, config):
+        super(LocalStorage, self).__init__(config)
+
+    def delete_namespace(self):
+        self._data.clear()

@@ -23,9 +23,16 @@ from kvlayer import MissingID, BadKey
 
 logger = logging.getLogger(__name__)
 
+backends = ['local', 'filestorage', 'cassandra', 'accumulo', 'redis']
+try:
+    import psycopg2
+    backends.append('postgres')
+except ImportError, e:
+    # backends.dont_append('postgres')
+    pass
+
 @pytest.fixture(scope='module',
-                params=['local', 'filestorage', 'cassandra', 'accumulo',
-                        'postgres', 'redis'])
+                params=backends)
 def backend(request):
     return request.param
 
@@ -41,8 +48,8 @@ def config(backend, request):
                  'storage_addresses': None }
 
 @pytest.fixture(scope='function')
-def client(config, request, tmpdir, _namespace_string):
-    config['namespace'] = _namespace_string
+def client(config, request, tmpdir, namespace_string):
+    config['namespace'] = namespace_string
     config['app_name'] = 'kvlayer'
 
     # this is hacky but must go somewhere
@@ -54,7 +61,10 @@ def client(config, request, tmpdir, _namespace_string):
         copy = tmpdir.join('copy')
         config['copy_to_filename'] = str(copy)
 
-    logger.info('config: %r' % config)
+    if config['storage_type'] == 'redis':
+        redis_address = request.config.getoption('--redis-address')
+        if redis_address is not None:
+            config['storage_addresses'] = [redis_address]
 
     client = kvlayer.client(config)
     client.delete_namespace()
