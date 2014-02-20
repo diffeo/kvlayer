@@ -273,7 +273,7 @@ class RedisStorage(AbstractStorage):
         key = self._table_key(conn, table_name)
         if key is None:
             raise BadKey(key)
-        logger.debug('scan {} {!r}'.format(table_name, key_ranges))
+        #logger.debug('scan {} {!r}'.format(table_name, key_ranges))
         # It doesn't look like redis has any sort of useful range
         # query on any data type, except for the (non-unique) "score"
         # side of sorted sets.  Even then finding start/end elements
