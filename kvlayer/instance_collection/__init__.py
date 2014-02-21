@@ -70,7 +70,7 @@ def register(name, serializer):
     global registered_serializers
     registered_serializers[name] = serializer
 
-class InstanceCollection(collections.Mapping):
+class InstanceCollection(collections.MutableMapping):
     '''
     '''
     def __init__(self, data=None):
@@ -157,6 +157,10 @@ class InstanceCollection(collections.Mapping):
             raise ProgrammerError('use InstanceCollection.insert(key, value, serializer_name) instead of directly setting an item')
         self.__missing__(key)
         self._instances[key] = value
+
+    def __delitem__(self, key):
+        del self._instances[key]
+        del self._bc.typed_blobs[key]
 
     def pop(self, key, default=None):
         if key in self:
