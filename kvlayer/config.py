@@ -55,7 +55,11 @@ runtime_keys = dict(
     connection_pool_size = 'connection_pool_size',
     max_consistency_delay = 'max_consistency_delay',
     replication_factor = 'replication_factor',
-    thrift_framed_transport_size_in_mb = 'thrift_framed_transport_size_in_mb'
+    thrift_framed_transport_size_in_mb = 'thrift_framed_transport_size_in_mb',
+
+    # these support testing and aren't exposed as command-line arguments
+    kvlayer_filename = 'filename',
+    kvlayer_copy_to_filename = 'copy_to_filename',
 )
 
 def check_config(config, name):

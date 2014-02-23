@@ -24,11 +24,11 @@ class AStorage(AbstractStorage):
     Accumulo storage implements kvlayer's AbstractStorage, which
     manages a set of tables as specified to setup_namespace
     '''
-    def __init__(self, config):
-        super(AStorage, self).__init__(config)
+    def __init__(self):
+        super(AStorage, self).__init__()
 
         self._connected = False
-        addresses = config.get('storage_addresses', [])
+        addresses = self._config.get('storage_addresses', [])
         if not addresses:
             raise ProgrammerError('config lacks storage_addresses')
 
@@ -44,20 +44,20 @@ class AStorage(AbstractStorage):
 
         ## The following are all parameters to the accumulo
         ## batch interfaces.
-        self._max_memory = config.get('accumulo_max_memory', 1000000)
-        self._timeout_ms = config.get('accumulo_timeout_ms', 30000)
-        self._threads = config.get('accumulo_threads', 10)
-        self._latency_ms = config.get('accumulo_latency_ms', 10)
+        self._max_memory = self._config.get('accumulo_max_memory', 1000000)
+        self._timeout_ms = self._config.get('accumulo_timeout_ms', 30000)
+        self._threads = self._config.get('accumulo_threads', 10)
+        self._latency_ms = self._config.get('accumulo_latency_ms', 10)
 
         ## Acumulo storage requires a username and password
-        self._user = config.get('username', None)
-        self._password = config.get('password', None)
+        self._user = self._config.get('username', None)
+        self._password = self._config.get('password', None)
         if not self._user and self._password:
             raise ProgrammerError('accumulo storage requires '
                                   'username/password')
 
         self.thrift_framed_transport_size_in_mb = \
-            config['thrift_framed_transport_size_in_mb']
+            self._config['thrift_framed_transport_size_in_mb']
 
         self._conn = None
 

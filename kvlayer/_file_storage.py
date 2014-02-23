@@ -20,12 +20,12 @@ class FileStorage(AbstractLocalStorage):
     '''
     File storage for testing and development
     '''
-    def __init__(self, config):
-        super(FileStorage, self).__init__(config)
+    def __init__(self):
+        super(FileStorage, self).__init__()
 
-        filename = config['filename']
-        if config.get('copy_to_filename', False):
-            copy_to_filename  = config['copy_to_filename']
+        filename = self._config['filename']
+        if self._config.get('copy_to_filename', False):
+            copy_to_filename  = self._config['copy_to_filename']
             shutil.copyfile(filename, copy_to_filename)
             filename = copy_to_filename
 

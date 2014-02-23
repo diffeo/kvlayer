@@ -41,12 +41,13 @@ STORAGE_CLIENTS = dict(
 if PGStorage:
     STORAGE_CLIENTS['postgres'] = PGStorage
 
-def client(config):
+def client():
     '''
     constructs a storage client for the storage_type specified in config
     '''
+    config = yakonfig.get_global_config('kvlayer')
     try:
-        return STORAGE_CLIENTS[config['storage_type']](config)
+        return STORAGE_CLIENTS[config['storage_type']]()
     except Exception, exc:
         logger.critical('config = %r' % config, exc_info=True)
         raise
