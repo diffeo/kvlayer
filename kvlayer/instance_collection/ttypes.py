@@ -142,21 +142,26 @@ class BlobCollection(object):
   streamcorpus.Chunk convenience methods.
 
   Attributes:
-   - typed_blobs
+   - collection_type: Type of the collection this represents.  The collection type
+  defines the type of the objects stored in typed_blobs.
+   - typed_blobs: Data in the collection, a map of key to actual data.
   """
 
   __slots__ = [ 
+    'collection_type',
     'typed_blobs',
    ]
 
   thrift_spec = (
     None, # 0
-    (1, TType.MAP, 'typed_blobs', (TType.STRING,None,TType.STRUCT,(TypedBlob, TypedBlob.thrift_spec)), {
-    }, ), # 1
+    (1, TType.STRING, 'collection_type', None, None, ), # 1
+    (2, TType.MAP, 'typed_blobs', (TType.STRING,None,TType.STRUCT,(TypedBlob, TypedBlob.thrift_spec)), {
+    }, ), # 2
   )
 
-  def __init__(self, typed_blobs=thrift_spec[1][4],):
-    if typed_blobs is self.thrift_spec[1][4]:
+  def __init__(self, collection_type=None, typed_blobs=thrift_spec[2][4],):
+    self.collection_type = collection_type
+    if typed_blobs is self.thrift_spec[2][4]:
       typed_blobs = {
     }
     self.typed_blobs = typed_blobs
@@ -171,6 +176,11 @@ class BlobCollection(object):
       if ftype == TType.STOP:
         break
       if fid == 1:
+        if ftype == TType.STRING:
+          self.collection_type = iprot.readString();
+        else:
+          iprot.skip(ftype)
+      elif fid == 2:
         if ftype == TType.MAP:
           self.typed_blobs = {}
           (_ktype10, _vtype11, _size9 ) = iprot.readMapBegin() 
@@ -192,8 +202,12 @@ class BlobCollection(object):
       oprot.trans.write(fastbinary.encode_binary(self, (self.__class__, self.thrift_spec)))
       return
     oprot.writeStructBegin('BlobCollection')
+    if self.collection_type is not None:
+      oprot.writeFieldBegin('collection_type', TType.STRING, 1)
+      oprot.writeString(self.collection_type)
+      oprot.writeFieldEnd()
     if self.typed_blobs is not None:
-      oprot.writeFieldBegin('typed_blobs', TType.MAP, 1)
+      oprot.writeFieldBegin('typed_blobs', TType.MAP, 2)
       oprot.writeMapBegin(TType.STRING, TType.STRUCT, len(self.typed_blobs))
       for kiter16,viter17 in self.typed_blobs.items():
         oprot.writeString(kiter16)

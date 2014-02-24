@@ -1,29 +1,27 @@
 '''
 Your use of this software is governed by your license agreement.
 
-Copyright 2012-2013 Diffeo, Inc.
+Copyright 2012-2014 Diffeo, Inc.
 '''
+from __future__ import absolute_import
+from abc import ABCMeta, abstractmethod
 import collections
 from cStringIO import StringIO
-from kvlayer._exceptions import ProgrammerError
+import importlib
+import itertools
 
-## this enables 
-#streamcorpus.Chunk(..., message=kvlayer.instance_collection.BlobCollection)
+import streamcorpus
+from kvlayer._exceptions import ProgrammerError, SerializationError
 from kvlayer.instance_collection.ttypes import BlobCollection, TypedBlob
 
 from thrift.transport import TTransport
-from thrift.protocol.TBinaryProtocol import TBinaryProtocol, TBinaryProtocolAccelerated
+from thrift.protocol.TBinaryProtocol import TBinaryProtocol, \
+    TBinaryProtocolAccelerated
 try:
     from thrift.protocol import fastbinary
-    ## use faster C program to read/write
     protocol = TBinaryProtocolAccelerated
-
 except Exception, exc:
-    sys.exit('failed to load thrift.protocol.fastbinary')
-
-    #fastbinary_import_failure = exc
-    ## fall back to pure python
-    #protocol = TBinaryProtocol
+    protocol = TBinaryProtocol
 
 class AugmentedStringIO(object):
     def __init__(self, blob):
@@ -71,57 +69,178 @@ def register(name, serializer):
     registered_serializers[name] = serializer
 
 class InstanceCollection(collections.MutableMapping):
+    '''A mapping of keys to serializable instance types.
+
+    This maintains two sets of data: Python objects probably of some
+    consistent type, and serialized versions of the same.  If this is
+    created with only binary data, the Python objects will be created
+    on demand.
+
     '''
-    '''
+    __metaclass__ = ABCMeta
     def __init__(self, data=None):
-        '''
-        initialization data can be None, BlobCollection, a seralized
-        BlobCollection, or a mapping.  If a mapping, then a
-        __missing__ method must be provided by subclassing
-        InstanceCollection.
+        '''Create a new InstanceCollection.
+
+        `data` can provide data for the object at construction time.
+        If missing or `None`, the collection is initially empty.
+        If a `BlobCollection`, the data in the collection is used
+        for the initial values of the collection, and the keys in
+        this collection are the keys from the blob.  If a mapping,
+        the collection is populated from the mapping, with the
+        `__missing__` function used to generate serializations.
+        If a string, it contains the serialized Thrift version of
+        a `BlobCollection`, which is used as described above.
+
+        :param data: initialization data
+
         '''
         self._instances = dict()
         if isinstance(data, BlobCollection):
-            self._bc = data
+            self.blobs = data
         elif isinstance(data, collections.Mapping):
-            if not hasattr(self, '__missing__'):
-                raise Exception('InstanceCollection(%r) without __missing__ method' % data)
             self._bc = BlobCollection()
-            for key, value in data.iteritems():
-                self[key] = value            
+            self._bc.collection_type = self._clsname
+            self.update(data)
         else:
-            self._bc = None
             self.loads(data)
 
-    def __repr__(self):
-        return 'InstanceCollection(keys=%r)' % self._bc.typed_blobs.keys()
+    @staticmethod
+    def from_data(data):
+        '''Create a new InstanceCollection from data.
 
-    def loads(self, blob_collection_blob):
-        '''read raw blob of a BlobCollection
+        `data` should be either a `BlobCollection`, or a Thrift-
+        serialized form of one.  The actual type constructed will
+        be the `BlobCollection.collection_type` from the provided
+        data.
+
+        :param data: inbound `BlobCollection` or serialization thereof
+        :return: new `InstanceCollection` or other serializable type
+
         '''
-        self._bc = BlobCollection()
-        if blob_collection_blob is not None:
-            i_fh = AugmentedStringIO(blob_collection_blob)
+        if isinstance(data, BlobCollection):
+            bc = data
+        else:
+            bc = BlobCollection()
+            i_fh = AugmentedStringIO(data)
             i_transport = TTransport.TBufferedTransport(i_fh)
             i_protocol = protocol(i_transport)
-            self._bc.read( i_protocol )
-        
-    def dumps(self):
+            bc.read( i_protocol )
+            
+        target = bc.collection_type
+        parts = target.split('.')
+        modname = '.'.join(parts[:-1])
+        cls = None
+        try:
+            mod = importlib.import_module(modname)
+        except ValueError, e:
+            mod = None
+        except ImportError, e:
+            mod = None
+        if mod is not None:
+            cls = getattr(mod, parts[-1], None)
+        if cls is None:
+            raise SerializationError("can't find collection class {!r}"
+                                     .format(target))
+        return cls(bc)
+
+    @abstractmethod
+    def __missing__(self, key):
+        '''Provide a default value for some key.
+
+        This should produce a default value and serialization for
+        `key`, and insert it using `insert()`.  Note that this is
+        also called from e.g. `__setitem__()` when inserting a value
+        for the first time.
+
+        :param key: key of the mapping
+
+        '''
+        raise NotImplemented()
+
+    def __repr__(self):
+        return '{}(keys={!r}'.format(self.__class__.__name__,
+                                     self._bc.typed_blobs.keys())
+
+    @property
+    def _clsname(self):
+        '''Fully qualified module.Class name of this.'''
+        return '{}.{}'.format(self.__class__.__module__,
+                              self.__class__.__name__)
+
+    @property
+    def blobs(self):
+        '''The `BlobCollection` backing this `InstanceCollection`.
+
+        Any instances that have been fetched or added will be serialized
+        into the `BlobCollection` before returning it.
+
+        '''
         for key, obj in self._instances.items():
             ## save the deserialized instance for repeated use
             serializer_name = self._bc.typed_blobs[key].serializer
             serializer_class = registered_serializers.get(serializer_name)
             if not serializer_class:
-                raise ProgrammerError('%r has serializer=%r, but that is not registered'
-                                      % (key, serializer_name))
+                raise SerializationError(
+                    '{!r} has serializer={!r}, but that is not registered'
+                    .format(key, serializer_name))
             serializer = serializer_class()
             if self._bc.typed_blobs[key].config:
                 serializer.configure(self._bc.typed_blobs[key].config)
             self._bc.typed_blobs[key].blob = serializer.dumps(obj)
+        return self._bc
+    @blobs.setter
+    def blobs(self, bc):
+        '''Replace the `BlobCollection` for this `InstanceCollection`.
+
+        All cached instances will be discarded.  The `collection_type`
+        of the collection must be the same as this object's runtime
+        type.
+
+        '''
+        if bc.collection_type != self._clsname:
+            raise SerializationError(
+                'cannot create {} with a collection of {}'
+                .format(self._clsname, bc.collection_type))
+        self._bc = bc
+        self._instances.clear()
+
+    def loads(self, blob_collection_blob):
+        '''Replaces the collection using a serialized `BlobCollection`.
+
+        All saved data in this object is discarded.  The provided
+        string is parsed as a `BlobCollection` and this collection is
+        used as a source of serialized items.  If `None` is provided
+        then this collection is emptied.
+
+        :param str blob_collection_blob: if not `None`, then a serialized
+          Thrift representation of a `BlobCollection`
+
+        '''
+        bc = BlobCollection()
+        if blob_collection_blob is None:
+            bc.collection_type = self._clsname
+        else:
+            i_fh = AugmentedStringIO(blob_collection_blob)
+            i_transport = TTransport.TBufferedTransport(i_fh)
+            i_protocol = protocol(i_transport)
+            bc.read( i_protocol )
+        self.blobs = bc
+        
+    def dumps(self):
+        '''Create a serialized `BlobConnection` from this.
+
+        All saved items in this object are serialized, and the
+        resulting `BlobCollection` is serialized and returned.
+        Passing the resulting string to `loads` or to the class
+        constructor should produce an equivalent object to `self`.
+
+        :return: Thrift-serialized `BlobConnection` string
+
+        '''
         o_fh = StringIO()
         o_transport = TTransport.TBufferedTransport(o_fh)
         o_protocol = protocol(o_transport)
-        self._bc.write( o_protocol )
+        self.blobs.write( o_protocol )
         o_transport.flush()
         return o_fh.getvalue()
 
@@ -136,15 +255,13 @@ class InstanceCollection(collections.MutableMapping):
     def __getitem__(self, key):
         if key not in self._instances:
             if key not in self._bc.typed_blobs:
-                if hasattr(self, '__missing__'):
-                    return self.__missing__(key)
-                raise KeyError('%r not in bc.typed_blobs=%r' % 
-                               (key, self._bc.typed_blobs.keys()))
+                return self.__missing__(key)
             serializer_name = self._bc.typed_blobs[key].serializer
             serializer_class = registered_serializers.get(serializer_name)
             if not serializer_class:
-                raise ProgrammerError('%r has serializer=%r, but that is not registered'
-                                      % (key, serializer_name))
+                raise SerializationError(
+                    '{!r} has serializer={!r}, but that is not registered'
+                    .format(key, serializer_name))
             serializer = serializer_class()
             if self._bc.typed_blobs[key].config:
                 serializer.configure(self._bc.typed_blobs[key].config)
@@ -153,8 +270,6 @@ class InstanceCollection(collections.MutableMapping):
         return self._instances[key]
 
     def __setitem__(self, key, value):
-        if not hasattr(self, '__missing__'):
-            raise ProgrammerError('use InstanceCollection.insert(key, value, serializer_name) instead of directly setting an item')
         self.__missing__(key)
         self._instances[key] = value
 
@@ -174,6 +289,22 @@ class InstanceCollection(collections.MutableMapping):
             raise IndexError('%r is not in %r' % (key, self))
 
     def insert(self, key, value, serializer_name, config=None):
+        '''Insert a value into the collection with an explicit serializer.
+
+        This allows the caller to insert a value with the name of
+        the serializer and an optional configuration block.  The
+        serializer must be registered via the `register()` function.
+        In most cases, this will be called by the `__missing__()`
+        function, and ordinary `__setitem__()` will correctly populate
+        the item.
+
+        :param key: mapping key
+        :param value: mapping value
+        :param str serializer_name: registered name of the binary
+          serializer for `value`
+        :param dict config: configuration associated with the object
+
+        '''
         global registered_serializers
         if serializer_name not in registered_serializers:
             raise ProgrammerError('serializer_name=%r is not registered'
@@ -192,29 +323,26 @@ class InstanceCollection(collections.MutableMapping):
         return len(self._bc.typed_blobs)
 
 
-def InstanceCollection_write_wrapper(ic):
-    '''cause the BlobCollection to get populated (or refreshed) with
-    current serialized data, and return it.
+class Chunk(streamcorpus.Chunk):
+    '''Chunk implementation that yields `InstanceCollection`s.
+
+    The default `message` type is `BlobCollection`, and you should
+    generally use this.  `add()` adds, and `__iter__` produces,
+    `InstanceCollection` objects.
+
+    In reality, any type that has a `blobs` property can be passed to
+    `add()`; this property contains a `BlobCollection` object.  When
+    iterating, the `BlobCollection` names a type in its
+    `collection_type` field, and this must be a type that will accept
+    the `BlobCollection` as the only positional parameter in its
+    constructor.
+
     '''
-    s = ic.dumps()
-    return ic._bc
-
-## Use the Chunk implementation from streamcorpus, which handles
-## reading and writing of new chunk files.
-from streamcorpus import Chunk as _Chunk
-
-class Chunk(_Chunk):
-    def __init__(self, path=None, data=None, file_obj=None, mode='rb',
-                 ## must override the constructor to make our message
-                 ## type the default.
-                 message=BlobCollection,
-                 read_wrapper=InstanceCollection, 
-                 write_wrapper=InstanceCollection_write_wrapper,
-                 ):
-        _Chunk.__init__(
-            self, path, data, file_obj, mode, 
-            message=message,
-            read_wrapper=read_wrapper,
-            write_wrapper=write_wrapper,
-        )
-
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('message', BlobCollection)
+        super(Chunk, self).__init__(*args, **kwargs)
+    def add(self, msg):
+        super(Chunk, self).add(msg.blobs)
+    def __iter__(self):
+        return itertools.imap(InstanceCollection.from_data,
+                              super(Chunk, self).__iter__())

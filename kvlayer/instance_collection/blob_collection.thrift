@@ -39,8 +39,16 @@ struct TypedBlob {
  * streamcorpus.Chunk convenience methods.
  */
 struct BlobCollection {
-  1: map<string, TypedBlob> typed_blobs = {},
+  /**
+   * Type of the collection this represents.  The collection type
+   * defines the type of the objects stored in typed_blobs.
+   */
+  1: string collection_type,
 
+  /**
+   * Data in the collection, a map of key to actual data.
+   */
+  2: map<string, TypedBlob> typed_blobs = {},
 }
 
 // While we could make this a typedef, I don't that would work with
