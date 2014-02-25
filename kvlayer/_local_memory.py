@@ -26,6 +26,7 @@ class AbstractLocalStorage(AbstractStorage):
     def __init__(self, config):
         super(AbstractLocalStorage, self).__init__(config)
         self._connected = False
+        self._raise_on_missing = self._config.get('raise_on_missing', True)
 
     def setup_namespace(self, table_names):
         '''creates tables in the namespace.  Can be run multiple times with
@@ -76,16 +77,18 @@ class AbstractLocalStorage(AbstractStorage):
             else:
                 if specific_key_range and total_count == 0:
                     ## specified a key range, but found none
-                    raise MissingID()
+                    if self._raise_on_missing:
+                        raise MissingID()
 
     @_requires_connection
     def get(self, table_name, *keys, **kwargs):
         for key in keys:
             try:
                 key, value = key, self._data[table_name][key]
+                yield key, value
             except KeyError:
-                raise MissingID('table_name=%r key: %r' % ( table_name, key))
-            yield key, value
+                if self._raise_on_missing:
+                    raise MissingID('table_name=%r key: %r' % ( table_name, key))
 
 
     @_requires_connection

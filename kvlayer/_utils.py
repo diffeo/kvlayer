@@ -22,9 +22,19 @@ def _requires_connection(func):
         return func(self, *args, **kwargs)
     return wrapped_func
 
+
+# Now more generally, split a key string into components.
+# Non-UUID keys are joined on '\0', so split on that if present.
 def split_uuids(uuid_str):
+    if '\0' in uuid_str:
+        return uuid_str.split('\0')
     return map(lambda s: uuid.UUID(hex=''.join(s)), grouper(uuid_str, 32))
 
+
+# TODO: update documentation. keys aren't always UUIDs.
+# New way: keys are either UUIDs, have attr .hex, or are fed to str()
+# If all keys are UUIDs, do padding, otherwise not.
+# If all keys are UUIDs, join on '', otherwise join on '\0'
 def join_uuids(*uuids, **kwargs):
     '''
     constructs a string by concatenating the hex values of the uuids.
@@ -39,11 +49,33 @@ def join_uuids(*uuids, **kwargs):
     '''
     num_uuids = kwargs.pop('num_uuids', 0)
     padding = kwargs.pop('padding', '0')
+    all_uuid = True
+    parts = []
     if not uuids or uuids[0] == '':
         uuid_str = b''
     else:
-        uuid_str = ''.join(map(attrgetter('hex'), uuids))
-    uuid_str += padding * ((num_uuids * 32) - len(uuid_str))
+        for part in uuids:
+            if isinstance(part, uuid.UUID) or hasattr(part, 'hex'):
+                parts.append(part.hex)
+            else:
+                all_uuid = False
+                parts.append(str(part))
+        if all_uuid:
+            uuid_str = ''.join(parts)
+        else:
+            uuid_str = '\0'.join(parts)
+    if all_uuid:
+        uuid_str += padding * ((num_uuids * 32) - len(uuid_str))
+    else:
+        if len(parts) < num_uuids:
+            if padding == '0':
+                # We are making a start key for scan over keys between start and finish
+                # but we don't actually need to do anything in that case.
+                pass
+            elif padding == 'f':
+                # We are making a finish key for scan over keys between start and finish.
+                # What goes after all things prefixed by 'foo\0...' is 'foo\xff'.
+                uuid_str = uuid_str + '\xff'
     return uuid_str
 
 def grouper(iterable, n, fillvalue=None):

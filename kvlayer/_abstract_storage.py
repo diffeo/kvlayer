@@ -48,9 +48,10 @@ class AbstractStorage(object):
             return BadKey('key should be tuple, but got %s' % (type(key),))
         if len(key) != num_uuids:
             return BadKey('%r wants %r uuids in key, but got %r' % (table_name,  num_uuids, len(key)))
-        for key_i in key:
-            if not isinstance(key_i, uuid.UUID):
-                return BadKey('wanted uuid.UUID but got %s' % (type(key_i),))
+        if self._require_uuid:
+            for key_i in key:
+                if not isinstance(key_i, uuid.UUID):
+                    return BadKey('wanted uuid.UUID but got %s' % (type(key_i),))
         return None
 
     @abc.abstractmethod
@@ -71,6 +72,7 @@ class AbstractStorage(object):
         self._app_name = config.get('app_name', None)
         if not self._app_name:
             raise ProgrammerError('kvlayer requires an app_name')
+        self._require_uuid = self._config.get('keys_must_be_uuid', True)
 
     @abc.abstractmethod
     def setup_namespace(self, table_names):
