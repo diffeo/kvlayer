@@ -145,7 +145,7 @@ setup(
         'pytest-timeout',
         'pytest-incremental',
         'pytest-capturelog',
-        'pytest-diffeo'
+        'pytest-diffeo >= 0.1.4'
     ],
     entry_points={
         'console_scripts': [
