@@ -153,12 +153,5 @@ setup(
             'kvlayer_test = kvlayer.tests.run:main',
         ]
     },
-    # include_package_data = True,
-    package_data={
-        # If any package contains *.txt or *.rst files, include them:
-        # '': ['*.txt', '*.rst'],
-        # And include any files found in the 'data' package:
-        # '': recursive_glob('src/data/', '*')
-        '': recursive_glob('data/', '*')
-    },
+    include_package_data = True,
 )
