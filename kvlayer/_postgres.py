@@ -18,7 +18,7 @@ import re
 import psycopg2
 
 from kvlayer._abstract_storage import AbstractStorage
-from kvlayer._utils import join_uuids, split_uuids
+from kvlayer._utils import join_uuids, split_uuids, make_start_key, make_end_key
 from kvlayer._exceptions import MissingID, ProgrammerError
 
 
@@ -77,10 +77,12 @@ _CLEAR_TABLE = '''DELETE FROM kv_{namespace} WHERE t = %s'''
 # use cursor.callproc() instead of SELECT query.
 #_PUT = '''SELECT upsert_{namespace} (%s, %s, %s);'''
 
-# unused, we always _GET_RANGE
 _GET = '''SELECT k, v FROM kv_{namespace} WHERE t = %s AND k = %s;'''
 
-_GET_RANGE = '''SELECT k, v FROM kv_{namespace} WHERE t = %s AND k >= %s AND k <= %s;'''
+_GET_RANGE = '''SELECT k, v FROM kv_{namespace} WHERE t = %s AND k >= %s AND k <= %s ORDER BY k ASC;'''
+_GET_RANGE_FROM_START = '''SELECT k, v FROM kv_{namespace} WHERE t = %s AND k <= %s ORDER BY k ASC;'''
+_GET_RANGE_TO_END = '''SELECT k, v FROM kv_{namespace} WHERE t = %s AND k >= %s ORDER BY k ASC;'''
+_GET_ALL = '''SELECT k, v FROM kv_{namespace} WHERE t = %s ORDER BY k ASC;'''
 
 _DELETE = '''DELETE FROM kv_{namespace} WHERE t = %s AND k = %s;'''
 
@@ -193,7 +195,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         conn = self._conn()
         with conn.cursor() as cursor:
             for key in keys:
-                key = join_uuids(*key, num_uuids=num_uuids, padding='f')
+                key = join_uuids(*key, num_uuids=num_uuids)
                 cursor.execute(cmd, (table_name, key))
                 if not (cursor.rowcount > 0):
                     raise MissingID()
@@ -227,14 +229,32 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
             failOnEmptyResult = False
         def _pgkeyrange(kr):
             return (table_name, kmin, kmax)
-        cmd = _GET_RANGE.format(namespace=self._namespace)
         conn = self._conn()
         with conn.cursor() as cursor:
             for kmin, kmax in key_ranges:
-                kmin = len(kmin)>0 and join_uuids(*kmin,  num_uuids=num_uuids) or '0' * 32 * num_uuids
-                kmax = len(kmax)>0 and join_uuids(*kmax, num_uuids=num_uuids, padding='f') or 'f' * 32 * num_uuids
-                logging.debug('pg t=%r %r<=k<=%r', table_name, kmin, kmax)
-                cursor.execute(cmd, (table_name, kmin, kmax))
+                if kmin:
+                    start = make_start_key(kmin, uuid_mode=self._require_uuid, num_uuids=num_uuids)
+                else:
+                    start = None
+                if kmax:
+                    finish = make_end_key(kmax, uuid_mode=self._require_uuid, num_uuids=num_uuids)
+                else:
+                    finish = None
+                logging.debug('pg t=%r %r<=k<=%r (%r<=k<=%r)', table_name, kmin, kmax, start, finish)
+                if start:
+                    if finish:
+                        cmd = _GET_RANGE.format(namespace=self._namespace)
+                        cursor.execute(cmd, (table_name, start, finish))
+                    else:
+                        cmd = _GET_RANGE_TO_END.format(namespace=self._namespace)
+                        cursor.execute(cmd, (table_name, start))
+                else:
+                    if finish:
+                        cmd = _GET_RANGE_FROM_START.format(namespace=self._namespace)
+                        cursor.execute(cmd, (table_name, finish))
+                    else:
+                        cmd = _GET_ALL.format(namespace=self._namespace)
+                        cursor.execute(cmd, (table_name,))
                 logging.debug('%r rows from %r', cursor.rowcount, cmd)
                 if not (cursor.rowcount > 0):
                     continue

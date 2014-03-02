@@ -46,7 +46,7 @@ import redis
 
 from kvlayer._abstract_storage import AbstractStorage
 from kvlayer._exceptions import BadKey, MissingID, ProgrammerError
-from kvlayer._utils import join_uuids, split_uuids
+from kvlayer._utils import join_uuids, split_uuids, make_start_key, make_end_key
 
 logger = logging.getLogger(__name__)
 
@@ -284,9 +284,10 @@ class RedisStorage(AbstractStorage):
         # Until that works, let's just get a dump of everything in
         # the hash and hope there's not too much there.
         num_uuids = self._table_sizes[table_name]
-        ranges = [(join_uuids(*l, num_uuids=num_uuids, padding='0'),
-                   join_uuids(*u, num_uuids=num_uuids, padding='f'))
-                  for (l,u) in key_ranges]
+        ranges = [
+            (make_start_key(l, num_uuids=num_uuids, uuid_mode=self._require_uuid),
+             make_end_key(u, num_uuids=num_uuids, uuid_mode=self._require_uuid))
+            for (l,u) in key_ranges]
         def valid(k):
             if k == '': return False # placeholder
             if len(ranges) == 0: return True

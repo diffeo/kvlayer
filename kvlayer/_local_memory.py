@@ -11,7 +11,7 @@ import abc
 import logging
 from kvlayer._exceptions import MissingID
 from kvlayer._abstract_storage import AbstractStorage
-from kvlayer._utils import _requires_connection, join_uuids
+from kvlayer._utils import _requires_connection, join_uuids, make_start_key, make_end_key
 
 logger = logging.getLogger(__name__)
 
@@ -61,19 +61,23 @@ class AbstractLocalStorage(AbstractStorage):
         key_ranges = list(key_ranges)
         specific_key_range = True
         if not key_ranges:
-            key_ranges = [[('',), ('',)]]
+            key_ranges = [[None, None]]
             specific_key_range = False
         for start, finish in key_ranges:
             total_count = 0
-            start = len(start)>0  and join_uuids(*start,  num_uuids=num_uuids, padding='0') or '0' * 32 * num_uuids
-            finish = len(finish)>0 and join_uuids(*finish, num_uuids=num_uuids, padding='f') or 'f' * 32 * num_uuids
+            start = make_start_key(start, uuid_mode=self._require_uuid, num_uuids=num_uuids)
+            finish = make_end_key(finish, uuid_mode=self._require_uuid, num_uuids=num_uuids)
             for key in sorted(self._data[table_name].iterkeys()):
                 ## given a range, mimic the behavior of DBs that tell
                 ## you if they failed to find a key
+                ## LocalStorage does get/put on the Python tuple as the key, stringify for sort comparison
                 joined_key = join_uuids(*key)
-                if start <= joined_key <= finish:
-                    total_count += 1
-                    yield key, self._data[table_name][key]
+                if (start is not None) and (start > joined_key):
+                    continue
+                if (finish is not None) and (finish < joined_key):
+                    continue
+                total_count += 1
+                yield key, self._data[table_name][key]
             else:
                 if specific_key_range and total_count == 0:
                     ## specified a key range, but found none

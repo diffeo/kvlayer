@@ -32,6 +32,7 @@ def split_uuids(uuid_str):
 
 
 # TODO: update documentation. keys aren't always UUIDs.
+# TODO: num_uuids/padding options go away, as it was used for what is now accomplished by make_start_key/make_end_key
 # New way: keys are either UUIDs, have attr .hex, or are fed to str()
 # If all keys are UUIDs, do padding, otherwise not.
 # If all keys are UUIDs, join on '', otherwise join on '\0'
@@ -77,6 +78,50 @@ def join_uuids(*uuids, **kwargs):
                 # What goes after all things prefixed by 'foo\0...' is 'foo\xff'.
                 uuid_str = uuid_str + '\xff'
     return uuid_str
+
+
+def join_key_fragments(key_fragments, splitter='\0'):
+    # kinda underwhelming, probably doesn't need to actually be a function as such
+    return splitter.join(key_fragments)
+
+
+def make_start_key(key_fragments, uuid_mode=True, num_uuids=0, splitter='\0'):
+    '''
+    create a byte string key which will be the start of a scan range
+    '''
+    if key_fragments is None:
+        return None
+    if uuid_mode:
+        return make_uuid_start_key(key_fragments, num_uuids)
+    else:
+        return splitter.join(key_fragments)
+
+
+def make_uuid_start_key(key_fragments, num_uuids=0):
+    parts = [x.hex for x in key_fragments]
+    while len(parts) < num_uuids:
+        parts.append('00000000000000000000000000000000')
+    return ''.join(parts)
+
+
+def make_end_key(key_fragments, uuid_mode=True, num_uuids=0, splitter='\0'):
+    '''
+    create a byte string key which will be the end of a scan range
+    '''
+    if key_fragments is None:
+        return None
+    if uuid_mode:
+        return make_uuid_end_key(key_fragments, num_uuids)
+    else:
+        return splitter.join(key_fragments) + '\xff'
+
+
+def make_uuid_end_key(key_fragments, num_uuids=0):
+    parts = [x.hex for x in key_fragments]
+    while len(parts) < num_uuids:
+        parts.append('ffffffffffffffffffffffffffffffff')
+    return ''.join(parts)
+
 
 def grouper(iterable, n, fillvalue=None):
     "Collect data into fixed-length chunks or blocks"

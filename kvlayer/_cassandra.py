@@ -12,7 +12,7 @@ import random
 import logging
 import traceback
 from collections import defaultdict
-from kvlayer._utils import join_uuids, split_uuids
+from kvlayer._utils import join_uuids, split_uuids, make_start_key, make_end_key
 from kvlayer._exceptions import MissingID
 from kvlayer._abstract_storage import AbstractStorage
 from kvlayer._utils import _requires_connection
@@ -255,6 +255,7 @@ class CStorage(AbstractStorage):
         for start, finish in key_ranges:
             specific_key_range = bool( start or finish )
             if specific_key_range and start == finish and len(start) == num_uuids:
+                logger.warn('doing a scan on a single element, what?')
                 #logger.info('specific_key_range: %r %r' % (start, finish))
                 joined_key = join_uuids(*start,  num_uuids=num_uuids)
                 columns = [joined_key]
@@ -263,8 +264,8 @@ class CStorage(AbstractStorage):
                 finish = None
             else:
                 columns = None
-                start  = len(start)>0  and join_uuids(*start,  num_uuids=num_uuids, padding='0') or '0' * 32 * num_uuids
-                finish = len(finish)>0 and join_uuids(*finish, num_uuids=num_uuids, padding='f') or 'f' * 32 * num_uuids
+                start = make_start_key(start, uuid_mode=self._require_uuid, num_uuids=num_uuids)
+                finish = make_end_key(finish, uuid_mode=self._require_uuid, num_uuids=num_uuids)
                 row_names = self._make_shard_names(table_name, start, finish)
             total_count = 0
             hit_empty = False

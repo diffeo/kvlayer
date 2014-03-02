@@ -14,7 +14,7 @@ from kvlayer._abstract_storage import AbstractStorage
 from pyaccumulo import Accumulo, Mutation, Range, BatchWriter
 from pyaccumulo.iterators import RowDeletingIterator
 from pyaccumulo.proxy.ttypes import IteratorScope, AccumuloSecurityException
-from _utils import join_uuids, split_uuids
+from _utils import join_uuids, split_uuids, make_start_key, make_end_key
 
 logger = logging.getLogger('kvlayer')
 
@@ -64,7 +64,7 @@ class AStorage(AbstractStorage):
     @property
     def conn(self):
         if not self._conn:
-            logger.critical('connecting to Accumulo')
+            logger.info('connecting to Accumulo')
             self._conn = Accumulo(self._host, self._port,
                                   self._user, self._password)
             self._connected = True
@@ -161,14 +161,24 @@ class AStorage(AbstractStorage):
             total_count = 0
             specific_key_range = bool(start_key or stop_key)
             if specific_key_range:
-                joined_key = join_uuids(*start_key, num_uuids=num_uuids,
-                                        padding='0')
-                ## If there is no start key we need to scan from the beginning of the range.  To include any value
-                ## stored at UUID(int=0) we need a key that occurs before the key with all zeros.  The key we use
-                ## to accomplish this is '.' just like the _preceeding_key function.
-                srow = len(start_key)>0 and self._preceeding_key(joined_key) or '.'
-                erow = len(stop_key)>0 and join_uuids(*stop_key, num_uuids=num_uuids, padding='f') or 'f' * 32 * num_uuids
-                key_range = Range(srow=srow, erow=erow)
+                # Accumulo treats None as a negative-infinity or
+                # positive-infinity key as needed for starts and ends
+                # of ranges.
+                #
+                # pyaccumulo has a bug at present 20140228_171555
+                # which causes it to never do a '>=' scan, so we must
+                # decrement the start key to include the start key
+                # which necessary for a get() operation.
+                if not start_key:
+                    srow = None
+                else:
+                    srow = make_start_key(start_key, num_uuids=num_uuids, uuid_mode=self._require_uuid)
+                    srow = _string_decrement(srow)
+                if not stop_key:
+                    erow = None
+                else:
+                    erow = make_end_key(stop_key, num_uuids=num_uuids, uuid_mode=self._require_uuid)
+                key_range = Range(srow=srow, erow=erow, sinclude=True, einclude=True)
                 scanner = self.conn.scan(self._ns(table_name),
                                          scanrange=key_range)
             else:
@@ -185,7 +195,18 @@ class AStorage(AbstractStorage):
     def get(self, table_name, *keys, **kwargs):
         for key in keys:
             gen = self.scan(table_name, (key, key))
-            yield gen.next()
+            for k, v in gen:
+                if k == key:
+                    yield k, v
+                else:
+                    # This is only a warning because the scan might
+                    # not be precise and could, unfortunately,
+                    # legitimately yield something one key plus or
+                    # minus the key we actually want.
+                    #
+                    # When pyaccumulo gets fixed for start-inclusive
+                    # scan, this might go away.
+                    logger.warn('got key %r while get()ing key %r', k, key)
 
     def close(self):
         self._connected = False
@@ -194,13 +215,6 @@ class AStorage(AbstractStorage):
 
     def __del__(self):
         self.close()
-
-    def _preceeding_key(self, key):
-        num = (int(key, 16) - 1)
-        if num < 0:
-            return '.'
-        format_string = '%%0.%dx' % len(key)
-        return format_string % num
 
     def delete(self, table_name, *keys, **kwargs):
         batch_writer = BatchWriter(conn=self.conn,
@@ -214,3 +228,17 @@ class AStorage(AbstractStorage):
             mut.put(cf='', cq='', val='DEL_ROW')
             batch_writer.add_mutation(mut)
         batch_writer.close()
+
+
+def _string_decrement(x):
+    if len(x) < 1:
+        return None  # None is before all keys, aka negative infinity
+    pre = x[:-1]
+    post = ord(x[-1])
+    if post > 0:
+        return pre + chr(post - 1)
+    else:
+        pre = _string_decrement(pre)
+        if pre is None:
+            return None
+        return pre + '\xff'

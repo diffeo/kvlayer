@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 import kvlayer
-from kvlayer._accumulo import AStorage
+from kvlayer._accumulo import AStorage, _string_decrement
 from kvlayer._exceptions import MissingID
 import kvlayer.tests.make_namespace
 
@@ -23,6 +23,14 @@ try:
     config = yaml.load(open(config_path))
 except Exception, exc:
     sys.exit('failed to load %r: %s' % (config_path, exc))
+
+
+def test_string_decrement():
+    assert _string_decrement('b') == 'a'
+    assert _string_decrement('b\0') == 'a\xff'
+    assert _string_decrement('\0') == None
+    assert _string_decrement('') == None
+    assert _string_decrement('b\xff') == 'b\xfe'
 
 
 @pytest.fixture
@@ -129,6 +137,7 @@ def test_put_get(client, direct):
     keys = kv_dict.keys()
     values = kv_dict.values()
     for entry in direct.scan(client._test_ns('table1')):
+        logger.debug('found %r:%r', entry.row, entry.val)
         assert entry.val in values
     generator = client.scan('table1', (keys[0], keys[0]))
     key, value = generator.next()
