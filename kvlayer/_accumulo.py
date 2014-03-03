@@ -169,6 +169,7 @@ class AStorage(AbstractStorage):
                 # which causes it to never do a '>=' scan, so we must
                 # decrement the start key to include the start key
                 # which necessary for a get() operation.
+                # https://github.com/accumulo/pyaccumulo/issues/14
                 if not start_key:
                     srow = None
                 else:
