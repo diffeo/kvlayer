@@ -12,71 +12,50 @@ import kvlayer
 from kvlayer._accumulo import AStorage
 from kvlayer._exceptions import MissingID
 import kvlayer.tests.make_namespace
+import yakonfig
 
 logger = logging.getLogger(__name__)
 
-config_path = os.path.join(os.path.dirname(__file__), 'config_accumulo.yaml')
-if not os.path.exists(config_path):
-    sys.exit('failed to find %r' % config_path)
+@pytest.fixture(scope='module')
+def config_path(request):
+    return str(request.fspath.dirpath('config_accumulo.yaml'))
 
-try:
-    config = yaml.load(open(config_path))
-except Exception, exc:
-    sys.exit('failed to load %r: %s' % (config_path, exc))
-
-
-@pytest.fixture
-def direct(request):
-    conn = Accumulo(host='test-accumulo-1.diffeo.com', port=50096,
-                    user=config['username'], password=config['password'])
-
-    def fin():
-        conn = Accumulo(host=config['host'], port=50096,
+@pytest.yield_fixture
+def direct(config_path, namespace_string):
+    with yakonfig.defaulted_config([kvlayer], filename=config_path,
+                                   params={'app_name': 'kvlayer',
+                                           'namespace': namespace_string}):
+        config = yakonfig.get_global_config('kvlayer')
+        conn = Accumulo(host='test-accumulo-1.diffeo.com', port=50096,
                         user=config['username'], password=config['password'])
+
+        yield conn
+
         tables = conn.list_tables()
         for table in tables:
-            ## would need to get namespace variable here for this
-            ## finalizer to work...
-            ## ...this *should* work via namespace_string fixture,
-            ## but I'm not going to turn it on right now...?
             if re.search(namespace_string, table):
                 conn.delete_table(table)
 
-    ## see comment above about why this does not work
-    #request.addfinalizer(fin)
+@pytest.yield_fixture(scope='function', params=['accumulo'])
+def client(namespace_string, config_path):
+    app_name = 'kvlayer'
+    with yakonfig.defaulted_config([kvlayer], filename=config_path,
+                                   params={'app_name': app_name,
+                                           'namespace': namespace_string}):
+        logger.info('initializing client')
+        client = kvlayer.client()
+        def _test_ns(name):
+            return '_'.join([app_name, namespace_string, name])
+        client._test_ns = _test_ns
 
-    return conn
+        yield client
 
-
-@pytest.fixture(scope='function', params=['accumulo'])
-def client(namespace_string, request):
-
-    global config
-    config['app_name'] = 'kvlayer'
-    config['namespace'] = namespace_string
-    config['storage_type'] = request.param
-
-    logger.info('initializing client')
-    client = kvlayer.client(config)
-    def _test_ns(name):
-        return '_'.join([config['app_name'], config['namespace'], name])
-    client._test_ns = _test_ns
-
-    logger.info('deleting old namespace')
-    #client.delete_namespace()
-
-    def fin():
         logger.info('tearing down %s', _test_ns(''))
         client.delete_namespace()
         logger.info('done cleaning up')
-    request.addfinalizer(fin)
-
-    logger.info('starting test')
-    return client
-
 
 def test_setup_namespace(client, direct):
-    #storage = AStorage(config)
+    #storage = AStorage()
     logger.info('creating namespace: %r' % client._namespace)
     client.setup_namespace({'table1': 1, 'table2': 1})
     logger.info('checking existence of tables')
@@ -86,7 +65,7 @@ def test_setup_namespace(client, direct):
 
 
 def test_delete_namespace(client, direct):
-    storage = AStorage(config)
+    storage = AStorage()
     client.setup_namespace({'table1': 1, 'table2': 1})
     tables = direct.list_tables()
     assert client._test_ns('table1') in tables

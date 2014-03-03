@@ -14,52 +14,41 @@ import sys
 import uuid
 
 import kvlayer
-from kvlayer.tests.make_namespace import namespace
 import yakonfig
 
 logger = logging.getLogger(__name__)
 
-def test_config(namespace):
-    fh = StringIO('''
+def test_config(namespace_string):
+    config_yaml = '''
 kvlayer:
   app_name: streamcorpus_pipeline
   namespace: %s
   storage_type: local
   storage_addresses: []
-''' % namespace)
-    config = yakonfig.set_global_config(fh)
+''' % namespace_string
+    with yakonfig.defaulted_config([kvlayer], yaml=config_yaml) as config:
+        assert config['kvlayer'] == yakonfig.get_global_config('kvlayer')
+        assert config['kvlayer']['app_name'] == 'streamcorpus_pipeline'
 
-    assert config['kvlayer'] == yakonfig.get_global_config('kvlayer')
-    assert config['kvlayer']['app_name'] == 'streamcorpus_pipeline'
-
-    check_that_config_works()
+        check_that_config_works()
 
 
 def check_that_config_works():
-    config = yakonfig.get_global_config('kvlayer')
-    client = kvlayer.client(config)
+    client = kvlayer.client()
     client.setup_namespace(dict(t1=1))
     k1 = (uuid.uuid4(),)
     client.put('t1', (k1, 'some data'))
     assert list(client.get('t1', k1))[0][1] == 'some data'
-    logger.critical('finished check_that_config_works: %r', config)
 
 
 def main():
     try:
         parser = argparse.ArgumentParser()
         parser.add_argument('foo')
-        ## add in the arguments provided by kvlayer
-        kvlayer.add_arguments(parser, include_app_name=True, include_namespace=True)
-        args = parser.parse_args()
+        args = yakonfig.parse_args(parser, [kvlayer])
 
-        yakonfig.set_runtime_args_object(args)
-
-        fh = StringIO(kvlayer.default_yaml())
-        config = yakonfig.set_global_config(stream=fh)
-
-        assert config['kvlayer'] == yakonfig.get_global_config('kvlayer')
-        assert config['kvlayer']['app_name'] == 'streamcorpus_pipeline'
+        config = yakonfig.get_global_config('kvlayer')
+        assert config['app_name'] == 'streamcorpus_pipeline'
 
         check_that_config_works()
 
@@ -67,9 +56,10 @@ def main():
 
     except Exception, exc:
         logger.critical('fake_app failed!', exc_info=True)
+        raise
 
 
-def test_fake_app(namespace):
+def test_fake_app(namespace_string):
     '''
     test pretends to be an app using kvlayer.add_arguments
     '''
@@ -77,19 +67,11 @@ def test_fake_app(namespace):
         ['python', '-m', 'kvlayer.tests.test_cli', 
          'foo',
          '--app-name', 'streamcorpus_pipeline',
-         '--namespace', namespace,
+         '--namespace', namespace_string,
          '--storage-type', 'local',
-         ], 
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        shell=False)
-    stdout, stderr = p.communicate()
-    if p.returncode != 0:
-        logger.critical('failure! p.returncode=%d', p.returncode)
-        logger.critical(stderr)
-        logger.critical(stdout)
-        sys.exit(-1)
-
+         ])
+    p.communicate()
+    assert p.returncode == 0
 
 if __name__ == '__main__':
     ## this is part of  test_fake_app

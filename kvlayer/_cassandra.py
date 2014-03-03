@@ -57,16 +57,16 @@ class CStorage(AbstractStorage):
     http://www.slideshare.net/edanuff/indexing-in-cassandra
 
     """
-    def __init__(self, config):
-        super(CStorage, self).__init__(config)
-        self.storage_addresses = config['storage_addresses']
-        self.max_consistency_delay = config.get('max_consistency_delay', 120)
+    def __init__(self):
+        super(CStorage, self).__init__()
+        self.storage_addresses = self._config['storage_addresses']
+        self.max_consistency_delay = self._config.get('max_consistency_delay', 120)
         ## avoid switching servers when creating/deleting namespaces
         self._chosen_server = random.choice(self.storage_addresses)
         logger.info('CStorage(_chosen_server=%r', self._chosen_server)
-        self.pool_size = config.get('connection_pool_size', 2)
+        self.pool_size = self._config.get('connection_pool_size', 2)
         self._connected = False
-        self.thrift_framed_transport_size_in_mb = config.get('thrift_framed_transport_size_in_mb', 15)
+        self.thrift_framed_transport_size_in_mb = self._config.get('thrift_framed_transport_size_in_mb', 15)
         self.pool = None
         self.tables = {}
         self._app_namespace = self._app_name + '_' + self._namespace

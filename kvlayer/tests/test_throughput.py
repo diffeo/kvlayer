@@ -1,14 +1,17 @@
 from __future__ import division, absolute_import
+import multiprocessing
+import logging
+import Queue
+from signal import alarm, signal, SIGHUP, SIGTERM, SIGABRT, SIGALRM
+import sys
 import uuid
 import time
-import Queue
+
 import pytest
+
 import kvlayer
-import logging
-import multiprocessing
-from signal import alarm, signal, SIGHUP, SIGTERM, SIGABRT, SIGALRM
 from kvlayer import MissingID
-from kvlayer.tests.test_interface import client, config, backend # fixture
+from kvlayer.tests.test_interface import client, backend # fixture
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +124,7 @@ for response from run_many(do_search, queries, num_workers=10, timeout=5):
                 resp = o_queue.get(block=False)
                 yield resp
             except Queue.Empty:
-                logger.info('no responses from o_queue')
+                # logger.info('no responses from o_queue')
                 time.sleep(0.2)
                 break
         tasks_added = 0
@@ -173,7 +176,7 @@ def test_multiprocessing_harness_control_C():
 
 class random_inserts(object):
     def __init__(self, config):
-        self.client = kvlayer.client(config)
+        self.client = kvlayer.client()
         self.client.setup_namespace(dict(t1=1))
         self.one_mb = ' ' * 2**20
 
@@ -189,7 +192,7 @@ class random_inserts(object):
 
 class many_gets(object):
     def __init__(self, config):
-        self.client = kvlayer.client(config)
+        self.client = kvlayer.client()
         self.client.setup_namespace(dict(t1=1))
 
     def __call__(self, u, o_queue):
@@ -203,7 +206,7 @@ class many_gets(object):
         logger.info('retrievied one_mb at %r', u)
 
 
-def test_throughput_insert_random(client, config):
+def test_throughput_insert_random(client):
     client.setup_namespace(dict(t1=1))
     
     num_workers = 5
@@ -212,7 +215,7 @@ def test_throughput_insert_random(client, config):
     task_generator = [uuid.uuid4() for x in xrange(total_inserts)]
     start_time = time.time()
     ret_vals = list(run_many(random_inserts, task_generator, 
-                             class_config=config,
+                             class_config=client._config,
                              num_workers=num_workers, timeout=total_inserts/2))
     elapsed = time.time() - start_time
     assert len(ret_vals) == total_inserts
@@ -241,7 +244,7 @@ class indexer(object):
     rapidly changes an index in t2
     '''
     def __init__(self, config):
-        self.client = kvlayer.client(config)
+        self.client = kvlayer.client()
         self.client.setup_namespace(dict(t1=1, t2=2))
 
     def __call__(self, u, o_queue):
@@ -258,7 +261,7 @@ class indexer(object):
 
 class joiner(object):
     def __init__(self, config):
-        self.client = kvlayer.client(config)
+        self.client = kvlayer.client()
         self.client.setup_namespace(dict(t1=1, t2=2))
 
     def __call__(self, u, o_queue):

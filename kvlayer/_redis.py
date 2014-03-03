@@ -51,11 +51,10 @@ from kvlayer._utils import join_uuids, split_uuids
 logger = logging.getLogger(__name__)
 
 class RedisStorage(AbstractStorage):
-    def __init__(self, config):
+    def __init__(self):
         """Initialize a redis-based storage instance.
 
-        `config` is a dictionary that may include the following
-        configuration parameters:
+        Uses the global kvlayer configuration, with the following parameters:
 
         ``namespace``
           namespace prefix for this storage layer
@@ -63,11 +62,13 @@ class RedisStorage(AbstractStorage):
           application name prefix for this storage layer
         ``storage_addresses``
           list of ``hostname:port`` pairs for redis (only first is used)
+        ``redis_db_num``
+          Redis database number (defaults to 0)
 
         """
-        super(RedisStorage, self).__init__(config)
-        storage_addresses = config.get('storage_addresses', [])
-        db_num = config.get('redis_db_num', 0)
+        super(RedisStorage, self).__init__()
+        storage_addresses = self._config.get('storage_addresses', [])
+        db_num = self._config.get('redis_db_num', 0)
         if len(storage_addresses) == 0:
             raise ProgrammerError('config lacks storage_addresses')
         if len(storage_addresses) > 1:

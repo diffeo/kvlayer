@@ -12,7 +12,7 @@ build: clean
 	python setup.py build
 
 install: build
-	python setup.py install
+	pip install .
 
 test: 
 	python setup.py test
