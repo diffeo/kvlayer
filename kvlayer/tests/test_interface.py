@@ -52,9 +52,6 @@ def client(backend, request, tmpdir, namespace_string):
         with local.open('w') as f: pass
         params['kvlayer_filename'] = str(local)
 
-        copy = tmpdir.join('copy')
-        params['kvlayer_copy_to_filename'] = str(copy)
-
     if backend == 'redis':
         params['storage_addresses'] = [ redis_address(request) ]
 
