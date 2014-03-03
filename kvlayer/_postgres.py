@@ -99,15 +99,15 @@ def _cursor_check_namespace_table(cursor, namespace):
 
 
 class PGStorage(AbstractStorage):
-    def __init__(self, config):
+    def __init__(self):
         '''Initialize a storage instance for namespace.
         uses the single string specifier for a connectionn to a postgres db
 http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYWORDS
         '''
-        super(PGStorage, self).__init__(config)
+        super(PGStorage, self).__init__()
         if not _valid_namespace(self._namespace):
             raise ProgrammerError('namespace must match re: %r' % (_psql_identifier_re.pattern,))
-        self.storage_addresses = config['storage_addresses']
+        self.storage_addresses = self._config['storage_addresses']
         if not self.storage_addresses:
             raise ProgrammerError('postgres kvlayer needs config["storage_addresses"]')
         self.connection = None

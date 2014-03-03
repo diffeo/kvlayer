@@ -23,8 +23,8 @@ class AbstractLocalStorage(AbstractStorage):
 
     """
 
-    def __init__(self, config):
-        super(AbstractLocalStorage, self).__init__(config)
+    def __init__(self):
+        super(AbstractLocalStorage, self).__init__()
         self._connected = False
         self._raise_on_missing = self._config.get('raise_on_missing', True)
 
@@ -111,9 +111,6 @@ class LocalStorage(AbstractLocalStorage):
     """
 
     _data = {}
-
-    def __init__(self, config):
-        super(LocalStorage, self).__init__(config)
 
     def delete_namespace(self):
         self._data.clear()

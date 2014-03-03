@@ -4,14 +4,15 @@ implementations inherit.
 
 Your use of this software is governed by your license agreement.
 
-Copyright 2012-2013 Diffeo, Inc.
+Copyright 2012-2014 Diffeo, Inc.
 '''
 
+from __future__ import absolute_import
 import abc
 import uuid
 
-from ._exceptions import BadKey, ProgrammerError
-
+from kvlayer._exceptions import BadKey, ProgrammerError
+import yakonfig
 
 class AbstractStorage(object):
     '''
@@ -55,7 +56,7 @@ class AbstractStorage(object):
         return None
 
     @abc.abstractmethod
-    def __init__(self, config):
+    def __init__(self):
         '''Initialize a storage instance with config dict.
         Typical config fields:
         'namespace': string name of set of tables this kvlayer instance refers to
@@ -64,12 +65,12 @@ class AbstractStorage(object):
         'username'
         'password'
         '''
-        self._config = config
+        self._config = yakonfig.get_global_config('kvlayer')
         self._table_names = {}
-        self._namespace = config.get('namespace', None)
+        self._namespace = self._config.get('namespace', None)
         if not self._namespace:
             raise ProgrammerError('kvlayer requires a namespace')
-        self._app_name = config.get('app_name', None)
+        self._app_name = self._config.get('app_name', None)
         if not self._app_name:
             raise ProgrammerError('kvlayer requires an app_name')
         self._require_uuid = self._config.get('keys_must_be_uuid', True)

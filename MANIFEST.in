@@ -1,3 +1,4 @@
 include README.md
 include version.py
 include RELEASE-VERSION
+recursive-include kvlayer *.yaml

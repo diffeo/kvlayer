@@ -1,43 +1,38 @@
+from __future__ import absolute_import
+import itertools
+import logging
+from operator import attrgetter
 import os
+import getpass
+import random
 import sys
-import cql
-import yaml
 import time
 import uuid
-import random
-import pytest
-import kvlayer
-import getpass
+
+import cql
 import pycassa
-import logging
-import itertools
-from operator import attrgetter
 from pycassa.pool import ConnectionPool
 from pycassa.system_manager import SystemManager, SIMPLE_STRATEGY, \
     LEXICAL_UUID_TYPE, ASCII_TYPE, BYTES_TYPE
 from pycassa.types import CompositeType, TimeUUIDType, LexicalUUIDType, UUIDType, UTF8Type
+import pytest
+import yaml
+
+import kvlayer
+import yakonfig
 
 logger = logging.getLogger(__name__)
 one_mb = ' ' * 2**20
 
-@pytest.fixture(scope='function')
+@pytest.yield_fixture(scope='function')
 def client(namespace_string, request):
-    config_path = os.path.join(os.path.dirname(__file__), 'config_cassandra.yaml')
-    if not os.path.exists(config_path):
-        sys.exit('failed to find %r' % config_path)
-    try:
-        config = yaml.load(open(config_path))
-    except Exception, exc:
-        sys.exit('failed to load %r: %s' % (config_path, exc))
-    config['namespace'] = namespace_string
-    config['app_name'] = 'kvltest'
-    logger.info('config: %r' % config)
-    client = kvlayer.client(config)
-    def fin():
+    config_path = str(request.fspath.dirpath('config_cassandra.yaml'))
+    with yakonfig.defaulted_config([kvlayer], filename=config_path,
+                                   params={'namespace': namespace_string,
+                                           'app_name': 'kvltest'}):
+        client = kvlayer.client()
+        yield client
         client.delete_namespace()
-        logger.info('tearing down %s_%s', config['app_name'], namespace_string)
-    request.addfinalizer(fin)
-    return client
 
 def grouper(iterable, n, fillvalue=None):
     "Collect data into fixed-length chunks or blocks"

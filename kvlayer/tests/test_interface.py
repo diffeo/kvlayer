@@ -5,7 +5,7 @@ Your use of this software is governed by your license agreement.
 Copyright 2012-2014 Diffeo, Inc.
 
 """
-
+from __future__ import absolute_import
 import errno
 import logging
 import os
@@ -18,8 +18,10 @@ import py
 import pytest
 import yaml
 
+from pytest_diffeo import redis_address
 import kvlayer
 from kvlayer import MissingID, BadKey
+import yakonfig
 
 logger = logging.getLogger(__name__)
 
@@ -36,45 +38,32 @@ except ImportError, e:
 def backend(request):
     return request.param
 
-@pytest.fixture(scope='module')
-def config(backend, request):
-    config_path = request.fspath.new(basename='config_{}.yaml'.format(backend))
-    try:
-        with config_path.open('r') as f:
-            return yaml.load(f)
-    except py.error.ENOENT:
-        return { 'storage_type': backend,
-                 'namespace': None,
-                 'storage_addresses': None }
-
-@pytest.fixture(scope='function')
-def client(config, request, tmpdir, namespace_string):
-    config['namespace'] = namespace_string
-    config['app_name'] = 'kvlayer'
+@pytest.yield_fixture(scope='function')
+def client(backend, request, tmpdir, namespace_string):
+    config_path = str(request.fspath.dirpath('config_{}.yaml'.format(backend)))
+    params = dict(
+        app_name='kvlayer',
+        namespace=namespace_string,
+    )
 
     # this is hacky but must go somewhere
-    if config['storage_type'] == 'filestorage':
+    if backend == 'filestorage':
         local = tmpdir.join('local')
         with local.open('w') as f: pass
-        config['filename'] = str(local)
+        params['kvlayer_filename'] = str(local)
 
         copy = tmpdir.join('copy')
-        config['copy_to_filename'] = str(copy)
+        params['kvlayer_copy_to_filename'] = str(copy)
 
-    if config['storage_type'] == 'redis':
-        redis_address = request.config.getoption('--redis-address')
-        if redis_address is not None:
-            config['storage_addresses'] = [redis_address]
+    if backend == 'redis':
+        params['storage_addresses'] = [ redis_address(request) ]
 
-    client = kvlayer.client(config)
-    client.delete_namespace()
-
-    def fin():
+    with yakonfig.defaulted_config([kvlayer], filename=config_path,
+                                   params=params):
+        client = kvlayer.client()
         client.delete_namespace()
-    request.addfinalizer(fin)
-
-    return client
-
+        yield client
+        client.delete_namespace()
 
 def test_basic_storage(client):
     client.setup_namespace(dict(t1=2, t2=3))
