@@ -186,15 +186,3 @@ def test_close(client):
     assert client._connected
     client.close()
     assert not client._connected
-
-
-def test_preceeding_key(client):
-    assert client._preceeding_key('00001') == '00000'
-    assert client._preceeding_key('00010') == '0000f'
-    assert client._preceeding_key('00011') == '00010'
-    assert client._preceeding_key('000f0') == '000ef'
-    assert client._preceeding_key('000f1') == '000f0'
-    assert client._preceeding_key('fff00') == 'ffeff'
-    assert client._preceeding_key('fff00') == 'ffeff'
-    assert client._preceeding_key('f0000') == 'effff'
-    assert client._preceeding_key('00000') == '.'

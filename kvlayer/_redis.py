@@ -22,7 +22,7 @@ kvlayer "table" is a hash stored in a single row, where the keys of
 the hash are UUID tuples.
 
 This currently uses pure-ASCII key values (using
-:func:`kvlayer._utils.join_uuids`) and intermediate table row IDs.
+:func:`kvlayer._utils.join_key_fragments`) and intermediate table row IDs.
 Redis should in principle be able to handle packed-binary values,
 which would be a quarter the size.
 
@@ -46,7 +46,7 @@ import redis
 
 from kvlayer._abstract_storage import AbstractStorage
 from kvlayer._exceptions import BadKey, MissingID, ProgrammerError
-from kvlayer._utils import join_uuids, split_uuids, make_start_key, make_end_key
+from kvlayer._utils import join_key_fragments, split_uuids, make_start_key, make_end_key
 
 logger = logging.getLogger(__name__)
 
@@ -231,7 +231,7 @@ class RedisStorage(AbstractStorage):
                                           self._table_sizes[table_name])
             if ex is not None:
                 raise ex
-            params.append(join_uuids(*k))
+            params.append(join_key_fragments(k, uuid_mode=self._require_uuid))
             params.append(v)
         script = conn.register_script("""
         if redis.call('exists', KEYS[1]) == 0
@@ -335,7 +335,7 @@ class RedisStorage(AbstractStorage):
         if key is None:
             raise BadKey(key)
         #logger.debug('get {} {!r}'.format(table_name, keys))
-        ks = [join_uuids(*k) for k in keys]
+        ks = [join_key_fragments(k, uuid_mode=self._require_uuid) for k in keys]
         vs = conn.hmget(key, *ks)
         found = False
         for (k, v) in zip(ks, vs):
@@ -372,7 +372,7 @@ class RedisStorage(AbstractStorage):
         if key is None:
             raise BadKey(key)
         logger.debug('delete {} {!r}'.format(table_name, keys))
-        ks = [join_uuids(*k) for k in keys]
+        ks = [join_key_fragments(k, uuid_mode=self._require_uuid) for k in keys]
         conn.hdel(key, *ks)
 
     def close(self):

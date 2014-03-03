@@ -14,7 +14,7 @@ from kvlayer._abstract_storage import AbstractStorage
 from pyaccumulo import Accumulo, Mutation, Range, BatchWriter
 from pyaccumulo.iterators import RowDeletingIterator
 from pyaccumulo.proxy.ttypes import IteratorScope, AccumuloSecurityException
-from _utils import join_uuids, split_uuids, make_start_key, make_end_key
+from _utils import split_uuids, make_start_key, make_end_key, join_key_fragments
 
 logger = logging.getLogger('kvlayer')
 
@@ -147,7 +147,7 @@ class AStorage(AbstractStorage):
                              'batched, and will send this item in next batch.')
                 batch_writer.flush()
                 cur_bytes = 0
-            mut = Mutation(join_uuids(*key))
+            mut = Mutation(join_key_fragments(key, uuid_mode=self._require_uuid))
             mut.put(cf='', cq='', val=blob)
             batch_writer.add_mutation(mut)
             cur_bytes += len(blob)
@@ -224,7 +224,7 @@ class AStorage(AbstractStorage):
                                    timeout_ms=self._timeout_ms,
                                    threads=self._threads)
         for key in keys:
-            mut = Mutation(join_uuids(*key))
+            mut = Mutation(join_key_fragments(key, uuid_mode=self._require_uuid))
             mut.put(cf='', cq='', val='DEL_ROW')
             batch_writer.add_mutation(mut)
         batch_writer.close()

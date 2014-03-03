@@ -12,7 +12,7 @@ import random
 import logging
 import traceback
 from collections import defaultdict
-from kvlayer._utils import join_uuids, split_uuids, make_start_key, make_end_key
+from kvlayer._utils import join_uuids, split_uuids, make_start_key, make_end_key, join_key_fragments
 from kvlayer._exceptions import MissingID
 from kvlayer._abstract_storage import AbstractStorage
 from kvlayer._utils import _requires_connection
@@ -257,7 +257,8 @@ class CStorage(AbstractStorage):
             if specific_key_range and start == finish and len(start) == num_uuids:
                 logger.warn('doing a scan on a single element, what?')
                 #logger.info('specific_key_range: %r %r' % (start, finish))
-                joined_key = join_uuids(*start,  num_uuids=num_uuids)
+                assert len(start) == num_uuids
+                joined_key = join_uuids(*start)
                 columns = [joined_key]
                 row_names = [self._make_shard_name(table_name, joined_key)]
                 start = None
@@ -272,11 +273,12 @@ class CStorage(AbstractStorage):
             for row_name in row_names:
                 try:
                     for key, val in self._get_from_one_row(table_name, row_name, columns, start, finish, num_uuids):
+                        assert len(key) == num_uuids
                         yield key, val
                         if start:
-                            assert start <= join_uuids(*key, num_uuids=num_uuids)
+                            assert start <= join_uuids(*key)
                         if finish:
-                            assert finish >= join_uuids(*key, num_uuids=num_uuids)
+                            assert finish >= join_uuids(*key)
 
                         total_count += 1
                         #logger.critical('total_count: %d' % total_count)
@@ -327,7 +329,8 @@ class CStorage(AbstractStorage):
                 break
             start = list(key)
             start[-1] = uuid.UUID(int=key[-1].int+1)
-            start = join_uuids(*start, num_uuids=num_uuids)
+            assert len(start) == num_uuids
+            start = join_uuids(*start)
 
             if start == prev_start or start > finish:
                 break
@@ -352,7 +355,8 @@ class CStorage(AbstractStorage):
 
         ## Determine all the shards that we need to contact
         for key in keys:
-            joined_key = join_uuids(*key,  num_uuids=num_uuids)
+            assert len(key) == num_uuids
+            joined_key = join_uuids(*key)
             row_names = [self._make_shard_name(table_name, joined_key)]
             for row_name in row_names:
                 shards[row_name].append(joined_key)
@@ -378,10 +382,12 @@ class CStorage(AbstractStorage):
 
     @_requires_connection
     def delete(self, table_name, *keys, **kwargs):
+        num_uuids = self._table_names[table_name]
         batch_size = kwargs.pop('batch_size', 1000)
         batch = self.tables[table_name].batch(queue_size=batch_size)
         count = 0
         for key in keys:
+            assert len(key) == num_uuids
             joined_key = join_uuids(*key)
             row_name = self._make_shard_name(table_name, joined_key)
             columns = [joined_key]

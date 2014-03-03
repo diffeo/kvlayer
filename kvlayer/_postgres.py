@@ -18,7 +18,7 @@ import re
 import psycopg2
 
 from kvlayer._abstract_storage import AbstractStorage
-from kvlayer._utils import join_uuids, split_uuids, make_start_key, make_end_key
+from kvlayer._utils import split_uuids, make_start_key, make_end_key, join_key_fragments
 from kvlayer._exceptions import MissingID, ProgrammerError
 
 
@@ -184,7 +184,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                     raise ex
                 cursor.callproc(
                     'upsert_{namespace}'.format(namespace=self._namespace),
-                    (table_name, join_uuids(*kv[0]), psycopg2.Binary(kv[1])))
+                    (table_name, join_key_fragments(kv[0], uuid_mode=self._require_uuid), psycopg2.Binary(kv[1])))
 
     def get(self, table_name, *keys, **kwargs):
         '''Yield tuples of (key, value) from querying table_name for
@@ -195,7 +195,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         conn = self._conn()
         with conn.cursor() as cursor:
             for key in keys:
-                key = join_uuids(*key, num_uuids=num_uuids)
+                key = join_key_fragments(key, uuid_mode=self._require_uuid)
                 cursor.execute(cmd, (table_name, key))
                 if not (cursor.rowcount > 0):
                     raise MissingID()
@@ -284,7 +284,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         def _delkey(k):
             if len(k) != num_uuids:
                 raise Exception('invalid key has %s uuids but wanted %s: %r' % (len(k), num_uuids, k))
-            return (table_name, join_uuids(*k))
+            return (table_name, join_key_fragments(k, uuid_mode=self._require_uuid))
         conn = self._conn()
         with conn.cursor() as cursor:
             cursor.executemany(

@@ -31,58 +31,30 @@ def split_uuids(uuid_str):
     return map(lambda s: uuid.UUID(hex=''.join(s)), grouper(uuid_str, 32))
 
 
-# TODO: update documentation. keys aren't always UUIDs.
-# TODO: num_uuids/padding options go away, as it was used for what is now accomplished by make_start_key/make_end_key
-# New way: keys are either UUIDs, have attr .hex, or are fed to str()
-# If all keys are UUIDs, do padding, otherwise not.
-# If all keys are UUIDs, join on '', otherwise join on '\0'
-def join_uuids(*uuids, **kwargs):
+def join_uuids(*uuids):
     '''
     constructs a string by concatenating the hex values of the uuids.
-
-    :param num_uuids: specifies number of UUIDs expected in the input,
-    and pads the output string with enough characters to make up the
-    difference
-
-    :param padding: a single character used to pad the output string
-    to match the length of num_uuids * 32.  Defaults to '0'.  The only
-    other value that makes sense is 'f'.
     '''
-    num_uuids = kwargs.pop('num_uuids', 0)
-    padding = kwargs.pop('padding', '0')
-    all_uuid = True
-    parts = []
     if not uuids or uuids[0] == '':
         uuid_str = b''
     else:
-        for part in uuids:
-            if isinstance(part, uuid.UUID) or hasattr(part, 'hex'):
-                parts.append(part.hex)
-            else:
-                all_uuid = False
-                parts.append(str(part))
-        if all_uuid:
-            uuid_str = ''.join(parts)
-        else:
-            uuid_str = '\0'.join(parts)
-    if all_uuid:
-        uuid_str += padding * ((num_uuids * 32) - len(uuid_str))
-    else:
-        if len(parts) < num_uuids:
-            if padding == '0':
-                # We are making a start key for scan over keys between start and finish
-                # but we don't actually need to do anything in that case.
-                pass
-            elif padding == 'f':
-                # We are making a finish key for scan over keys between start and finish.
-                # What goes after all things prefixed by 'foo\0...' is 'foo\xff'.
-                uuid_str = uuid_str + '\xff'
+        uuid_str = ''.join(map(lambda x: x.hex, uuids))
     return uuid_str
 
 
-def join_key_fragments(key_fragments, splitter='\0'):
+def default_key_serializer(x):
+    if isinstance(x, uuid.UUID) or hasattr(x, 'hex'):
+        return x.hex
+    return str(x)
+
+
+def join_key_fragments(key_fragments, splitter='\0', uuid_mode=True, key_serializer=None):
     # kinda underwhelming, probably doesn't need to actually be a function as such
-    return splitter.join(key_fragments)
+    if uuid_mode:
+        return b''.join(map(lambda x: x.hex, key_fragments))
+    if key_serializer is None:
+        key_serializer = default_key_serializer
+    return splitter.join(map(key_serializer, key_fragments))
 
 
 def make_start_key(key_fragments, uuid_mode=True, num_uuids=0, splitter='\0'):

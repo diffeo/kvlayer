@@ -11,7 +11,7 @@ import abc
 import logging
 from kvlayer._exceptions import MissingID
 from kvlayer._abstract_storage import AbstractStorage
-from kvlayer._utils import _requires_connection, join_uuids, make_start_key, make_end_key
+from kvlayer._utils import _requires_connection, make_start_key, make_end_key, join_key_fragments
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,7 @@ class AbstractLocalStorage(AbstractStorage):
                 ## given a range, mimic the behavior of DBs that tell
                 ## you if they failed to find a key
                 ## LocalStorage does get/put on the Python tuple as the key, stringify for sort comparison
-                joined_key = join_uuids(*key)
+                joined_key = join_key_fragments(key, uuid_mode=self._require_uuid)
                 if (start is not None) and (start > joined_key):
                     continue
                 if (finish is not None) and (finish < joined_key):
