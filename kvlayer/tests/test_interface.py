@@ -58,9 +58,6 @@ def client(config, request, tmpdir, namespace_string):
         with local.open('w') as f: pass
         config['filename'] = str(local)
 
-        copy = tmpdir.join('copy')
-        config['copy_to_filename'] = str(copy)
-
     if config['storage_type'] == 'redis':
         redis_address = request.config.getoption('--redis-address')
         if redis_address is not None:
