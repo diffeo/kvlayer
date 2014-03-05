@@ -14,7 +14,7 @@ from kvlayer._abstract_storage import AbstractStorage
 from pyaccumulo import Accumulo, Mutation, Range, BatchWriter
 from pyaccumulo.iterators import RowDeletingIterator
 from pyaccumulo.proxy.ttypes import IteratorScope, AccumuloSecurityException
-from _utils import split_uuids, make_start_key, make_end_key, join_key_fragments
+from _utils import split_key, make_start_key, make_end_key, join_key_fragments
 
 logger = logging.getLogger('kvlayer')
 
@@ -103,6 +103,7 @@ class AStorage(AbstractStorage):
         '''
         logger.debug('creating tables: %r', table_names)
         self._table_names.update(table_names)
+        self.normalize_namespaces(self._table_names)
         for table in table_names:
             if not self.conn.table_exists(self._ns(table)):
                 self._create_table(table)
@@ -125,7 +126,7 @@ class AStorage(AbstractStorage):
 
     @retry([AccumuloSecurityException])
     def put(self, table_name, *keys_and_values, **kwargs):
-        num_uuids = self._table_names[table_name]
+        key_spec = self._table_names[table_name]
         cur_bytes = 0
         batch_writer = BatchWriter(conn=self.conn,
                                    table=self._ns(table_name),
@@ -134,7 +135,7 @@ class AStorage(AbstractStorage):
                                    timeout_ms=self._timeout_ms,
                                    threads=self._threads)
         for key, blob in keys_and_values:
-            ex = self.check_put_key_value(key, blob, table_name, num_uuids)
+            ex = self.check_put_key_value(key, blob, table_name, key_spec)
             if ex:
                 raise ex
             if (len(blob) + cur_bytes >=
@@ -147,14 +148,14 @@ class AStorage(AbstractStorage):
                              'batched, and will send this item in next batch.')
                 batch_writer.flush()
                 cur_bytes = 0
-            mut = Mutation(join_key_fragments(key, uuid_mode=self._require_uuid))
+            mut = Mutation(join_key_fragments(key, key_spec=key_spec))
             mut.put(cf='', cq='', val=blob)
             batch_writer.add_mutation(mut)
             cur_bytes += len(blob)
         batch_writer.close()
 
     def scan(self, table_name, *key_ranges, **kwargs):
-        num_uuids = self._table_names[table_name]
+        key_spec = self._table_names[table_name]
         if not key_ranges:
             key_ranges = [['', '']]
         for start_key, stop_key in key_ranges:
@@ -173,12 +174,12 @@ class AStorage(AbstractStorage):
                 if not start_key:
                     srow = None
                 else:
-                    srow = make_start_key(start_key, num_uuids=num_uuids, uuid_mode=self._require_uuid)
+                    srow = make_start_key(start_key, key_spec=key_spec)
                     srow = _string_decrement(srow)
                 if not stop_key:
                     erow = None
                 else:
-                    erow = make_end_key(stop_key, num_uuids=num_uuids, uuid_mode=self._require_uuid)
+                    erow = make_end_key(stop_key, key_spec=key_spec)
                 key_range = Range(srow=srow, erow=erow, sinclude=True, einclude=True)
                 scanner = self.conn.scan(self._ns(table_name),
                                          scanrange=key_range)
@@ -187,7 +188,7 @@ class AStorage(AbstractStorage):
 
             for row in scanner:
                 total_count += 1
-                yield tuple(split_uuids(row.row)), row.val
+                yield split_key(row.row, key_spec), row.val
             else:
                 if specific_key_range and total_count == 0:
                     raise MissingID('table_name=%r start=%r finish=%r' % (
@@ -225,7 +226,7 @@ class AStorage(AbstractStorage):
                                    timeout_ms=self._timeout_ms,
                                    threads=self._threads)
         for key in keys:
-            mut = Mutation(join_key_fragments(key, uuid_mode=self._require_uuid))
+            mut = Mutation(join_key_fragments(key, key_spec=self._table_names[table_name]))
             mut.put(cf='', cq='', val='DEL_ROW')
             batch_writer.add_mutation(mut)
         batch_writer.close()

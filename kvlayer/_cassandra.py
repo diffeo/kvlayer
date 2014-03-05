@@ -79,6 +79,7 @@ class CStorage(AbstractStorage):
         start_connect_time = time.time()
 
         self._table_names.update(table_names)
+        self.normalize_namespaces(self._table_names)
 
         sm = SystemManager(self._chosen_server)
         try:
@@ -251,6 +252,7 @@ class CStorage(AbstractStorage):
         if not key_ranges:
             ## get all columns
             key_ranges = [['', '']]
+        # TODO: s/num_uuids/key_spec/g
         num_uuids = self._table_names[table_name]
         for start, finish in key_ranges:
             specific_key_range = bool( start or finish )
@@ -265,6 +267,7 @@ class CStorage(AbstractStorage):
                 finish = None
             else:
                 columns = None
+                # TODO: require_uuid and num_uuids is obsolete. fix.
                 start = make_start_key(start, uuid_mode=self._require_uuid, num_uuids=num_uuids)
                 finish = make_end_key(finish, uuid_mode=self._require_uuid, num_uuids=num_uuids)
                 row_names = self._make_shard_names(table_name, start, finish)

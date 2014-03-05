@@ -40,6 +40,7 @@ def grouper(iterable, n, fillvalue=None):
     args = [iter(iterable)] * n
     return itertools.izip_longest(fillvalue=fillvalue, *args)
 
+@pytest.mark.skipif('True')
 def test_composite_column_names(client):
     '''
     examine the unique nature of cassandras "wide sorted rows";
@@ -123,6 +124,7 @@ def test_composite_column_names(client):
 
     sm.close()
 
+@pytest.mark.skipif('True')
 def test_composite_column_names_with_decomposited_keys(client):
     '''
     examine the unique nature of cassandras "wide sorted rows" using
@@ -267,6 +269,7 @@ def test_composite_column_names_second_level_range_query(client):
 
     sm.close()
 
+# TODO: delete this and use kvlayer._util.join_uuids(), but really drop it and use join_key_fragments
 def join_uuids(*uuids, **kwargs):
     num_uuids = kwargs.pop('num_uuids', 0)
     padding = kwargs.pop('padding', '0')
@@ -274,9 +277,11 @@ def join_uuids(*uuids, **kwargs):
     uuid_str += padding * ((num_uuids * 32) - len(uuid_str))
     return uuid_str
 
+# TODO: delete this and use kvlayer._util.split_uuids(), but really use split_key_fragments
 def split_uuids(uuid_str):
     return map(lambda s: uuid.UUID(hex=''.join(s)), grouper(uuid_str, 32))
 
+@pytest.mark.skipif('True')
 def test_composite_column_names_second_level_range_query_with_decomposited_keys(client):
     '''
     check that we can execute range queries on the second part of a
@@ -343,6 +348,7 @@ def test_composite_column_names_second_level_range_query_with_decomposited_keys(
 
     sm.close()
 
+@pytest.mark.skipif('True')
 def test_cql_paging(client):
     '''
     read rows from a range of tokens in Cassandra
@@ -397,6 +403,7 @@ def test_cql_paging(client):
     conn.close()
 
 
+@pytest.mark.skipif('True')
 def test_cql_token_range(client):
     '''
     read rows from a range of tokens in Cassandra

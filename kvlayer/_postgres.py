@@ -18,8 +18,11 @@ import re
 import psycopg2
 
 from kvlayer._abstract_storage import AbstractStorage
-from kvlayer._utils import split_uuids, make_start_key, make_end_key, join_key_fragments
+from kvlayer._utils import split_key, make_start_key, make_end_key, join_key_fragments
 from kvlayer._exceptions import MissingID, ProgrammerError
+
+
+logger = logging.getLogger(__name__)
 
 
 # SQL strings in this module use python3 style string.format() formatting to substitute the table name into the command.
@@ -40,12 +43,12 @@ def _valid_namespace(x):
 # table, key, value
 _CREATE_TABLE = '''CREATE TABLE kv_{namespace} (
   t text,
-  k text,
+  k bytea,
   v bytea,
   PRIMARY KEY (t, k)
 );
 
-CREATE FUNCTION upsert_{namespace}(tname TEXT, key TEXT, data BYTEA) RETURNS VOID AS
+CREATE FUNCTION upsert_{namespace}(tname TEXT, key BYTEA, data BYTEA) RETURNS VOID AS
 $$
 BEGIN
     LOOP
@@ -69,7 +72,7 @@ $$
 LANGUAGE plpgsql;
 '''
 
-_DROP_TABLE = "DROP FUNCTION upsert_{namespace}(TEXT,TEXT,BYTEA)"
+_DROP_TABLE = "DROP FUNCTION upsert_{namespace}(TEXT,BYTEA,BYTEA)"
 _DROP_TABLE_b = '''DROP TABLE kv_{namespace}'''
 
 _CLEAR_TABLE = '''DELETE FROM kv_{namespace} WHERE t = %s'''
@@ -136,11 +139,12 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         :type table_names: dict(str = int)
         '''
         self._table_names.update(table_names)
+        self.normalize_namespaces(self._table_names)
         conn = self._conn()
         with conn.cursor() as cursor:
             if _cursor_check_namespace_table(cursor, self._namespace):
                 # already exists
-                logging.debug('namespace %r already exists, not creating', self._namespace)
+                logger.debug('namespace %r already exists, not creating', self._namespace)
                 return
             cursor.execute(_CREATE_TABLE.format(namespace=self._namespace))
 
@@ -149,13 +153,13 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         conn = self._conn()
         with conn.cursor() as cursor:
             if not _cursor_check_namespace_table(cursor, self._namespace):
-                logging.debug('namespace %r does not exist, not dropping', self._namespace)
+                logger.debug('namespace %r does not exist, not dropping', self._namespace)
                 return
             try:
                 cursor.execute(_DROP_TABLE.format(namespace=self._namespace))
                 cursor.execute(_DROP_TABLE_b.format(namespace=self._namespace))
             except:
-                logging.warn('error on delete_namespace(%r)', self._namespace, exc_info=True)
+                logger.warn('error on delete_namespace(%r)', self._namespace, exc_info=True)
 
     def clear_table(self, table_name):
         'Delete all data from one table'
@@ -175,27 +179,31 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         number of (key, value) paris gathered into each batch for
         communication with DB.
         '''
-        num_uuids = self._table_names[table_name]
+        key_spec = self._table_names[table_name]
         conn = self._conn()
         with conn.cursor() as cursor:
             for kv in keys_and_values:
-                ex = self.check_put_key_value(kv[0], kv[1], table_name, num_uuids)
+                ex = self.check_put_key_value(kv[0], kv[1], table_name, key_spec)
                 if ex:
                     raise ex
+                keystr = join_key_fragments(kv[0], key_spec=key_spec)
+                #logger.debug('put k=%r from %r', keystr, kv[0])
+                keystr = psycopg2.Binary(keystr)
                 cursor.callproc(
                     'upsert_{namespace}'.format(namespace=self._namespace),
-                    (table_name, join_key_fragments(kv[0], uuid_mode=self._require_uuid), psycopg2.Binary(kv[1])))
+                    (table_name, keystr, psycopg2.Binary(kv[1])))
 
     def get(self, table_name, *keys, **kwargs):
         '''Yield tuples of (key, value) from querying table_name for
         items with specified keys.
         '''
-        num_uuids = self._table_names[table_name]
+        key_spec = self._table_names[table_name]
         cmd = _GET.format(namespace=self._namespace)
         conn = self._conn()
         with conn.cursor() as cursor:
             for key in keys:
-                key = join_key_fragments(key, uuid_mode=self._require_uuid)
+                key = join_key_fragments(key, key_spec=key_spec)
+                key = psycopg2.Binary(key)
                 cursor.execute(cmd, (table_name, key))
                 if not (cursor.rowcount > 0):
                     raise MissingID()
@@ -205,13 +213,14 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                         val = row[1]
                         if isinstance(val, buffer):
                             if len(val) > MAX_BLOB_BYTES:
-                                logging.error('key=%r has blob of size %r over limit of %r', row[0], len(val), MAX_BLOB_BYTES)
+                                logger.error('key=%r has blob of size %r over limit of %r', row[0], len(val), MAX_BLOB_BYTES)
                                 continue  # TODO: raise instead of drop?
                             val = val[:]
-                        yield tuple(split_uuids(row[0])), val
+                        keyraw = row[0]
+                        if isinstance(keyraw, buffer):
+                            keyraw = keyraw[:]
+                        yield split_key(keyraw, key_spec), val
                     results = cursor.fetchmany()
-
-
 
     def scan(self, table_name, *key_ranges, **kwargs):
         '''Yield tuples of (key, value) from querying table_name for
@@ -222,7 +231,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                             ^^^^^^^^^^^^^^^^^^^^^^^^
                             start        finish of one range
         '''
-        num_uuids = self._table_names[table_name]
+        key_spec = self._table_names[table_name]
         failOnEmptyResult = True
         if not key_ranges:
             key_ranges = [['', '']]
@@ -233,14 +242,18 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         with conn.cursor() as cursor:
             for kmin, kmax in key_ranges:
                 if kmin:
-                    start = make_start_key(kmin, uuid_mode=self._require_uuid, num_uuids=num_uuids)
+                    start = make_start_key(kmin, key_spec=key_spec)
                 else:
                     start = None
                 if kmax:
-                    finish = make_end_key(kmax, uuid_mode=self._require_uuid, num_uuids=num_uuids)
+                    finish = make_end_key(kmax, key_spec=key_spec)
                 else:
                     finish = None
-                logging.debug('pg t=%r %r<=k<=%r (%r<=k<=%r)', table_name, kmin, kmax, start, finish)
+                logger.debug('pg t=%r %r<=k<=%r (%r<=k<=%r)', table_name, kmin, kmax, start, finish)
+                if start:
+                    start = psycopg2.Binary(start)
+                if finish:
+                    finish = psycopg2.Binary(finish)
                 if start:
                     if finish:
                         cmd = _GET_RANGE.format(namespace=self._namespace)
@@ -255,7 +268,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                     else:
                         cmd = _GET_ALL.format(namespace=self._namespace)
                         cursor.execute(cmd, (table_name,))
-                logging.debug('%r rows from %r', cursor.rowcount, cmd)
+                logger.debug('%r rows from %r', cursor.rowcount, cmd)
                 if not (cursor.rowcount > 0):
                     continue
                 results = cursor.fetchmany()
@@ -264,10 +277,13 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                         val = row[1]
                         if isinstance(val, buffer):
                             if len(val) > MAX_BLOB_BYTES:
-                                logging.error('key=%r has blob of size %r over limit of %r', row[0], len(val), MAX_BLOB_BYTES)
+                                logger.error('key=%r has blob of size %r over limit of %r', row[0], len(val), MAX_BLOB_BYTES)
                                 continue  # TODO: raise instead of drop?
                             val = val[:]
-                        yield split_uuids(row[0]), val
+                        keyraw = row[0]
+                        if isinstance(keyraw, buffer):
+                            keyraw = keyraw[:]
+                        yield split_key(keyraw, key_spec), val
                         failOnEmptyResult = False
                     results = cursor.fetchmany()
         if failOnEmptyResult:
@@ -280,11 +296,11 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         number of (key, value) paris gathered into each batch for
         communication with DB.
         '''
-        num_uuids = self._table_names[table_name]
+        key_spec = self._table_names[table_name]
         def _delkey(k):
-            if len(k) != num_uuids:
-                raise Exception('invalid key has %s uuids but wanted %s: %r' % (len(k), num_uuids, k))
-            return (table_name, join_key_fragments(k, uuid_mode=self._require_uuid))
+            if len(k) != len(key_spec):
+                raise Exception('invalid key has %s uuids but wanted %s: %r' % (len(k), len(key_spec), k))
+            return (table_name, psycopg2.Binary(join_key_fragments(k, key_spec=key_spec)))
         conn = self._conn()
         with conn.cursor() as cursor:
             cursor.executemany(

@@ -35,6 +35,7 @@ class AbstractLocalStorage(AbstractStorage):
         '''
         logger.debug('creating tables: %r', table_names)
         self._table_names.update(table_names)
+        self.normalize_namespaces(self._table_names)
         ## just store everything in a dict
         for table in table_names:
             if table not in self._data:
@@ -57,7 +58,7 @@ class AbstractLocalStorage(AbstractStorage):
 
     @_requires_connection
     def scan(self, table_name, *key_ranges, **kwargs):
-        num_uuids = self._table_names[table_name]
+        key_spec = self._table_names[table_name]
         key_ranges = list(key_ranges)
         specific_key_range = True
         if not key_ranges:
@@ -65,13 +66,13 @@ class AbstractLocalStorage(AbstractStorage):
             specific_key_range = False
         for start, finish in key_ranges:
             total_count = 0
-            start = make_start_key(start, uuid_mode=self._require_uuid, num_uuids=num_uuids)
-            finish = make_end_key(finish, uuid_mode=self._require_uuid, num_uuids=num_uuids)
+            start = make_start_key(start, key_spec=key_spec)
+            finish = make_end_key(finish, key_spec=key_spec)
             for key in sorted(self._data[table_name].iterkeys()):
                 ## given a range, mimic the behavior of DBs that tell
                 ## you if they failed to find a key
                 ## LocalStorage does get/put on the Python tuple as the key, stringify for sort comparison
-                joined_key = join_key_fragments(key, uuid_mode=self._require_uuid)
+                joined_key = join_key_fragments(key, key_spec=key_spec)
                 if (start is not None) and (start > joined_key):
                     continue
                 if (finish is not None) and (finish < joined_key):

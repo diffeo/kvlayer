@@ -43,16 +43,15 @@ class AbstractStorage(object):
     '''
     __metaclass__ = abc.ABCMeta
 
-    def check_put_key_value(self, key, value, table_name, num_uuids):
+    def check_put_key_value(self, key, value, table_name, key_spec):
         "check that (key, value) are ok. return Exception or None if okay."
         if not isinstance(key, tuple):
             return BadKey('key should be tuple, but got %s' % (type(key),))
-        if len(key) != num_uuids:
-            return BadKey('%r wants %r uuids in key, but got %r' % (table_name,  num_uuids, len(key)))
-        if self._require_uuid:
-            for key_i in key:
-                if not isinstance(key_i, uuid.UUID):
-                    return BadKey('wanted uuid.UUID but got %s' % (type(key_i),))
+        if len(key) != len(key_spec):
+            return BadKey('%r wants %r parts in key tuple, but got %r' % (table_name,  len(key_spec), len(key)))
+        for kp, ks in zip(key, key_spec):
+            if not isinstance(kp, ks):
+                return BadKey('part of key wanted type %s but got %s' % (ks, type(kp)))
         return None
 
     @abc.abstractmethod
@@ -81,13 +80,31 @@ class AbstractStorage(object):
         different table_names in order to expand the set of tables in
         the namespace.
 
+        Tables are specified by the form of their keys. A key must be
+        a tuple of a set number and type of parts. Currently types
+        (UUID, int, long, str) are well supported, anything else is
+        serialzed by str(). Historically, a kvlayer key had to be a
+        tuple of some number of UUIDs.
+
         :param table_names: Each string in table_names becomes the
-        name of a table, and the value must be an integer specifying
-        the number of UUIDs in the keys
+        name of a table, and the value must be an either a tuple of types
+        or for backwards compatibility an integer specifying
+        the number of UUIDs in the keys. 'table1':3 becomes 'table1':(uuid.UUID, uuid.UUID, uuid.UUID)
 
         :type table_names: dict(str = int)
+
         '''
         return
+
+    def normalize_namespaces(self, table_names):
+        '''Normalize table_names spec dictionary in place.
+
+        Replaces ints with a tuple of that many (uuid.UUID,)
+        '''
+        for k, v in table_names.iteritems():
+            if isinstance(v, (int, long)):
+                assert v < 50, "assuming attempt at very long key is a bug"
+                table_names[k] = (uuid.UUID,) * v
 
     @abc.abstractmethod
     def delete_namespace(self):
