@@ -125,7 +125,7 @@ class InstanceCollection(collections.MutableMapping):
             i_transport = TTransport.TBufferedTransport(i_fh)
             i_protocol = protocol(i_transport)
             bc.read( i_protocol )
-            
+
         target = bc.collection_type
         parts = target.split('.')
         modname = '.'.join(parts[:-1])
@@ -225,7 +225,7 @@ class InstanceCollection(collections.MutableMapping):
             i_protocol = protocol(i_transport)
             bc.read( i_protocol )
         self.blobs = bc
-        
+
     def dumps(self):
         '''Create a serialized `BlobConnection` from this.
 
@@ -250,7 +250,7 @@ class InstanceCollection(collections.MutableMapping):
         elif key in self._bc.typed_blobs:
             return True
         else:
-            return False        
+            return False
 
     def __getitem__(self, key):
         if key not in self._instances:
@@ -283,7 +283,7 @@ class InstanceCollection(collections.MutableMapping):
             self._bc.typed_blobs.pop(key)
             self._instances.pop(key)
             return value
-        elif default:
+        elif default is not None:
             return default
         else:
             raise IndexError('%r is not in %r' % (key, self))
