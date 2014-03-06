@@ -119,7 +119,7 @@ class AbstractStorage(object):
     @abc.abstractmethod
     def put(self, table_name, *keys_and_values, **kwargs):
         '''Save values for keys in table_name.  Each key must be a
-        tuple of UUIDs of the length specified for table_name in
+        tuple of length and types as specified for table_name in
         setup_namespace.
 
         :params batch_size: a DB-specific parameter that limits the
@@ -133,6 +133,9 @@ class AbstractStorage(object):
         '''Yield tuples of (key, value) from querying table_name for
         items with keys within the specified ranges.  If no key_ranges
         are provided, then yield all (key, value) pairs in table.
+
+        To specify the beginning or end, a -Inf or Inf value, use an
+        empty tuple as the beginning or ending key of a range.
 
         :type key_ranges: (((UUID, ...), (UUID, ...)), ...)
                             ^^^^^^^^^^^^^^^^^^^^^^^^
