@@ -81,7 +81,7 @@ def default_key_serializer(x):
     return str(x)
 
 
-def _check_types(key_fragments, key_spec):
+def _check_types(key_fragments, key_spec, splitter):
     if key_spec:
         for i in xrange(len(key_fragments)):
             kf = key_fragments[i]
@@ -90,11 +90,22 @@ def _check_types(key_fragments, key_spec):
                 raise BadKey('key[%s] is %s but wanted %s' % (i, type(kf), ks))
 
 
+class SerializerAndChecker(object):
+    def __init__(self, serializer, splitter):
+        self.serializer = serializer
+        self.splitter = splitter
+
+    def __call__(self, x):
+        sx = self.serializer(x)
+        if self.splitter in sx:
+            raise BadKey('serialized key fragment %r must not contain special string %r. If this happens frequently, pick a better splitter or implement escaping on serialized key fragments.' % (sx, self.splitter))
+        return sx
+
+
 def join_key_fragments(key_fragments, splitter='\0', key_spec=None, key_serializer=None):
     # kinda underwhelming, probably doesn't need to actually be a function as such
-    _check_types(key_fragments, key_spec)
-    if key_serializer is None:
-        key_serializer = default_key_serializer
+    _check_types(key_fragments, key_spec, splitter)
+    key_serializer = SerializerAndChecker(key_serializer or default_key_serializer, splitter)
     return splitter.join(map(key_serializer, key_fragments))
 
 
@@ -104,9 +115,8 @@ def make_start_key(key_fragments, key_spec=None, splitter='\0', key_serializer=N
     '''
     if key_fragments is None:
         return None
-    _check_types(key_fragments, key_spec)
-    if key_serializer is None:
-        key_serializer = default_key_serializer
+    _check_types(key_fragments, key_spec, splitter)
+    key_serializer = SerializerAndChecker(key_serializer or default_key_serializer, splitter)
     return splitter.join(map(key_serializer, key_fragments))
 
 
@@ -123,9 +133,8 @@ def make_end_key(key_fragments, key_spec=None, splitter='\0', key_serializer=Non
     '''
     if key_fragments is None:
         return None
-    _check_types(key_fragments, key_spec)
-    if key_serializer is None:
-        key_serializer = default_key_serializer
+    _check_types(key_fragments, key_spec, splitter)
+    key_serializer = SerializerAndChecker(key_serializer or default_key_serializer, splitter)
     return splitter.join(map(key_serializer, key_fragments)) + '\xff'
 
 
