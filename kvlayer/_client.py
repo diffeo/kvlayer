@@ -70,7 +70,7 @@ def getch():
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
     return ch
 
-allowed_actions = ['delete', 'dump_config']
+allowed_actions = ['delete']
 
 def main():
     parser = argparse.ArgumentParser()
@@ -79,26 +79,22 @@ def main():
     parser.add_argument('-y', '--yes', default=False, action='store_true', dest='assume_yes',
                         help='Assume "yes" and require no input for confirmation questions.')
     args = yakonfig.parse_args(parser, [yakonfig, kvlayer])
-    config = yakonfig.get_global_config()
-    kvlayer_client = client(config['kvlayer'])
+    kvlayer_client = client()
 
     if args.action not in allowed_actions:
         sys.exit('only currently allowed actions are %r' % allowed_actions)
 
-    elif args.action == 'dump_config':
-        print yaml.dump(config)
-
     elif args.action == 'delete':
-        stderr('Delete everything in %r?  Enter namespace: ' % args.namespace, newline='')
+        stderr('Delete everything in %r?  Enter namespace: ' % kvlayer_client._namespace, newline='')
         if args.assume_yes:
             stderr('... assuming yes.\n')
             do_delete = True
         else:
             idx = 0
-            assert len(args.namespace) > 0
-            while idx < len(args.namespace):
+            assert len(kvlayer_client._namespace) > 0
+            while idx < len(kvlayer_client._namespace):
                 ch = getch()
-                if ch == args.namespace[idx]:
+                if ch == kvlayer_client._namespace[idx]:
                     idx += 1
                     do_delete = True
                 else:
