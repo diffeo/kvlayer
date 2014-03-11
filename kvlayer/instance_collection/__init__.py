@@ -1,7 +1,26 @@
-'''
-Your use of this software is governed by your license agreement.
+'''Mapping holding serializable values.
 
-Copyright 2012-2014 Diffeo, Inc.
+.. Your use of this software is governed by your license agreement.
+   Copyright 2012-2014 Diffeo, Inc.
+
+This is used to store dictionaries as values for kvlayer cells.
+
+.. autoclass:: InstanceCollection
+   :members:
+   :special-members:
+   :show-inheritance:
+
+.. autofunction:: register
+
+.. autoclass:: BlobCollection
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: Chunk
+   :members:
+   :show-inheritance:
+
 '''
 from __future__ import absolute_import
 from abc import ABCMeta, abstractmethod
@@ -82,14 +101,15 @@ class InstanceCollection(collections.MutableMapping):
         '''Create a new InstanceCollection.
 
         `data` can provide data for the object at construction time.
-        If missing or `None`, the collection is initially empty.
-        If a `BlobCollection`, the data in the collection is used
-        for the initial values of the collection, and the keys in
-        this collection are the keys from the blob.  If a mapping,
-        the collection is populated from the mapping, with the
-        `__missing__` function used to generate serializations.
-        If a string, it contains the serialized Thrift version of
-        a `BlobCollection`, which is used as described above.
+        If missing or :const:`None`, the collection is initially
+        empty.  If a :class:`BlobCollection`, the data in the
+        collection is used for the initial values of the collection,
+        and the keys in this collection are the keys from the blob.
+        If a mapping, the collection is populated from the mapping,
+        with the :meth:`__missing__` function used to generate
+        serializations.  If a string, it contains the serialized
+        Thrift version of a :class:`BlobCollection`, which is used as
+        described above.
 
         :param data: initialization data
 
@@ -108,10 +128,10 @@ class InstanceCollection(collections.MutableMapping):
     def from_data(data):
         '''Create a new InstanceCollection from data.
 
-        `data` should be either a `BlobCollection`, or a Thrift-
-        serialized form of one.  The actual type constructed will
-        be the `BlobCollection.collection_type` from the provided
-        data.
+        `data` should be either a :class:`BlobCollection`, or a
+        Thrift- serialized form of one.  The actual type constructed
+        will be the :attr:`BlobCollection.collection_type` from the
+        provided data.
 
         :param data: inbound `BlobCollection` or serialization thereof
         :return: new `InstanceCollection` or other serializable type
@@ -148,8 +168,8 @@ class InstanceCollection(collections.MutableMapping):
         '''Provide a default value for some key.
 
         This should produce a default value and serialization for
-        `key`, and insert it using `insert()`.  Note that this is
-        also called from e.g. `__setitem__()` when inserting a value
+        `key`, and insert it using :meth:`insert`.  Note that this is
+        also called from e.g. :meth:`__setitem__()` when inserting a value
         for the first time.
 
         :param key: key of the mapping
@@ -169,10 +189,10 @@ class InstanceCollection(collections.MutableMapping):
 
     @property
     def blobs(self):
-        '''The `BlobCollection` backing this `InstanceCollection`.
+        '''The :class:`BlobCollection` backing this :class:`InstanceCollection`.
 
         Any instances that have been fetched or added will be serialized
-        into the `BlobCollection` before returning it.
+        into the :class:`BlobCollection` before returning it.
 
         '''
         for key, obj in self._instances.items():
@@ -190,11 +210,11 @@ class InstanceCollection(collections.MutableMapping):
         return self._bc
     @blobs.setter
     def blobs(self, bc):
-        '''Replace the `BlobCollection` for this `InstanceCollection`.
+        '''Replace the :class:`BlobCollection` for this :class:`InstanceCollection`.
 
-        All cached instances will be discarded.  The `collection_type`
-        of the collection must be the same as this object's runtime
-        type.
+        All cached instances will be discarded.  The
+        :attr:`BlobCollection.collection_type` of the collection must
+        be the same as this object's runtime type.
 
         '''
         if bc.collection_type != self._clsname:
@@ -205,15 +225,15 @@ class InstanceCollection(collections.MutableMapping):
         self._instances.clear()
 
     def loads(self, blob_collection_blob):
-        '''Replaces the collection using a serialized `BlobCollection`.
+        '''Replaces the collection using a serialized :class:`BlobCollection`.
 
         All saved data in this object is discarded.  The provided
-        string is parsed as a `BlobCollection` and this collection is
-        used as a source of serialized items.  If `None` is provided
+        string is parsed as a :class:`BlobCollection` and this collection is
+        used as a source of serialized items.  If :const:`None` is provided
         then this collection is emptied.
 
-        :param str blob_collection_blob: if not `None`, then a serialized
-          Thrift representation of a `BlobCollection`
+        :param str blob_collection_blob: if not :const:`None`, then a serialized
+          Thrift representation of a :class:`BlobCollection`
 
         '''
         bc = BlobCollection()
@@ -227,14 +247,14 @@ class InstanceCollection(collections.MutableMapping):
         self.blobs = bc
 
     def dumps(self):
-        '''Create a serialized `BlobConnection` from this.
+        '''Create a serialized :class:`BlobConnection` from this.
 
         All saved items in this object are serialized, and the
-        resulting `BlobCollection` is serialized and returned.
-        Passing the resulting string to `loads` or to the class
+        resulting :class:`BlobCollection` is serialized and returned.
+        Passing the resulting string to :meth:`loads` or to the class
         constructor should produce an equivalent object to `self`.
 
-        :return: Thrift-serialized `BlobConnection` string
+        :return: Thrift-serialized :class:`BlobConnection` string
 
         '''
         o_fh = StringIO()
@@ -291,12 +311,12 @@ class InstanceCollection(collections.MutableMapping):
     def insert(self, key, value, serializer_name, config=None):
         '''Insert a value into the collection with an explicit serializer.
 
-        This allows the caller to insert a value with the name of
-        the serializer and an optional configuration block.  The
-        serializer must be registered via the `register()` function.
-        In most cases, this will be called by the `__missing__()`
-        function, and ordinary `__setitem__()` will correctly populate
-        the item.
+        This allows the caller to insert a value with the name of the
+        serializer and an optional configuration block.  The
+        serializer must be registered via the :func:`register`
+        function.  In most cases, this will be called by the
+        :meth:`__missing__` function, and ordinary :meth:`__setitem__`
+        will correctly populate the item.
 
         :param key: mapping key
         :param value: mapping value
@@ -324,18 +344,18 @@ class InstanceCollection(collections.MutableMapping):
 
 
 class Chunk(streamcorpus.Chunk):
-    '''Chunk implementation that yields `InstanceCollection`s.
+    '''Chunk implementation that yields :class:`InstanceCollection` objects.
 
-    The default `message` type is `BlobCollection`, and you should
-    generally use this.  `add()` adds, and `__iter__` produces,
-    `InstanceCollection` objects.
+    The default `message` type is :class:`BlobCollection`, and you
+    should generally use this.  :meth:`add()` adds, and
+    :meth:`__iter__` produces, :class:`InstanceCollection` objects.
 
     In reality, any type that has a `blobs` property can be passed to
-    `add()`; this property contains a `BlobCollection` object.  When
-    iterating, the `BlobCollection` names a type in its
-    `collection_type` field, and this must be a type that will accept
-    the `BlobCollection` as the only positional parameter in its
-    constructor.
+    :meth:`add()`; this property contains a :class:`BlobCollection`
+    object.  When iterating, the :class:`BlobCollection` names a type
+    in its :attr:`~BlobCollection.collection_type` field, and this
+    must be a type that will accept the :class:`BlobCollection` as the
+    only positional parameter in its constructor.
 
     '''
     def __init__(self, *args, **kwargs):

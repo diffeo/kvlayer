@@ -15,10 +15,10 @@ from kvlayer._exceptions import BadKey, ProgrammerError
 import yakonfig
 
 class AbstractStorage(object):
-    '''
-    base class for all low-level storage implementations
+    '''Base class for all low-level storage implementations.
 
-    All of the table-like structures we use are setup like this:
+    All of the table-like structures we use are setup like this::
+
         namespace = dict(
             table_name = dict((UUID, UUID, ...): val)
             ...
@@ -28,18 +28,6 @@ class AbstractStorage(object):
     of each table, and the "val" is always binary and might be a
     trivial value, like 1.
 
-    In one of the first programs using this package, TreeID and TimeID
-    were just UUID that we can order lexically.
-
-    inbound  = dict((TreeID, TimeID, TreeID) = b'')
-    edges    = dict((TreeID, TimeID) = bytes((TreeID, TimeID)) )
-    vertexes = dict((TreeID, TimeID) = binary)
-    leafs    = dict(TreeID = binary)
-    meta     = dict(TreeID = binary)
-
-
-    Thus, the only thing that we need storage instances to do is
-    provide a set of generalized "tables" of this form.
     '''
     __metaclass__ = abc.ABCMeta
 
@@ -76,22 +64,23 @@ class AbstractStorage(object):
 
     @abc.abstractmethod
     def setup_namespace(self, table_names):
-        '''creates tables in the namespace.  Can be run multiple times with
-        different table_names in order to expand the set of tables in
-        the namespace.
+        '''Create tables in the namespace.
+
+        Can be run multiple times with different `table_names` in
+        order to expand the set of tables in the namespace.  This
+        generally needs to be called by every client, even if only
+        reading data.
 
         Tables are specified by the form of their keys. A key must be
         a tuple of a set number and type of parts. Currently types
-        (UUID, int, long, str) are well supported, anything else is
-        serialzed by str(). Historically, a kvlayer key had to be a
-        tuple of some number of UUIDs.
+        :class:`uuid.UUID`, :class:`int`, :class:`long`, and
+        :class:`str` are well supported, anything else is serialzed by
+        :func:`str`. Historically, a kvlayer key had to be a tuple of some
+        number of UUIDs.  `table_names` is a dictionary mapping a
+        table name to a tuple of types.  The dictionary values may also
+        be integers, in which case the tuple is that many UUIDs.
 
-        :param table_names: Each string in table_names becomes the
-        name of a table, and the value must be an either a tuple of types
-        or for backwards compatibility an integer specifying
-        the number of UUIDs in the keys. 'table1':3 becomes 'table1':(uuid.UUID, uuid.UUID, uuid.UUID)
-
-        :type table_names: dict(str = int)
+        :param dict table_names: Mapping from table name to value type tuple
 
         '''
         return
@@ -113,18 +102,16 @@ class AbstractStorage(object):
 
     @abc.abstractmethod
     def clear_table(self, table_name):
-        'Delete all data from one table'
+        '''Delete all data from one table.'''
         return
 
     @abc.abstractmethod
     def put(self, table_name, *keys_and_values, **kwargs):
-        '''Save values for keys in table_name.  Each key must be a
-        tuple of length and types as specified for table_name in
-        setup_namespace.
+        '''Save values for keys in `table_name`.
 
-        :params batch_size: a DB-specific parameter that limits the
-        number of (key, value) paris gathered into each batch for
-        communication with DB.
+        Each key must be a tuple of length and types as specified for
+        `table_name` in :meth:`setup_namespace`.
+
         '''
         return
 
@@ -134,12 +121,12 @@ class AbstractStorage(object):
         items with keys within the specified ranges.  If no key_ranges
         are provided, then yield all (key, value) pairs in table.
 
-        To specify the beginning or end, a -Inf or Inf value, use an
-        empty tuple as the beginning or ending key of a range.
+        Each of the `key_ranges` is a pair of a start and end tuple to
+        scan.  To specify the beginning or end, a -Inf or Inf value,
+        use an empty tuple as the beginning or ending key of a range.
 
-        :type key_ranges: (((UUID, ...), (UUID, ...)), ...)
-                            ^^^^^^^^^^^^^^^^^^^^^^^^
-                            start        finish of one range
+        :raise kvlayer.MissingID: if at least one range was specified
+          but no items in that range are present
         '''
         return
 
@@ -150,6 +137,9 @@ class AbstractStorage(object):
 
         :type keys: (((UUID, ...), (UUID, ...)), ...)
 
+        :raise kvlayer.MissingID: if at least one key is specified
+          but no items with those keys can be found
+
         '''
         return
 
@@ -157,9 +147,6 @@ class AbstractStorage(object):
     def delete(self, table_name, *keys, **kwargs):
         '''Delete all (key, value) pairs with specififed keys
 
-        :params batch_size: a DB-specific parameter that limits the
-        number of (key, value) paris gathered into each batch for
-        communication with DB.
         '''
         return
 
