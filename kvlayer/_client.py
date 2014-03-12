@@ -70,21 +70,13 @@ def getch():
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
     return ch
 
-allowed_actions = ['delete']
+class Actions:
+    @classmethod
+    def names(cls):
+        return [k[3:] for k in dir(cls) if k.startswith('do_')]
 
-def main():
-    parser = argparse.ArgumentParser()
-    ## TODO: implement "list" tables in namespace
-    parser.add_argument('action', help='|'.join(allowed_actions))
-    parser.add_argument('-y', '--yes', default=False, action='store_true', dest='assume_yes',
-                        help='Assume "yes" and require no input for confirmation questions.')
-    args = yakonfig.parse_args(parser, [yakonfig, kvlayer])
-    kvlayer_client = client()
-
-    if args.action not in allowed_actions:
-        sys.exit('only currently allowed actions are %r' % allowed_actions)
-
-    elif args.action == 'delete':
+    @staticmethod
+    def do_delete(kvlayer_client, args):
         stderr('Delete everything in %r?  Enter namespace: ' % kvlayer_client._namespace, newline='')
         if args.assume_yes:
             stderr('... assuming yes.\n')
@@ -110,3 +102,31 @@ def main():
         else:
             stderr(' ... Aborting.')
 
+    @staticmethod
+    def do_keys(kvlayer_client, args):
+        if len(args.args) < 2:
+            print "usage: kvlayer keys table size [table size...]"
+            return
+        tables = dict(zip(args.args[0::2], [int(a) for a in args.args[1::2]]))
+        kvlayer_client.setup_namespace(tables)
+        for table in tables:
+            print '{}:'.format(table)
+            for k,v in kvlayer_client.scan(table):
+                print '  {!r}'.format(k)
+            print
+
+def main():
+    parser = argparse.ArgumentParser()
+    ## TODO: implement "list" tables in namespace
+    parser.add_argument('action', help='|'.join(Actions.names()))
+    parser.add_argument('args', nargs='*', help='action-specific arguments')
+    parser.add_argument('-y', '--yes', default=False, action='store_true', dest='assume_yes',
+                        help='Assume "yes" and require no input for confirmation questions.')
+    args = yakonfig.parse_args(parser, [yakonfig, kvlayer])
+    kvlayer_client = client()
+
+    f = getattr(Actions, 'do_' + args.action, None)
+    if f is None:
+        parser.error('invalid action {!r}; allowed values are {}'
+                     .format(args.action, ', '.join(Actions.names())))
+    f(kvlayer_client, args)
