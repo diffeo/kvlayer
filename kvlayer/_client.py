@@ -10,6 +10,7 @@ import logging
 import sys
 import termios
 import tty
+import uuid
 
 import yaml
 
@@ -107,9 +108,17 @@ class Actions:
         if len(args.args) < 2:
             print "usage: kvlayer keys table size [table size...]"
             return
-        tables = dict(zip(args.args[0::2], [int(a) for a in args.args[1::2]]))
+        def schema(s):
+            n = { 'uuid': uuid.UUID, 'int': int, 'long': long, 'str': str }
+            if s.isdigit(): return s
+            if s in n: return (n[s],)
+            if s.startswith('(') and s.endswith(')'): s=s[1:-1]
+            parts = s.split(',')
+            return tuple(n[p] for p in parts)
+        tables = dict(zip(args.args[0::2],
+                          [schema(a) for a in args.args[1::2]]))
         kvlayer_client.setup_namespace(tables)
-        for table in tables:
+        for table in args.args[0::2]:
             print '{}:'.format(table)
             for k,v in kvlayer_client.scan(table):
                 print '  {!r}'.format(k)
