@@ -132,7 +132,7 @@ setup(
         'yakonfig >= 0.3.0',
         #'psycopg2',
         'pycassa >= 1.10',
-        'pyaccumulo_dev >= 1.5.0-SNAPSHOT.1',
+        'pyaccumulo >= 1.5.0.5',
         'pyyaml',
         'cql',
         'streamcorpus >= 0.3.23',
