@@ -16,16 +16,6 @@ class StorageClosed(KVLayerError):
     pass
 
 
-class MissingID(KVLayerError):
-    """A kvlayer function was passed a nonexistent key.
-
-    If the function takes multiple keys or a key range, nothing matched
-    at all.
-
-    """
-    pass
-
-
 class DatabaseEmpty(KVLayerError):
     pass
 

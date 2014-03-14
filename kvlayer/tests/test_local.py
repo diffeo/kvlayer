@@ -4,7 +4,6 @@ import uuid
 import pytest
 
 import kvlayer
-from kvlayer._exceptions import MissingID
 from kvlayer._local_memory import LocalStorage
 import yakonfig
 
@@ -66,5 +65,4 @@ def test_delete_namespace(local_storage):
 
     local_storage2 = LocalStorage()
     local_storage2.setup_namespace(dict(meta=1))
-    with pytest.raises(MissingID):
-        assert list(local_storage2.get('meta', u)) == []
+    assert list(local_storage2.get('meta', u)) == [(u, None)]

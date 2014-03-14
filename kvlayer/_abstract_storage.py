@@ -120,25 +120,21 @@ class AbstractStorage(object):
         '''Yield tuples of (key, value) from querying table_name for
         items with keys within the specified ranges.  If no key_ranges
         are provided, then yield all (key, value) pairs in table.
+        This may return nothing if the table is empty or there are
+        no matching keys in any of the specified ranges.
 
         Each of the `key_ranges` is a pair of a start and end tuple to
         scan.  To specify the beginning or end, a -Inf or Inf value,
         use an empty tuple as the beginning or ending key of a range.
 
-        :raise kvlayer.MissingID: if at least one range was specified
-          but no items in that range are present
         '''
         return
 
     @abc.abstractmethod
     def get(self, table_name, *keys, **kwargs):
-        '''Yield tuples of (key, value) from querying table_name for
-        items with keys
-
-        :type keys: (((UUID, ...), (UUID, ...)), ...)
-
-        :raise kvlayer.MissingID: if at least one key is specified
-          but no items with those keys can be found
+        '''Yield tuples of (key, value) from querying table_name for items
+        with keys.  If any of the key tuples are not in the table,
+        those key tuples will be yielded with value :const:`None`.
 
         '''
         return

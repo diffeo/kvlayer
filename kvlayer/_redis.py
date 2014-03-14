@@ -45,7 +45,7 @@ import uuid
 import redis
 
 from kvlayer._abstract_storage import AbstractStorage
-from kvlayer._exceptions import BadKey, MissingID, ProgrammerError
+from kvlayer._exceptions import BadKey, ProgrammerError
 from kvlayer._utils import join_key_fragments, split_key, make_start_key, make_end_key
 
 logger = logging.getLogger(__name__)
@@ -268,8 +268,6 @@ class RedisStorage(AbstractStorage):
         :type key_ranges: pairs of uuid tuples
         :raise kvlayer._exceptions.BadKey: `table_name` does not exist
           in this namespace
-        :raise kvlayer._exceptions.MissingID: at least one key range was
-          specified but no items were returned
 
         """
         conn = self._connection()
@@ -298,14 +296,10 @@ class RedisStorage(AbstractStorage):
                 if k >= l and k <= u: return True
             return False
         res = conn.hgetall(key)
-        found = False
         for k in sorted(res.iterkeys()):
             if valid(k):
-                found = True
                 uuids = split_key(k, key_spec)
                 yield (uuids,res[k])
-        if len(ranges) > 0 and not found:
-            raise MissingID(key_ranges)
 
     def get(self, table_name, *keys, **kwargs):
         """Yield specific pairs from the table.
@@ -322,8 +316,6 @@ class RedisStorage(AbstractStorage):
         :type key_ranges: tuples of :class:`uuid.UUID`
         :raise kvlayer._exceptions.BadKey: `table_name` does not exist
           in this namespace
-        :raise kvlayer._exceptions.MissingID: none of `keys` exist in
-          this table
 
         """
         # We can be sufficiently atomic without lua scripting here.
@@ -341,13 +333,9 @@ class RedisStorage(AbstractStorage):
         #logger.debug('get {} {!r}'.format(table_name, keys))
         ks = [join_key_fragments(k, key_spec=key_spec) for k in keys]
         vs = conn.hmget(key, *ks)
-        found = False
         for (k, v) in zip(ks, vs):
-            if v is not None:
-                found = True
-                yield (tuple(split_key(k, key_spec)),v)
-        if not found:
-            raise MissingID(keys)
+            # v may be None if the key isn't there; yield it anyways
+            yield (tuple(split_key(k, key_spec)),v)
             
     def delete(self, table_name, *keys, **kwargs):
         """Delete specific pairs from the table.

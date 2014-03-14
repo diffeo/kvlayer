@@ -4,12 +4,11 @@ instead of a DB backend
 
 Your use of this software is governed by your license agreement.
 
-Copyright 2012-2013 Diffeo, Inc.
+Copyright 2012-2014 Diffeo, Inc.
 '''
 
 import abc
 import logging
-from kvlayer._exceptions import MissingID
 from kvlayer._abstract_storage import AbstractStorage
 from kvlayer._utils import _requires_connection, make_start_key, make_end_key, join_key_fragments
 
@@ -79,11 +78,6 @@ class AbstractLocalStorage(AbstractStorage):
                     continue
                 total_count += 1
                 yield key, self._data[table_name][key]
-            else:
-                if specific_key_range and total_count == 0:
-                    ## specified a key range, but found none
-                    if self._raise_on_missing:
-                        raise MissingID()
 
     @_requires_connection
     def get(self, table_name, *keys, **kwargs):
@@ -92,9 +86,7 @@ class AbstractLocalStorage(AbstractStorage):
                 key, value = key, self._data[table_name][key]
                 yield key, value
             except KeyError:
-                if self._raise_on_missing:
-                    raise MissingID('table_name=%r key: %r' % ( table_name, key))
-
+                yield key, None
 
     @_requires_connection
     def delete(self, table_name, *keys):

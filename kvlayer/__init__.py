@@ -170,7 +170,6 @@ are tuples of a fixed length.  Tuple members must be
    :undoc-members:
    :show-inheritance:
 
-.. autoclass:: MissingID
 .. autoclass:: DatabaseEmpty
 .. autoclass:: BadKey
 
@@ -184,4 +183,4 @@ Instance Collections
 from kvlayer._client import client
 from kvlayer.config import config_name, default_config, add_arguments, \
     runtime_keys, check_config
-from kvlayer._exceptions import MissingID, DatabaseEmpty, BadKey
+from kvlayer._exceptions import DatabaseEmpty, BadKey

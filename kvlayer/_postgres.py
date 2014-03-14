@@ -19,7 +19,7 @@ import psycopg2
 
 from kvlayer._abstract_storage import AbstractStorage
 from kvlayer._utils import split_key, make_start_key, make_end_key, join_key_fragments
-from kvlayer._exceptions import MissingID, ProgrammerError
+from kvlayer._exceptions import ProgrammerError
 
 
 logger = logging.getLogger(__name__)
@@ -202,11 +202,12 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         conn = self._conn()
         with conn.cursor() as cursor:
             for key in keys:
-                key = join_key_fragments(key, key_spec=key_spec)
-                key = psycopg2.Binary(key)
-                cursor.execute(cmd, (table_name, key))
+                bkey = join_key_fragments(key, key_spec=key_spec)
+                bkey = psycopg2.Binary(bkey)
+                cursor.execute(cmd, (table_name, bkey))
                 if not (cursor.rowcount > 0):
-                    raise MissingID()
+                    yield key, None
+                    continue
                 results = cursor.fetchmany()
                 while results:
                     for row in results:
@@ -232,10 +233,8 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                             start        finish of one range
         '''
         key_spec = self._table_names[table_name]
-        failOnEmptyResult = True
         if not key_ranges:
             key_ranges = [['', '']]
-            failOnEmptyResult = False
         def _pgkeyrange(kr):
             return (table_name, kmin, kmax)
         conn = self._conn()
@@ -284,10 +283,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                         if isinstance(keyraw, buffer):
                             keyraw = keyraw[:]
                         yield split_key(keyraw, key_spec), val
-                        failOnEmptyResult = False
                     results = cursor.fetchmany()
-        if failOnEmptyResult:
-            raise MissingID()
 
     def delete(self, table_name, *keys, **kwargs):
         '''Delete all (key, value) pairs with specififed keys

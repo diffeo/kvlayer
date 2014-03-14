@@ -13,7 +13,6 @@ import logging
 import traceback
 from collections import defaultdict
 from kvlayer._utils import join_uuids, split_uuids, make_start_key, make_end_key, join_key_fragments
-from kvlayer._exceptions import MissingID
 from kvlayer._abstract_storage import AbstractStorage
 from kvlayer._utils import _requires_connection
 from thrift.transport.TTransport import TTransportException
@@ -291,10 +290,6 @@ class CStorage(AbstractStorage):
             #logger.debug('specific_key_range: %r  hit_empty: %r  total_count: %r' %
             #                (specific_key_range, hit_empty, total_count))
 
-            if specific_key_range and hit_empty and total_count == 0:
-                raise MissingID('table_name=%r columns=%r start=%r finish=%r' % (
-                        table_name, columns, start, finish))
-
     def _get_from_one_row(self, table_name, row_name, columns, start, finish, num_uuids):
 
         logger.debug('c* get: table_name=%r row_name=%r columns=%r start=%r finish=%r' % (
@@ -375,12 +370,12 @@ class CStorage(AbstractStorage):
                     found_keys.add(tuple(key))
                     yield tuple(key), val
             except NotFoundException:
-                raise MissingID('table_name=%r keys: %r' % (table_name, columns))
+                pass
 
         ## Raise an exception if we don't retrieve all the keys that were requested
         missing_keys = set(keys) - found_keys
-        if missing_keys:
-            raise MissingID('table_name=%r keys: %r' % ( table_name, missing_keys))
+        for k in missing_keys:
+            yield k, None
 
 
     @_requires_connection

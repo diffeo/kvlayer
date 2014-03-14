@@ -9,7 +9,7 @@ Copyright 2012-2013 Diffeo, Inc.
 import re
 import logging
 from kvlayer._decorators import retry
-from kvlayer._exceptions import MissingID, ProgrammerError
+from kvlayer._exceptions import ProgrammerError
 from kvlayer._abstract_storage import AbstractStorage
 from pyaccumulo import Accumulo, Mutation, Range, BatchWriter
 from pyaccumulo.iterators import RowDeletingIterator
@@ -189,26 +189,15 @@ class AStorage(AbstractStorage):
             for row in scanner:
                 total_count += 1
                 yield split_key(row.row, key_spec), row.val
-            else:
-                if specific_key_range and total_count == 0:
-                    raise MissingID('table_name=%r start=%r finish=%r' % (
-                                    table_name, start_key, stop_key))
 
     def get(self, table_name, *keys, **kwargs):
         for key in keys:
             gen = self.scan(table_name, (key, key))
-            for k, v in gen:
-                if k == key:
-                    yield k, v
-                else:
-                    # This is only a warning because the scan might
-                    # not be precise and could, unfortunately,
-                    # legitimately yield something one key plus or
-                    # minus the key we actually want.
-                    #
-                    # When pyaccumulo gets fixed for start-inclusive
-                    # scan, this might go away.
-                    logger.warn('got key %r while get()ing key %r', k, key)
+            v = None
+            for kk, vv in gen:
+                if kk == key:
+                    vv = v
+            yield key, v
 
     def close(self):
         self._connected = False

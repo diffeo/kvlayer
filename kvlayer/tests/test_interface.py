@@ -21,7 +21,7 @@ import yaml
 
 from pytest_diffeo import redis_address
 import kvlayer
-from kvlayer import MissingID, BadKey
+from kvlayer import BadKey
 import yakonfig
 
 logger = logging.getLogger(__name__)
@@ -78,11 +78,8 @@ def test_basic_storage(client):
 
     client.delete('t1', (u1, u2))
     assert 0 == len(list(client.scan('t1')))
-    with pytest.raises(MissingID):
-        list(client.scan('t1', ((u1,), (u1,))))
-
-    with pytest.raises(MissingID):
-        list(client.scan('t2', ((u2,), (u3,))))
+    assert 0 == len(list(client.scan('t1', ((u1,), (u1,)))))
+    assert 0 == len(list(client.scan('t2', ((u2,), (u3,)))))
 
 def test_delete(client):
     client.setup_namespace({'table1': 1})
@@ -98,10 +95,7 @@ def test_delete(client):
         for key, value in client.get('table1', key):
             assert kv_dict[key] == value
     for key in delete_keys:
-        generator = client.get('table1', key)
-        with pytest.raises(MissingID):
-            row = generator.next()
-            assert not row
+        assert list(client.get('table1', key)) == [(key, None)]
 
 def test_get(client):
     client.setup_namespace(dict(t1=1, t2=2, t3=3))
@@ -141,9 +135,7 @@ def test_adding_tables(client):
     assert 1 == len(list(client.scan('t1')))
     assert 1 == len(list(client.scan('t1', ((u1,), (u1,)))))
     assert 1 == len(list(client.scan('t3', ((u1,), (u1,)))))
-
-    with pytest.raises(MissingID):
-        list(client.scan('t2', ((u2,), (u3,))))
+    assert 0 == len(list(client.scan('t2', ((u2,), (u3,)))))
 
 @pytest.mark.performance
 def test_large_writes(client):
@@ -179,8 +171,7 @@ def test_setup_namespace_idempotent(client):
     client.delete_namespace()
     client.setup_namespace(dict(t1=2))
     assert 0 == len(list(client.scan('t1')))
-    with pytest.raises(MissingID):
-        list(client.scan('t1', ((u1,), (u1,))))
+    assert 0 == len(list(client.scan('t1', ((u1,), (u1,)))))
 
 
 def test_storage_speed(client):

@@ -10,7 +10,6 @@ import yaml
 
 import kvlayer
 from kvlayer._accumulo import AStorage, _string_decrement
-from kvlayer._exceptions import MissingID
 import kvlayer.tests.make_namespace
 import yakonfig
 
@@ -145,10 +144,7 @@ def test_delete(client, direct):
         for key, value in client.scan('table1', (key, key)):
             assert kv_dict[key] == value
     for key in delete_keys:
-        generator = client.scan('table1', (key, key))
-        with pytest.raises(MissingID):
-            row = generator.next()
-            assert not row
+        assert list(client.scan('table1', (key, key))) == []
 
 
 def test_close(client):

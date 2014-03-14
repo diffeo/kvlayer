@@ -10,7 +10,6 @@ import time
 import pytest
 
 import kvlayer
-from kvlayer import MissingID
 from kvlayer.tests.test_interface import client, backend # fixture
 
 logger = logging.getLogger(__name__)
