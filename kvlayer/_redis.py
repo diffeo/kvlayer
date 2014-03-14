@@ -110,7 +110,7 @@ class RedisStorage(AbstractStorage):
         """
         if table not in self._table_keys:
             k = conn.hget(self._namespace_key, table)
-            if k is not none: self._table_keys[table] = k
+            if k is not None: self._table_keys[table] = k
         return self._table_keys.get(table, None)
 
     def setup_namespace(self, table_names):
