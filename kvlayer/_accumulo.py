@@ -196,7 +196,7 @@ class AStorage(AbstractStorage):
             v = None
             for kk, vv in gen:
                 if kk == key:
-                    vv = v
+                    v = vv
             yield key, v
 
     def close(self):
