@@ -156,8 +156,8 @@ def test_close(client):
 
 
 def test_string_decrement():
-    assert _string_decrement('b') == 'a'
-    assert _string_decrement('b\0') == 'a\xff'
+    assert _string_decrement('b') == 'a\xff'
+    assert _string_decrement('b\0') == 'a\xff\xff'
     assert _string_decrement('\0') == None
     assert _string_decrement('') == None
-    assert _string_decrement('b\xff') == 'b\xfe'
+    assert _string_decrement('b\xff') == 'b\xfe\xff'

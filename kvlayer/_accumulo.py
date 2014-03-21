@@ -227,7 +227,7 @@ def _string_decrement(x):
     pre = x[:-1]
     post = ord(x[-1])
     if post > 0:
-        return pre + chr(post - 1)
+        return pre + chr(post - 1) + '\xff'
     else:
         pre = _string_decrement(pre)
         if pre is None:
