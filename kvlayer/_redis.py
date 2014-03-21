@@ -1,5 +1,8 @@
 """Redis kvlayer storage implementation.
 
+.. This software is released under an MIT/X11 open source license.
+   Copyright 2014 Diffeo, Inc.
+
 Purpose
 =======
 
@@ -18,22 +21,21 @@ conflicts between the two systems.
 
 A kvlayer "namespace" is a single row named ``APPNAME_NAMESPACE``.
 This is a hash mapping kvlayer table names to redis row names.  A
-kvlayer "table" is a hash stored in a single row, where the keys of
-the hash are UUID tuples.
+kvlayer "table" is stored in two rows: the mapped table name with no
+suffix is a hash mapping serialized UUID tuples to values, and the
+mapped table name plus "k" is a sorted set of key names (only, all
+with score 0, to support :meth:`RedisStorage.scan`).
 
 This currently uses pure-ASCII key values (using
 :func:`kvlayer._utils.join_key_fragments`) and intermediate table row IDs.
 Redis should in principle be able to handle packed-binary values,
 which would be a quarter the size.
 
------
-
-Your use of this software is governed by your license agreement.
-
-Copyright 2014 Diffeo, Inc.
-
 .. _redis: http://redis.io
 .. _rejester: https://github.com/diffeo/rejester
+
+Module Contents
+===============
 
 """
 
@@ -50,20 +52,42 @@ from kvlayer._utils import join_key_fragments, split_key, make_start_key, make_e
 
 logger = logging.getLogger(__name__)
 
+# Some useful Lua fragments
+verify_lua = '''
+if redis.call('exists', KEYS[1]) == 0
+then return redis.error_reply('no such kvlayer table') end
+'''
+verify_lua_failed = 'no such kvlayer table'
+
 class RedisStorage(AbstractStorage):
     def __init__(self):
         """Initialize a redis-based storage instance.
 
         Uses the global kvlayer configuration, with the following parameters:
 
-        ``namespace``
-          namespace prefix for this storage layer
-        ``app_name``
-          application name prefix for this storage layer
-        ``storage_addresses``
-          list of ``hostname:port`` pairs for redis (only first is used)
-        ``redis_db_num``
-          Redis database number (defaults to 0)
+        .. code-block:: yaml
+
+            namespace: a_namespace
+        
+        namespace prefix for this storage layer
+
+        .. code-block:: yaml
+
+            app_name: app
+
+        application name prefix for this storage layer
+
+        .. code-block:: yaml
+
+            storage_addresses: ["redis.example.com:6379"]
+
+        list of ``hostname:port`` pairs for redis (only first is used)
+
+        .. code-block:: yaml
+
+            redis_db_num: 1
+
+        Redis database number (defaults to 0)
 
         """
         super(RedisStorage, self).__init__()
@@ -178,6 +202,7 @@ class RedisStorage(AbstractStorage):
         table_keys = script(keys=[self._namespace_key])
         if len(table_keys) > 0:
             conn.delete(*table_keys)
+            conn.delete(*[k + 'k' for k in table_keys])
         self._table_keys = {}
         self._table_sizes = {}
 
@@ -192,21 +217,21 @@ class RedisStorage(AbstractStorage):
         conn = self._connection()
         key = self._table_key(conn, table_name)
         if key is None:
-            raise BadKey(key)
+            raise BadKey(table_name)
         # There is a potential race condition the the namespace
         # is deleted *right here*.  We trap that (if the namespace
         # is deleted then the individual rows will be deleted).
         # So if you get the BadKey later on, that's why.
-        script = conn.register_script("""
-        if redis.call('exists', KEYS[1]) == 0
-        then return redis.error_reply(KEYS[1]) end
+        script = conn.register_script(verify_lua + '''
         redis.call('del', KEYS[1])
         redis.call('hset', KEYS[1], '', '')
-        return redis.status_reply(KEYS[1])
-        """)
-        ret = script(keys=[key])
-        if 'err' in ret:
-            raise BadKey(ret['err'])
+        ''')
+        try:
+            script(keys=[key])
+        except redis.ResponseError, exc:
+            if str(exc) == verify_lua_failed:
+                raise BadKey(table_name)
+            raise
 
     def put(self, table_name, *keys_and_values, **kwargs):
         """Save values for keys in `table_name`.
@@ -225,7 +250,7 @@ class RedisStorage(AbstractStorage):
         conn = self._connection()
         key = self._table_key(conn, table_name)
         if key is None:
-            raise BadKey(key)
+            raise BadKey(table_name)
         params = []
         for (k,v) in keys_and_values:
             #logger.debug('put {} {!r} {}'.format(table_name, k, v))
@@ -236,17 +261,19 @@ class RedisStorage(AbstractStorage):
                 raise ex
             params.append(join_key_fragments(k, key_spec=key_spec))
             params.append(v)
-        script = conn.register_script("""
-        if redis.call('exists', KEYS[1]) == 0
-        then return redis.error_reply(KEYS[1]) end
+        script = conn.register_script(verify_lua + '''
         for i = 1, #ARGV, 2 do
           redis.call('hset', KEYS[1], ARGV[i], ARGV[i+1])
+          redis.call('zadd', KEYS[2], 0, ARGV[i])
         end
         return redis.status_reply(KEYS[1])
-        """)
-        ret = script(keys=[key], args=params)
-        if 'err' in ret:
-            raise BadKey(ret['err'])
+        ''')
+        try:
+            script(keys=[key, key + 'k'], args=params)
+        except redis.ResponseError, exc:
+            if str(exc) == verify_lua_failed:
+                raise BadKey(table_name)
+            raise
 
     def scan(self, table_name, *key_ranges, **kwargs):
         """Yield pairs from selected ranges in some table.
@@ -273,33 +300,74 @@ class RedisStorage(AbstractStorage):
         conn = self._connection()
         key = self._table_key(conn, table_name)
         if key is None:
-            raise BadKey(key)
+            raise BadKey(table_name)
         #logger.debug('scan {} {!r}'.format(table_name, key_ranges))
-        # It doesn't look like redis has any sort of useful range
-        # query on any data type, except for the (non-unique) "score"
-        # side of sorted sets.  Even then finding start/end elements
-        # of a range isn't entirely trivial if they don't exist
-        # (we could do a bisection search).  This also requires
-        # creating a secondary index.
-        #
-        # Until that works, let's just get a dump of everything in
-        # the hash and hope there's not too much there.
         key_spec = self._table_sizes[table_name]
-        ranges = [
-            (make_start_key(l, key_spec=key_spec),
-             make_end_key(u, key_spec=key_spec))
-            for (l,u) in key_ranges]
-        def valid(k):
-            if k == '': return False # placeholder
-            if len(ranges) == 0: return True
-            for (l,u) in ranges:
-                if k >= l and k <= u: return True
-            return False
-        res = conn.hgetall(key)
-        for k in sorted(res.iterkeys()):
-            if valid(k):
+        if len(key_ranges) == 0:
+            # scan the whole table
+            # just do this in one big call for simplicity
+            res = conn.hgetall(key)
+            for k in sorted(res.iterkeys()):
+                if k == '': continue
                 uuids = split_key(k, key_spec)
-                yield (uuids,res[k])
+                yield (uuids, res[k])
+        for start, end in key_ranges:
+            find_first = '''
+            local first = redis.call('zrank', KEYS[2], ARGV[1])
+            if not first then
+              redis.call('zadd', KEYS[2], 0, ARGV[1])
+              first = redis.call('zrank', KEYS[2], ARGV[1])
+              redis.call('zrem', KEYS[2], ARGV[1])
+            end
+            '''
+            no_first = '''
+            local first = 0
+            '''
+            find_last = '''
+            local last = redis.call('zrank', KEYS[2], ARGV[2])
+            if not last then
+              redis.call('zadd', KEYS[2], 0, ARGV[2])
+              last = redis.call('zrank', KEYS[2], ARGV[2])
+              redis.call('zrem', KEYS[2], ARGV[2])
+            last = last - 1
+            end
+            '''
+            no_last = '''
+            local last = -1
+            '''
+            do_scan = '''
+            local keys = redis.call('zrange', KEYS[2], first, last)
+            local result = {}
+            for i = 1, #keys do
+              result[i*2-1] = keys[i]
+              result[i*2] = redis.call('hget', KEYS[1], keys[i])
+            end
+            return result
+            '''
+            script = verify_lua
+            if start:
+                script += find_first
+            else:
+                script += no_first
+            if end:
+                script += find_last
+            else:
+                script += no_last
+            script += do_scan
+            script = conn.register_script(script)
+            try:
+                res = script(keys=[key, key+'k'],
+                             args=[make_start_key(start, key_spec=key_spec),
+                                   make_end_key(end, key_spec=key_spec)])
+            except redis.ResponseError, exc:
+                if str(exc) == verify_lua_failed:
+                    raise BadKey(table_name)
+                raise
+            keys = res[0::2]
+            values = res[1::2]
+            for k,v in zip(keys, values):
+                uuids = split_key(k, key_spec)
+                yield (uuids, v)
 
     def get(self, table_name, *keys, **kwargs):
         """Yield specific pairs from the table.
@@ -362,11 +430,22 @@ class RedisStorage(AbstractStorage):
         conn = self._connection()
         key = self._table_key(conn, table_name)
         if key is None:
-            raise BadKey(key)
+            raise BadKey(table_name)
         logger.debug('delete {} {!r}'.format(table_name, keys))
         key_spec = self._table_sizes[table_name]
         ks = [join_key_fragments(k, key_spec=key_spec) for k in keys]
-        conn.hdel(key, *ks)
+        script = conn.register_script(verify_lua + '''
+        for i = 1, #ARGV do
+          redis.call('hdel', KEYS[1], ARGV[i])
+          redis.call('zrem', KEYS[2], ARGV[i])
+        end
+        ''')
+        try:
+            script(keys=[key, key+'k'], args=ks)
+        except redis.ResponseError, exc:
+            if str(exc) == verify_lua_failed:
+                raise BadKey(table_name)
+            raise
 
     def close(self):
         """Close connections and end use of this storage client."""
