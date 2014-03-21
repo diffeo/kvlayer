@@ -218,16 +218,19 @@ class RedisStorage(AbstractStorage):
         key = self._table_key(conn, table_name)
         if key is None:
             raise BadKey(table_name)
+        logger.debug('clear_table %s in namespace %s', table_name,
+                     self._namespace_key)
         # There is a potential race condition the the namespace
         # is deleted *right here*.  We trap that (if the namespace
         # is deleted then the individual rows will be deleted).
         # So if you get the BadKey later on, that's why.
         script = conn.register_script(verify_lua + '''
         redis.call('del', KEYS[1])
+        redis.call('del', KEYS[2])
         redis.call('hset', KEYS[1], '', '')
         ''')
         try:
-            script(keys=[key])
+            script(keys=[key, key + 'k'])
         except redis.ResponseError, exc:
             if str(exc) == verify_lua_failed:
                 raise BadKey(table_name)
