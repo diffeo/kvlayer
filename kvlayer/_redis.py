@@ -329,7 +329,8 @@ class RedisStorage(AbstractStorage):
               redis.call('zadd', KEYS[2], 0, ARGV[2])
               last = redis.call('zrank', KEYS[2], ARGV[2])
               redis.call('zrem', KEYS[2], ARGV[2])
-            last = last - 1
+              if last == 0 then return {} end
+              last = last - 1
             end
             '''
             no_last = '''

@@ -313,6 +313,7 @@ def test_scan_2d(client):
     assert scan(k1f(0), k1f(1)) == [kvf(1,y) for y in r]
     assert scan(k1f(0), k1f(6)) == kvps
     assert scan(kf(0,6), kf(6,0)) == kvps
+    assert scan(k1f(0), k1f(0)) == []
 
 def test_no_keys(client):
     """Test that standard kvlayer APIs work correctly when not passed keys"""
