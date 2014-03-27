@@ -104,25 +104,42 @@ class Actions:
             stderr(' ... Aborting.')
 
     @staticmethod
-    def do_keys(kvlayer_client, args):
+    def _schema(s):
+        n = { 'uuid': uuid.UUID, 'int': int, 'long': long, 'str': str }
+        if s.isdigit(): return (uuid.UUID,) * int(s)
+        if s in n: return (n[s],)
+        if s.startswith('(') and s.endswith(')'): s=s[1:-1]
+        parts = s.split(',')
+        return tuple(n[p] for p in parts)
+
+    @classmethod
+    def do_keys(cls, kvlayer_client, args):
         if len(args.args) < 2:
             print "usage: kvlayer keys table size [table size...]"
             return
-        def schema(s):
-            n = { 'uuid': uuid.UUID, 'int': int, 'long': long, 'str': str }
-            if s.isdigit(): return s
-            if s in n: return (n[s],)
-            if s.startswith('(') and s.endswith(')'): s=s[1:-1]
-            parts = s.split(',')
-            return tuple(n[p] for p in parts)
         tables = dict(zip(args.args[0::2],
-                          [schema(a) for a in args.args[1::2]]))
+                          [cls._schema(a) for a in args.args[1::2]]))
         kvlayer_client.setup_namespace(tables)
         for table in args.args[0::2]:
             print '{}:'.format(table)
             for k,v in kvlayer_client.scan(table):
                 print '  {!r}'.format(k)
             print
+
+    @classmethod
+    def do_get(cls, kvlayer_client, args):
+        if len(args.args) < 3:
+            print "usage: kvlayer get table size key [key...]"
+            return
+        table = args.args[0]
+        schema = cls._schema(args.args[1])
+        kvlayer_client.setup_namespace({ table: schema })
+        key = tuple(f(x) for f, x in zip(schema, args.args[2:]))
+        for k,v in kvlayer_client.get(table, key):
+            if v is None:
+                sys.stderr.write('No values for key {!r}.'.format(k))
+            else:
+                sys.stdout.write(v)
 
 def main():
     parser = argparse.ArgumentParser()
