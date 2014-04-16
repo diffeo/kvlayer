@@ -21,6 +21,7 @@ from kvlayer._local_memory import LocalStorage
 from kvlayer._file_storage import FileStorage
 from kvlayer._redis import RedisStorage
 import yakonfig
+from yakonfig.cmd import ArgParseCmd
 
 try:
     from kvlayer._postgres import PGStorage
@@ -53,55 +54,34 @@ def client():
         logger.critical('config = %r' % config, exc_info=True)
         raise
 
-def stderr(m, newline='\n'):
-    sys.stderr.write(m)
-    sys.stderr.write(newline)
-    sys.stderr.flush()
+class Actions(ArgParseCmd):
+    def __init__(self, *args, **kwargs):
+        ArgParseCmd.__init__(self, *args, **kwargs)
+        self.prompt = 'kvlayer> '
+        self._client = None
 
-def getch():
-    '''
-    capture one char from stdin for responding to Y/N prompt
-    '''
-    fd = sys.stdin.fileno()
-    old_settings = termios.tcgetattr(fd)
-    try:
-        tty.setraw(sys.stdin.fileno())
-        ch = sys.stdin.read(1)
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-    return ch
+    @property
+    def client(self):
+        if self._client is None:
+            self._client = kvlayer.client()
+        return self._client
 
-class Actions:
-    @classmethod
-    def names(cls):
-        return [k[3:] for k in dir(cls) if k.startswith('do_')]
-
-    @staticmethod
-    def do_delete(kvlayer_client, args):
-        stderr('Delete everything in %r?  Enter namespace: ' % kvlayer_client._namespace, newline='')
-        if args.assume_yes:
-            stderr('... assuming yes.\n')
-            do_delete = True
-        else:
-            idx = 0
-            assert len(kvlayer_client._namespace) > 0
-            while idx < len(kvlayer_client._namespace):
-                ch = getch()
-                if ch == kvlayer_client._namespace[idx]:
-                    idx += 1
-                    do_delete = True
-                else:
-                    do_delete = False
-                    break
-
-        if do_delete:
-            stderr('\nDeleting ...')
-            sys.stdout.flush()
-            kvlayer_client.delete_namespace()
-            stderr('')
-
-        else:
-            stderr(' ... Aborting.')
+    def args_delete(self, parser):
+        parser.add_argument('-y', '--yes', default=False, action='store_true',
+                            dest='assume_yes',
+                            help='assume "yes" and require no input for '
+                            'confirmation questions.')
+    def do_delete(self, args):
+        '''delete all tables in the current namespace'''
+        namespace = self.client._namespace
+        if not args.assume_yes:
+            response = raw_input('Delete everything in {!r}?  Enter namespace: '
+                                 .format(namespace))
+            if response != namespace:
+                self.stdout.write('not deleting anything\n')
+                return
+        self.stdout.write('deleting namespace {!r}\n'.format(namespace))
+        self.client.delete_namespace()
 
     @staticmethod
     def _schema(s):
@@ -112,47 +92,38 @@ class Actions:
         parts = s.split(',')
         return tuple(n[p] for p in parts)
 
-    @classmethod
-    def do_keys(cls, kvlayer_client, args):
-        if len(args.args) < 2:
-            print "usage: kvlayer keys table size [table size...]"
-            return
-        tables = dict(zip(args.args[0::2],
-                          [cls._schema(a) for a in args.args[1::2]]))
-        kvlayer_client.setup_namespace(tables)
-        for table in args.args[0::2]:
-            print '{}:'.format(table)
-            for k,v in kvlayer_client.scan(table):
-                print '  {!r}'.format(k)
-            print
+    def args_keys(self, parser):
+        parser.add_argument('table', help='name of kvlayer table')
+        parser.add_argument('schema', help='description of table keys',
+                            type=self._schema)
+    def do_keys(self, args):
+        '''list all keys in a single table'''
+        self.client.setup_namespace({ args.table: args.schema })
+        for k,v in self.client.scan(args.table):
+            self.stdout.write('{!r}\n'.format(k))
 
-    @classmethod
-    def do_get(cls, kvlayer_client, args):
-        if len(args.args) < 3:
-            print "usage: kvlayer get table size key [key...]"
-            return
-        table = args.args[0]
-        schema = cls._schema(args.args[1])
-        kvlayer_client.setup_namespace({ table: schema })
-        key = tuple(f(x) for f, x in zip(schema, args.args[2:]))
-        for k,v in kvlayer_client.get(table, key):
+    def args_get(self, parser):
+        parser.add_argument('table', help='name of kvlayer table')
+        parser.add_argument('schema', help='description of table keys',
+                            type=self._schema)
+        parser.add_argument('keys', nargs='+',
+                            help='key to fetch')
+    def do_get(self, args):
+        '''get values from a single key'''
+        self.client.setup_namespace({ args.table: args.schema })
+        key = tuple(f(x) for f, x in zip(args.schema, args.keys))
+        for k,v in self.client.get(args.table, key):
             if v is None:
-                sys.stderr.write('No values for key {!r}.'.format(k))
+                self.stdout.write('No values for key {!r}.\n'.format(k))
             else:
-                sys.stdout.write(v)
+                self.stdout.write('{!r}\n'.format(v))
 
 def main():
     parser = argparse.ArgumentParser()
-    ## TODO: implement "list" tables in namespace
-    parser.add_argument('action', help='|'.join(Actions.names()))
-    parser.add_argument('args', nargs='*', help='action-specific arguments')
-    parser.add_argument('-y', '--yes', default=False, action='store_true', dest='assume_yes',
-                        help='Assume "yes" and require no input for confirmation questions.')
+    action = Action()
+    action.add_arguments(parser)
     args = yakonfig.parse_args(parser, [yakonfig, kvlayer])
-    kvlayer_client = client()
+    action.main(args)
 
-    f = getattr(Actions, 'do_' + args.action, None)
-    if f is None:
-        parser.error('invalid action {!r}; allowed values are {}'
-                     .format(args.action, ', '.join(Actions.names())))
-    f(kvlayer_client, args)
+if __name__ == '__main__':
+    main()

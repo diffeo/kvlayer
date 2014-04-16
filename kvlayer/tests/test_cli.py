@@ -6,73 +6,62 @@ This software is released under an MIT/X11 open source license.
 
 Copyright 2012-2014 Diffeo, Inc.
 '''
-import argparse
 from cStringIO import StringIO
 import logging
-import subprocess
-import sys
 import uuid
 
+import pytest
+
 import kvlayer
+from kvlayer._client import Actions
 import yakonfig
 
 logger = logging.getLogger(__name__)
 
-def test_config(namespace_string):
-    config_yaml = '''
-kvlayer:
-  app_name: streamcorpus_pipeline
-  namespace: %s
-  storage_type: local
-  storage_addresses: []
-''' % namespace_string
-    with yakonfig.defaulted_config([kvlayer], yaml=config_yaml) as config:
-        assert config['kvlayer'] == yakonfig.get_global_config('kvlayer')
-        assert config['kvlayer']['app_name'] == 'streamcorpus_pipeline'
+@pytest.yield_fixture
+def actions(namespace_string):
+    with yakonfig.defaulted_config([kvlayer], params={
+            'app_name': 'diffeo',
+            'namespace': namespace_string,
+            'storage_type': 'local',
+            'storage_addresses': [],
+    }):
+        a = Actions(stdout=StringIO())
+        yield a
+        a.client.delete_namespace()
 
-        check_that_config_works()
-
-
-def check_that_config_works():
-    client = kvlayer.client()
+@pytest.fixture
+def a_key(actions):
+    client = actions.client
     client.setup_namespace(dict(t1=1))
     k1 = (uuid.uuid4(),)
     client.put('t1', (k1, 'some data'))
-    assert list(client.get('t1', k1))[0][1] == 'some data'
+    return k1
 
+def test_delete(actions, a_key):
+    assert list(actions.client.get('t1', a_key)) == [(a_key, 'some data')]
+    actions.runcmd('delete', ['-y'])
+    assert actions.stdout.getvalue().startswith("deleting namespace '")
+    assert list(actions.client.get('t1', a_key)) == [(a_key, None)]
 
-def main():
-    try:
-        parser = argparse.ArgumentParser()
-        parser.add_argument('foo')
-        args = yakonfig.parse_args(parser, [kvlayer])
+def test_keys(actions, a_key):
+    actions.runcmd('keys', ['t1', '1'])
+    assert actions.stdout.getvalue() == repr(a_key) + '\n'
 
-        config = yakonfig.get_global_config('kvlayer')
-        assert config['app_name'] == 'streamcorpus_pipeline'
+def test_keys_none(actions):
+    actions.runcmd('keys', ['t1', '1'])
+    assert actions.stdout.getvalue() == ''
 
-        check_that_config_works()
+def test_keys_by_uuid(actions, a_key):
+    actions.runcmd('keys', ['t1', 'uuid'])
+    assert actions.stdout.getvalue() == repr(a_key) + '\n'
 
-        logger.critical('finished fake_app, now exiting')
+def test_get(actions, a_key):
+    actions.runcmd('get', ['t1', '1', a_key[0].hex])
+    assert actions.stdout.getvalue() == "'some data'\n"
 
-    except Exception, exc:
-        logger.critical('fake_app failed!', exc_info=True)
-        raise
-
-
-def test_fake_app(namespace_string):
-    '''
-    test pretends to be an app using kvlayer.add_arguments
-    '''
-    p = subprocess.Popen(
-        ['python', '-m', 'kvlayer.tests.test_cli', 
-         'foo',
-         '--app-name', 'streamcorpus_pipeline',
-         '--namespace', namespace_string,
-         '--storage-type', 'local',
-         ])
-    p.communicate()
-    assert p.returncode == 0
-
-if __name__ == '__main__':
-    ## this is part of  test_fake_app
-    main()
+def test_get_none(actions, a_key):
+    b_key = uuid.UUID(int=a_key[0].int + 1)
+    actions.runcmd('get', ['t1', '1', b_key.hex])
+    assert (actions.stdout.getvalue() ==
+            'No values for key (' + repr(b_key) + ',).\n')
