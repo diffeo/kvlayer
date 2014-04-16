@@ -12,10 +12,10 @@
 # To use this script, simply import it your setup.py file, and use the
 # results of get_git_version() as your package version:
 #
-# from version import *
+# from version import get_git_version
 #
 # setup(
-#     version=get_git_version(),
+#     version=get_git_version(path_expected_in_git_repo)[0],
 #     .
 #     .
 #     .
@@ -39,10 +39,15 @@ import traceback
 from subprocess import Popen, PIPE
  
  
-def call_git_describe(abbrev=4):
+def call_git_describe(path_expected_in_git_repo, abbrev=4):
     line = None
     p = None
     try:
+        abs_path_expected = os.path.join(
+            os.getcwd(), path_expected_in_git_repo)
+        if not os.path.exists(abs_path_expected):
+            return None, None
+
         p = Popen(['git', 'describe', '--abbrev=%d' % abbrev],
                   stdout=PIPE, stderr=PIPE)
         p.stderr.close()
@@ -104,14 +109,15 @@ def write_release_version(version, source_hash):
     f.close()
  
  
-def get_git_version(abbrev=4):
+def get_git_version(path_expected_in_git_repo, abbrev=4):
     # Read in the version that's currently in RELEASE-VERSION.
  
     release_version, release_source_hash = read_release_version()
  
     # First try to get the current version using “git describe”.
  
-    version, source_hash = call_git_describe(abbrev)
+    version, source_hash = call_git_describe(
+        path_expected_in_git_repo, abbrev)
  
     # If that doesn't work, fall back on the value that's in
     # RELEASE-VERSION.
@@ -124,7 +130,7 @@ def get_git_version(abbrev=4):
  
     if version is None:
         # raise ValueError("Cannot find the version number!")
-        version = '0.1.0'
+        version = '0.0.0'
         source_hash = ''
  
     # If the current version is different from what's in the
