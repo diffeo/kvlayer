@@ -12,8 +12,8 @@ from distutils.dir_util import remove_tree
 from setuptools import setup, find_packages
 
 from version import get_git_version
+VERSION, SOURCE_LABEL = get_git_version()
 PROJECT = 'kvlayer'
-VERSION, SOURCE_LABEL = get_git_version(PROJECT)
 URL = 'http://diffeo.com'
 AUTHOR = 'Diffeo, Inc.'
 AUTHOR_EMAIL = 'support@diffeo.com'
