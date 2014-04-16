@@ -151,6 +151,7 @@ setup(
         'console_scripts': [
             'kvlayer = kvlayer._client:main',
             'kvlayer_test = kvlayer.tests.run:main',
+            'kvlayer_throughput_test = kvlayer.tests.test_throughput:main',
         ]
     },
     include_package_data = True,

@@ -1,4 +1,5 @@
 from __future__ import division, absolute_import
+import argparse
 import multiprocessing
 import logging
 import Queue
@@ -9,8 +10,10 @@ import time
 
 import pytest
 
+import dblogger
 import kvlayer
 from kvlayer.tests.test_interface import client, backend # fixture
+import yakonfig
 
 logger = logging.getLogger(__name__)
 
@@ -205,11 +208,9 @@ class many_gets(object):
         logger.info('retrievied one_mb at %r', u)
 
 
-def test_throughput_insert_random(client):
+def test_throughput_insert_random(client, num_workers=5, num_inserts=100):
     client.setup_namespace(dict(t1=1))
     
-    num_workers = 5
-    num_inserts = 100
     total_inserts = num_workers * num_inserts
     task_generator = [uuid.uuid4() for x in xrange(total_inserts)]
     start_time = time.time()
@@ -222,7 +223,7 @@ def test_throughput_insert_random(client):
     logger.info('%d MB written in %.1f seconds --> %.1f MB/sec across %d workers for storage_type=%s',
                 total_inserts, elapsed, rate, num_workers, client._config['storage_type'])
 
-    if client._config['storage_type'] in ['postgres', 'accumulo', 'cassandra']:
+    if client._config['storage_type'] in ['postgres', 'accumulo', 'cassandra', 'redis']:
         start_time = time.time()
         count = 0
         for (found, u) in run_many(many_gets, ret_vals, 
@@ -298,7 +299,7 @@ def test_throughput_join(client):
     elapsed = time.time() - start_time
     assert len(ret_vals) == total_inserts
     rate = total_inserts / elapsed
-    logger.info('%d MB written in %.1f seconds --> %.1f MB/sec across %d workers for storage_type=%s',
+    logger.info('%d MB written in %.1f seconds --> %.1f MB/sec using %d parallel workers for storage_type=%s',
                 total_inserts, elapsed, rate, num_workers, client._config['storage_type'])
 
     ## start tool subprocesses that each run a pool
@@ -309,3 +310,32 @@ def test_throughput_join(client):
               #num_workers=num_workers, timeout=total_inserts/2))))
 
     ### finish writing this test...
+
+def main():
+    parser = argparse.ArgumentParser(usage='kvlayer_throughput_test <storage_type> <storage_address1> <storage_address2> ...',
+                                     conflict_handler='resolve')
+    parser.add_argument('storage_type')
+    parser.add_argument('storage_addresses', default=[], action='append')
+    parser.add_argument('--app-name', default='kvlayer')
+    parser.add_argument('--namespace', default='test_throughput')
+    parser.add_argument('--num-workers', default=5, type=int)
+    parser.add_argument('--num-inserts', default=100, type=int)
+    modules = [yakonfig, kvlayer]
+    args = yakonfig.parse_args(parser, modules)
+    #config = yakonfig.get_global_config()
+    config = dict(logging=dict(root=dict(level='DEBUG')))
+    dblogger.configure_logging(config)
+
+
+    if not args.storage_addresses:
+        sys.exit('must specify at least one storage_address')
+
+    with yakonfig.defaulted_config([kvlayer], params=vars(args)):
+        client = kvlayer.client()
+        client.delete_namespace()
+        test_throughput_insert_random(
+            client, 
+            num_workers=args.num_workers, num_inserts=args.num_inserts,
+            )
+        client.delete_namespace()
+
