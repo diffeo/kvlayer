@@ -36,14 +36,6 @@ def add_arguments(parser):
                         help='network addresses for kvlayer, can be repeated')
     parser.add_argument('--username', help='username for kvlayer accumulo')
     parser.add_argument('--password', help='password for kvlayer accumulo')
-    parser.add_argument('--connection-pool-size', metavar='N',
-                        help='number of connections for kvlayer to open in advance')
-    parser.add_argument('--max-consistency-delay', metavar='SECONDS',
-                        help='number of seconds for kvlayer to wait for DB cluster sync')
-    parser.add_argument('--replication-factor', metavar='N',
-                        help='number of copies of the data for kvlayer to require of DB cluster')
-    parser.add_argument('--thrift-framed-transport-size-in-mb', metavar='MB',
-                        help='must not exceed value set on the server-side of DB cluster.  15MB is hardcoded default in thrift.')
 
 runtime_keys = dict(
     app_name = 'app_name',
