@@ -90,23 +90,19 @@ def _check_types(key_fragments, key_spec, splitter):
                 raise BadKey('key[%s] is %s but wanted %s' % (i, type(kf), ks))
 
 
-class SerializerAndChecker(object):
-    def __init__(self, serializer, splitter):
-        self.serializer = serializer
-        self.splitter = splitter
-
-    def __call__(self, x):
-        sx = self.serializer(x)
-        if self.splitter in sx:
-            raise BadKey('serialized key fragment %r must not contain special string %r. If this happens frequently, pick a better splitter or implement escaping on serialized key fragments.' % (sx, self.splitter))
-        return sx
+def _serialize_check_join(key_fragments, serializer, splitter):
+    parts = []
+    for x in key_fragments:
+        sx = serializer(x)
+        if splitter in sx:
+            raise BadKey('serialized key fragment %r must not contain special string %r. If this happens frequently, pick a better splitter or implement escaping on serialized key fragments.' % (sx, splitter))
+        parts.append(sx)
+    return splitter.join(parts)
 
 
 def join_key_fragments(key_fragments, splitter='\0', key_spec=None, key_serializer=None):
-    # kinda underwhelming, probably doesn't need to actually be a function as such
     _check_types(key_fragments, key_spec, splitter)
-    key_serializer = SerializerAndChecker(key_serializer or default_key_serializer, splitter)
-    return splitter.join(map(key_serializer, key_fragments))
+    return _serialize_check_join(key_fragments, key_serializer or default_key_serializer, splitter)
 
 
 def make_start_key(key_fragments, key_spec=None, splitter='\0', key_serializer=None):
@@ -115,9 +111,7 @@ def make_start_key(key_fragments, key_spec=None, splitter='\0', key_serializer=N
     '''
     if key_fragments is None:
         return None
-    _check_types(key_fragments, key_spec, splitter)
-    key_serializer = SerializerAndChecker(key_serializer or default_key_serializer, splitter)
-    return splitter.join(map(key_serializer, key_fragments))
+    return join_key_fragments(key_fragments, splitter, key_spec, key_serializer)
 
 
 def make_uuid_start_key(key_fragments, num_uuids=0):
@@ -133,9 +127,7 @@ def make_end_key(key_fragments, key_spec=None, splitter='\0', key_serializer=Non
     '''
     if key_fragments is None:
         return None
-    _check_types(key_fragments, key_spec, splitter)
-    key_serializer = SerializerAndChecker(key_serializer or default_key_serializer, splitter)
-    return splitter.join(map(key_serializer, key_fragments)) + '\xff'
+    return join_key_fragments(key_fragments, splitter, key_spec, key_serializer) + '\xff'
 
 
 def make_uuid_end_key(key_fragments, num_uuids=0):
