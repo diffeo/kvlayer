@@ -10,7 +10,6 @@ import time
 
 import pytest
 
-import dblogger
 import kvlayer
 from kvlayer.tests.test_interface import client, backend # fixture
 import yakonfig
@@ -323,9 +322,8 @@ def main():
     modules = [yakonfig, kvlayer]
     args = yakonfig.parse_args(parser, modules)
     #config = yakonfig.get_global_config()
-    config = dict(logging=dict(root=dict(level='DEBUG')))
-    dblogger.configure_logging(config)
 
+    logging.basicConfig(level=logging.DEBUG)
 
     if not args.storage_addresses:
         sys.exit('must specify at least one storage_address')

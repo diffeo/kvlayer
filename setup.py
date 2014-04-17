@@ -137,7 +137,6 @@ setup(
         'cql',
         'streamcorpus >= 0.3.23',
         'redis',
-        'dblogger',
         # test dependencies
         'guppy',
         'pytest',
