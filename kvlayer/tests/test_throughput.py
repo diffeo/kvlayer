@@ -215,7 +215,7 @@ def test_throughput_insert_random(client, num_workers=5, num_inserts=100):
     start_time = time.time()
     ret_vals = list(run_many(random_inserts, task_generator, 
                              class_config=client._config,
-                             num_workers=num_workers, timeout=total_inserts/2))
+                             num_workers=num_workers, timeout=total_inserts * 5))
     elapsed = time.time() - start_time
     assert len(ret_vals) == total_inserts
     rate = total_inserts / elapsed
@@ -227,14 +227,14 @@ def test_throughput_insert_random(client, num_workers=5, num_inserts=100):
         count = 0
         for (found, u) in run_many(many_gets, ret_vals, 
                                    class_config=client._config,
-                                   num_workers=num_workers, timeout=num_inserts):
+                                   num_workers=num_workers, timeout=total_inserts * 5):
             if not found:
                 raise Exception('failed to find %r' % u)
             count += 1
         elapsed = time.time() - start_time
         assert len(ret_vals) == total_inserts
         rate = total_inserts / elapsed
-        logger.info('%d MB written in %.1f seconds --> %.1f MB/sec across %d workers for storage_type=%s',
+        logger.info('%d MB read in %.1f seconds --> %.1f MB/sec across %d workers for storage_type=%s',
                     total_inserts, elapsed, rate, num_workers, client._config['storage_type'])
 
 
