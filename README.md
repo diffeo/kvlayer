@@ -10,71 +10,23 @@ self-describing data in a key-value store.  See
 [this test of InstanceCollection](src/tests/kvlayer/instance_collection/test_instance_blob_collection.py)
 for details.
 
-Accumulo tests
-==============
+See details of [testing on Accumulo using saltstack](accumulo-tests.md).
 
-If you run the application tests, a working Accumulo server is required. These
-procedure helps you to launch single node and multi node clusters to run the
-tests.
+For throughput testing, see [kvlayer_throughput_tests](https://github.com/diffeo/kvlayer/blob/0.4.5/kvlayer/tests/test_throughput.py).
 
-Only Accumulo on EC2 is supported right now. All this procedure was tested on
-Ubuntu 12.04.
+For example, using various single-node EC2 instances, random
+reads/writes experiences these rates:
 
-1. Create the file ~/.saltcloud-ec2.conf with your EC2 credentials:
+| num_workers | storage_type | read MB/sec | write MB/sec |   |
+|-------------|--------------|-------------|--------------|---|
+| 100         | redis        | 99.6        | 57.3         |m1.xlarge   |
+| 50          | redis        | 93.7        | 56.5         |m1.xlarge   |
+| 25          | redis        | 66.9        | 33.8         |m1.xlarge   |
+| 80          | postgres     | 34.2        | 14.4         |m1.medium   |
+| 50          | postgres     | 33.1        | 14.1         |m1.medium   |
+| 25          | postgres     | 30.1        | 13.7         |m1.medium   |
+| 100         | accumulo     | 17.2        | 13.6         |m1.large   |
+| 50          | accumulo     | 21.9        | 16.0         |m1.large   |
+| 25          | accumulo     | 24.7        | 16.6         |m1.large   |
 
-```
-my-amz-credentials:
-  provider: ec2
-  id: YOUR_EC2_ID
-  key: YOUR_EC2_KEY
-  private_key: /home/you/.accumulo-saltstack.pem
-  keyname: accumulo-saltstack
-```
-
-NOTE: Don't change the name "my-amz-credentials"!
-
-2. Make sure that your ssh private_key is in the specified path with permissions
-   600.
-
-3. Launch the cluster:
-
-```
-make CLUSTER_SIZE=3 cluster
-```
-
-CLUSTER_SIZE is the number of instances to launch. Default: 1.
-
-4. Run the tests:
-
-```
-py.test -vv src/tests
-```
-
-5. Destroy the cluster:
-
-```
-make CLUSTER_SIZE=3 cluster-destroy
-```
-
-CLUSTER_SIZE *MUST* be the size used in step 3.
-
-To cleanup cluster temporal files in the local machine:
-
-```
-make cluster-clean
-```
-
-TODO
-====
-
-- Modify tests to read the Accumulo cluster address and credentials from an external
-  file.
-  - Right now the tests point to test-accumulo-1.diffeo.com, update your
-    /etc/hosts after you launche the cluster.
-- More testing and cleanup. DONE
-- Improve documentation. DONE !?
-- Cluster destroy. (Looks like there is a bug in salt-cloud when using include).
-  - Fixed with a workaround, waiting for the next version of salt which will
-    have salt-cloud merged in the Salt project. More information here:
-    https://github.com/saltstack/salt/issues/8605
-
+TODO: gather more stats.
