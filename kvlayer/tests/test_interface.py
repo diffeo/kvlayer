@@ -315,6 +315,33 @@ def test_scan_2d(client):
     assert scan(kf(0,6), kf(6,0)) == kvps
     assert scan(k1f(0), k1f(0)) == []
 
+def test_scan_keys_2d(client):
+    '''Same as test_scan_2d, but only scan the key space.'''
+    client.setup_namespace({'t1': 2})
+    def kf(x, y): return (uuid.UUID(int=x), uuid.UUID(int=y))
+    def k1f(x): return (uuid.UUID(int=x),)
+    def vf(x, y): return '{}:{}'.format(x, y)
+    def kvf(x, y): return (kf(x, y), vf(x, y))
+    def scan_keys(fr, to): return list(client.scan_keys('t1', (fr, to)))
+    r = range(1,5) # [1, 2, 3, 4]
+
+    kvps = [kvf(x, y) for x in r for y in r]
+    keys = [kf(x, y) for x in r for y in r]
+    client.put('t1', *kvps)
+
+    assert list(client.scan_keys('t1')) == keys
+    assert scan_keys(k1f(2), k1f(2)) == [kf(2,y) for y in r]
+    assert scan_keys(kf(2,1), kf(2,2)) == [kf(2,1), kf(2,2)]
+    assert scan_keys(kf(2,0), kf(2,3)) == [kf(2,1), kf(2,2), kf(2,3)]
+    assert scan_keys(kf(2,2), kf(2,5)) == [kf(2,2), kf(2,3), kf(2,4)]
+    assert scan_keys(kf(2,5), kf(3,0)) == []
+    assert scan_keys(kf(2,4), kf(3,1)) == [kf(2,4), kf(3,1)]
+    assert scan_keys(k1f(4), k1f(6)) == [kf(4,y) for y in r]
+    assert scan_keys(k1f(0), k1f(1)) == [kf(1,y) for y in r]
+    assert scan_keys(k1f(0), k1f(6)) == keys
+    assert scan_keys(kf(0,6), kf(6,0)) == keys
+    assert scan_keys(k1f(0), k1f(0)) == []
+
 def test_no_keys(client):
     """Test that standard kvlayer APIs work correctly when not passed keys"""
     client.setup_namespace({'t1': 1})
