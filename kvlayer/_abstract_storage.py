@@ -39,7 +39,7 @@ class AbstractStorage(object):
             return BadKey('%r wants %r parts in key tuple, but got %r' % (table_name,  len(key_spec), len(key)))
         for kp, ks in zip(key, key_spec):
             if not isinstance(kp, ks):
-                return BadKey('part of key wanted type %s but got %s' % (ks, type(kp)))
+                return BadKey('part of key wanted type %s but got %s: %r' % (ks, type(kp), kp))
         return None
 
     @abc.abstractmethod
