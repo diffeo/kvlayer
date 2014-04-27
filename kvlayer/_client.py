@@ -120,7 +120,7 @@ class Actions(ArgParseCmd):
 
 def main():
     parser = argparse.ArgumentParser()
-    action = Action()
+    action = Actions()
     action.add_arguments(parser)
     args = yakonfig.parse_args(parser, [yakonfig, kvlayer])
     action.main(args)

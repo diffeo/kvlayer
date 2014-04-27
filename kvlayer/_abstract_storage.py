@@ -9,6 +9,8 @@ Copyright 2012-2014 Diffeo, Inc.
 
 from __future__ import absolute_import
 import abc
+import itertools
+import operator
 import uuid
 
 from kvlayer._exceptions import BadKey, ProgrammerError
@@ -130,8 +132,27 @@ class AbstractStorage(object):
         '''
         return
 
+    def scan_keys(self, table_name, *key_ranges, **kwargs):
+        '''Scan only the keys from a table.
+
+        Yields key tuples from queying `table_name` for keys within
+        the specified ranges.  If no `key_ranges` are provided, then
+        yield all key tuples in the table.  This may yield nothing if
+        the table is empty or there are no matching keys in any of the
+        specified ranges.
+
+        Each of the `key_ranges` is a pair of a start and end tuple to
+        scan.  To specify the beginning or end, a -Inf or Inf value,
+        use an empty tuple as the beginning or ending key of a range.
+
+        '''
+        # Feel free to reimplement this if your backend can do better!
+        return itertools.imap(operator.itemgetter(0),
+                              self.scan(table_name, *key_ranges, **kwargs))
+
     @abc.abstractmethod
     def get(self, table_name, *keys, **kwargs):
+
         '''Yield tuples of (key, value) from querying table_name for items
         with keys.  If any of the key tuples are not in the table,
         those key tuples will be yielded with value :const:`None`.
