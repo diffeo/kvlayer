@@ -174,6 +174,7 @@ def test_setup_namespace_idempotent(client):
     assert 0 == len(list(client.scan('t1', ((u1,), (u1,)))))
 
 
+@pytest.mark.performance
 def test_storage_speed(client):
     client.setup_namespace(dict(t1=2, t2=3))
     num_rows = 10 ** 4
@@ -341,6 +342,43 @@ def test_scan_keys_2d(client):
     assert scan_keys(k1f(0), k1f(6)) == keys
     assert scan_keys(kf(0,6), kf(6,0)) == keys
     assert scan_keys(k1f(0), k1f(0)) == []
+
+def test_scan_9042(client):
+    tname = 'ts9000'
+    client.setup_namespace({tname: (str,)})
+
+    kv = [
+        (('k{:5x}'.format(x),), 'v{:5x}'.format(x))
+        for x in xrange(9042)
+    ]
+    client.put(tname, *kv)
+
+    # now check that scan gets them all back
+    count = 0
+    for rkv in client.scan(tname):
+        count += 1
+
+    assert count == 9042
+
+    # try other ranged scans
+    count = 0
+    for rkv in client.scan(tname, (('k{:5x}'.format(3000),), ()) ):
+        count += 1
+
+    assert count == 6042
+
+    count = 0
+    for rkv in client.scan(tname, (('k{:5x}'.format(3000),), ('k{:5x}'.format(8437),)) ):
+        count += 1
+
+    assert count == 8437-3000+1 # +1 because scan is inclusive of endpoints
+
+    count = 0
+    for rkv in client.scan(tname, ((), ('k{:5x}'.format(8437),)) ):
+        count += 1
+
+    assert count == 8437+1 # +1 because scan is inclusive of endpoints
+
 
 def test_no_keys(client):
     """Test that standard kvlayer APIs work correctly when not passed keys"""

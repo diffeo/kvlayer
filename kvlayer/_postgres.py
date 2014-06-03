@@ -82,15 +82,18 @@ _CLEAR_TABLE = '''DELETE FROM kv_{namespace} WHERE t = %s'''
 
 _GET = '''SELECT k, v FROM kv_{namespace} WHERE t = %s AND k = %s;'''
 
-_GET_RANGE = '''SELECT k, v FROM kv_{namespace} WHERE t = %s AND k >= %s AND k <= %s ORDER BY k ASC;'''
-_GET_RANGE_FROM_START = '''SELECT k, v FROM kv_{namespace} WHERE t = %s AND k <= %s ORDER BY k ASC;'''
-_GET_RANGE_TO_END = '''SELECT k, v FROM kv_{namespace} WHERE t = %s AND k >= %s ORDER BY k ASC;'''
-_GET_ALL = '''SELECT k, v FROM kv_{namespace} WHERE t = %s ORDER BY k ASC;'''
+_GET_RANGE = '''SELECT k, v FROM kv_{namespace} WHERE t = %s AND k >= %s AND k <= %s ORDER BY k ASC LIMIT %s;'''
+_GET_RANGE_FROM_START = '''SELECT k, v FROM kv_{namespace} WHERE t = %s AND k <= %s ORDER BY k ASC LIMIT %s;'''
+_GET_RANGE_TO_END = '''SELECT k, v FROM kv_{namespace} WHERE t = %s AND k >= %s ORDER BY k ASC LIMIT %s;'''
+_GET_ALL = '''SELECT k, v FROM kv_{namespace} WHERE t = %s ORDER BY k ASC LIMIT %s;'''
 
 _DELETE = '''DELETE FROM kv_{namespace} WHERE t = %s AND k = %s;'''
 
 # unused, we always _DELETE single records by key
 #_DELETE_RANGE = '''DELETE FROM kv_{namespace} WHERE t = %s AND k >= %s AND K <= %s;'''
+
+# TODO: use this query to list available namespaces
+# select tablename from pg_catalog.pg_tables where tablename like 'kv_%';
 
 
 MAX_BLOB_BYTES = 15000000
@@ -114,6 +117,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         if not self.storage_addresses:
             raise ProgrammerError('postgres kvlayer needs config["storage_addresses"]')
         self.connection = None
+        self._scan_inner_limit = int(self._config.get('scan_inner_limit', 1000))
 
     def _conn(self):
         '''internal lazy connector'''
@@ -240,50 +244,70 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         conn = self._conn()
         with conn.cursor() as cursor:
             for kmin, kmax in key_ranges:
-                if kmin:
-                    start = make_start_key(kmin, key_spec=key_spec)
-                else:
-                    start = None
-                if kmax:
-                    finish = make_end_key(kmax, key_spec=key_spec)
-                else:
-                    finish = None
-                logger.debug('pg t=%r %r<=k<=%r (%r<=k<=%r)', table_name, kmin, kmax, start, finish)
-                if start:
-                    start = psycopg2.Binary(start)
-                if finish:
-                    finish = psycopg2.Binary(finish)
-                if start:
-                    if finish:
-                        cmd = _GET_RANGE.format(namespace=self._namespace)
-                        cursor.execute(cmd, (table_name, start, finish))
-                    else:
-                        cmd = _GET_RANGE_TO_END.format(namespace=self._namespace)
-                        cursor.execute(cmd, (table_name, start))
-                else:
-                    if finish:
-                        cmd = _GET_RANGE_FROM_START.format(namespace=self._namespace)
-                        cursor.execute(cmd, (table_name, finish))
-                    else:
-                        cmd = _GET_ALL.format(namespace=self._namespace)
-                        cursor.execute(cmd, (table_name,))
-                logger.debug('%r rows from %r', cursor.rowcount, cmd)
-                if not (cursor.rowcount > 0):
-                    continue
-                results = cursor.fetchmany()
-                while results:
-                    for row in results:
-                        val = row[1]
-                        if isinstance(val, buffer):
-                            if len(val) > MAX_BLOB_BYTES:
-                                logger.error('key=%r has blob of size %r over limit of %r', row[0], len(val), MAX_BLOB_BYTES)
-                                continue  # TODO: raise instead of drop?
-                            val = val[:]
-                        keyraw = row[0]
-                        if isinstance(keyraw, buffer):
-                            keyraw = keyraw[:]
-                        yield split_key(keyraw, key_spec), val
-                    results = cursor.fetchmany()
+                for rkey, rval in self._scan_subscan_kminmax(key_spec, cursor, table_name, kmin, kmax):
+                #for rkey, rval in self._scan_kminmax(key_spec, cursor, table_name, kmin, kmax):
+                    yield rkey, rval
+                    prevkey = rkey
+
+    def _scan_subscan_kminmax(self, key_spec, cursor, table_name, kmin, kmax):
+        prevkey = None
+        while True:
+            count = 0
+            for rkey, rval in self._scan_kminmax(key_spec, cursor, table_name, kmin, kmax):
+                count += 1
+                if rkey != prevkey:
+                    # don't double-return an edge value
+                    yield rkey, rval
+                prevkey = rkey
+            if count < self._scan_inner_limit:
+                # we didn't get up to limit, we must be done
+                return
+            # else, we hit limit, we need to scan for more
+            kmin = prevkey
+
+    def _scan_kminmax(self, key_spec, cursor, table_name, kmin, kmax):
+        if kmin:
+            start = make_start_key(kmin, key_spec=key_spec)
+            start = psycopg2.Binary(start)
+        else:
+            start = None
+        if kmax:
+            finish = make_end_key(kmax, key_spec=key_spec)
+            finish = psycopg2.Binary(finish)
+        else:
+            finish = None
+        logger.debug('pg t=%r %r<=k<=%r (%r<=k<=%r)', table_name, kmin, kmax, start, finish)
+        if start:
+            if finish:
+                cmd = _GET_RANGE.format(namespace=self._namespace)
+                cursor.execute(cmd, (table_name, start, finish, self._scan_inner_limit))
+            else:
+                cmd = _GET_RANGE_TO_END.format(namespace=self._namespace)
+                cursor.execute(cmd, (table_name, start, self._scan_inner_limit))
+        else:
+            if finish:
+                cmd = _GET_RANGE_FROM_START.format(namespace=self._namespace)
+                cursor.execute(cmd, (table_name, finish, self._scan_inner_limit))
+            else:
+                cmd = _GET_ALL.format(namespace=self._namespace)
+                cursor.execute(cmd, (table_name, self._scan_inner_limit))
+        logger.debug('%r rows from %r', cursor.rowcount, cmd)
+        if not (cursor.rowcount > 0):
+            return
+        results = cursor.fetchmany()
+        while results:
+            for row in results:
+                val = row[1]
+                if isinstance(val, buffer):
+                    if len(val) > MAX_BLOB_BYTES:
+                        logger.error('key=%r has blob of size %r over limit of %r', row[0], len(val), MAX_BLOB_BYTES)
+                        continue  # TODO: raise instead of drop?
+                    val = val[:]
+                keyraw = row[0]
+                if isinstance(keyraw, buffer):
+                    keyraw = keyraw[:]
+                yield split_key(keyraw, key_spec), val
+            results = cursor.fetchmany()
 
     def delete(self, table_name, *keys, **kwargs):
         '''Delete all (key, value) pairs with specififed keys
