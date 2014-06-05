@@ -104,6 +104,22 @@ def _cursor_check_namespace_table(cursor, namespace):
     return cursor.rowcount > 0
 
 
+# detatch_on_exception
+def detatch_on_exception(func):
+    def _doe_fwrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except:
+            try:
+                args[0].close()
+            except:
+                logger.error('failed trying to close', exc_info=True)
+                # don't re-raise the inner exception
+            # re-raise the problem from func()
+            raise
+    return _doe_fwrapper
+
+
 class PGStorage(AbstractStorage):
     def __init__(self):
         '''Initialize a storage instance for namespace.
@@ -131,6 +147,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         with conn.cursor() as cursor:
             return _cursor_check_namespace_table(cursor, self._namespace)
 
+    @detatch_on_exception
     def setup_namespace(self, table_names):
         '''creates tables in the namespace.  Can be run multiple times with
         different table_names in order to expand the set of tables in
@@ -152,6 +169,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                 return
             cursor.execute(_CREATE_TABLE.format(namespace=self._namespace))
 
+    @detatch_on_exception
     def delete_namespace(self):
         '''Deletes all data from namespace.'''
         conn = self._conn()
@@ -165,6 +183,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
             except:
                 logger.warn('error on delete_namespace(%r)', self._namespace, exc_info=True)
 
+    @detatch_on_exception
     def clear_table(self, table_name):
         'Delete all data from one table'
         conn = self._conn()
@@ -174,6 +193,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                 (table_name,)
             )
 
+    @detatch_on_exception
     def put(self, table_name, *keys_and_values, **kwargs):
         '''Save values for keys in table_name.  Each key must be a
         tuple of UUIDs of the length specified for table_name in
@@ -197,6 +217,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                     'upsert_{namespace}'.format(namespace=self._namespace),
                     (table_name, keystr, psycopg2.Binary(kv[1])))
 
+    @detatch_on_exception
     def get(self, table_name, *keys, **kwargs):
         '''Yield tuples of (key, value) from querying table_name for
         items with specified keys.
@@ -227,6 +248,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                         yield split_key(keyraw, key_spec), val
                     results = cursor.fetchmany()
 
+    @detatch_on_exception
     def scan(self, table_name, *key_ranges, **kwargs):
         '''Yield tuples of (key, value) from querying table_name for
         items with keys within the specified ranges.  If no key_ranges
@@ -309,6 +331,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                 yield split_key(keyraw, key_spec), val
             results = cursor.fetchmany()
 
+    @detatch_on_exception
     def delete(self, table_name, *keys, **kwargs):
         '''Delete all (key, value) pairs with specififed keys
 
@@ -327,14 +350,16 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                 _DELETE.format(namespace=self._namespace),
                 map(_delkey, keys))
 
-
+    # don't mark this one detatch_on_exception, that would be silly
     def close(self):
         '''
         close connections and end use of this storage client
         '''
         if self.connection:
-            self.connection.close()
-            self.connection = None
+            try:
+                self.connection.close()
+            finally:
+                self.connection = None
 
 
 # run this to cleanup any cruft from kvlayer unit tests
