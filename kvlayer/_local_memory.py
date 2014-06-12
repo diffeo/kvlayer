@@ -9,6 +9,8 @@ Copyright 2012-2014 Diffeo, Inc.
 
 import abc
 import logging
+import time
+
 from kvlayer._abstract_storage import AbstractStorage
 from kvlayer._utils import _requires_connection, make_start_key, make_end_key, join_key_fragments
 
@@ -47,16 +49,32 @@ class AbstractLocalStorage(AbstractStorage):
 
     @_requires_connection
     def put(self, table_name, *keys_and_values, **kwargs):
-        count = 0
+        start_time = time.time()
+        keys_size = 0
+        values_size = 0
+        num_keys = 0
         for key, val in keys_and_values:
             ex = self.check_put_key_value(key, val, table_name, self._table_names[table_name])
             if ex:
                 raise ex
             self._data[table_name][key] = val
-            count += 1
+            if self._log_stats is not None:
+                num_keys += 1
+                keys_size += len(join_key_fragments(key))
+                values_size += len(val)
+
+        end_time = time.time()
+        num_values = num_keys
+
+        self.log_put(table_name, start_time, end_time, num_keys, keys_size, num_values, values_size)
 
     @_requires_connection
     def scan(self, table_name, *key_ranges, **kwargs):
+        start_time = time.time()
+        num_keys = 0
+        keys_size = 0
+        values_size = 0
+
         key_spec = self._table_names[table_name]
         key_ranges = list(key_ranges)
         specific_key_range = True
@@ -77,21 +95,56 @@ class AbstractLocalStorage(AbstractStorage):
                 if (finish is not None) and (finish < joined_key):
                     continue
                 total_count += 1
-                yield key, self._data[table_name][key]
+                val = self._data[table_name][key]
+                yield key, val
+
+                if self._log_stats is not None:
+                    keys_size += len(join_key_fragments(key))
+                    values_size += len(val)
+                    num_keys += 1
+                    values_size += len(val)
+
+        end_time = time.time()
+        num_values = num_keys
+        self.log_scan(table_name, start_time, end_time, num_keys, keys_size, num_values, values_size)
 
     @_requires_connection
     def get(self, table_name, *keys, **kwargs):
+        start_time = time.time()
+        num_keys = 0
+        keys_size = 0
+        num_values = 0
+        values_size = 0
+
         for key in keys:
+            if self._log_stats is not None:
+                num_keys += 1
+                keys_size += len(join_key_fragments(key))
             try:
                 key, value = key, self._data[table_name][key]
                 yield key, value
+                num_values += 1
+                values_size += len(value)
             except KeyError:
                 yield key, None
 
+        end_time = time.time()
+        self.log_get(table_name, start_time, end_time, num_keys, keys_size, num_values, values_size)
+
     @_requires_connection
     def delete(self, table_name, *keys):
+        start_time = time.time()
+        num_keys = 0
+        keys_size = 0
+
         for key in keys:
+            if self._log_stats is not None:
+                num_keys += 1
+                keys_size += len(join_key_fragments(key))
             self._data[table_name].pop(key, None)
+
+        end_time = time.time()
+        self.log_delete(table_name, start_time, end_time, num_keys, keys_size)
 
     def close(self):
         ## prevent reading until connected again

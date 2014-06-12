@@ -48,6 +48,9 @@ runtime_keys = dict(
     max_consistency_delay = 'max_consistency_delay',
     replication_factor = 'replication_factor',
     thrift_framed_transport_size_in_mb = 'thrift_framed_transport_size_in_mb',
+    log_stats = 'log_stats',
+    log_stats_interval_ops = 'log_stats_interval_ops',
+    log_stats_interval_seconds = 'log_stats_interval_seconds',
 
     # these support testing and aren't exposed as command-line arguments
     kvlayer_filename = 'filename',

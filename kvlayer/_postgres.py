@@ -14,6 +14,7 @@ Copyright 2012-2014 Diffeo, Inc.
 from __future__ import absolute_import
 import logging
 import re
+import time
 
 import psycopg2
 
@@ -203,6 +204,11 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         number of (key, value) paris gathered into each batch for
         communication with DB.
         '''
+        start_time = time.time()
+        keys_size = 0
+        values_size = 0
+        num_keys = 0
+
         key_spec = self._table_names[table_name]
         conn = self._conn()
         with conn.cursor() as cursor:
@@ -210,24 +216,40 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                 ex = self.check_put_key_value(kv[0], kv[1], table_name, key_spec)
                 if ex:
                     raise ex
+                num_keys += 1
                 keystr = join_key_fragments(kv[0], key_spec=key_spec)
+                keys_size += len(keystr)
+                values_size += len(kv[1])
                 #logger.debug('put k=%r from %r', keystr, kv[0])
                 keystr = psycopg2.Binary(keystr)
                 cursor.callproc(
                     'upsert_{namespace}'.format(namespace=self._namespace),
                     (table_name, keystr, psycopg2.Binary(kv[1])))
 
+        end_time = time.time()
+        num_values = num_keys
+
+        self.log_put(table_name, start_time, end_time, num_keys, keys_size, num_values, values_size)
+
     @detatch_on_exception
     def get(self, table_name, *keys, **kwargs):
         '''Yield tuples of (key, value) from querying table_name for
         items with specified keys.
         '''
+        start_time = time.time()
+        num_keys = 0
+        keys_size = 0
+        num_values = 0
+        values_size = 0
+
         key_spec = self._table_names[table_name]
         cmd = _GET.format(namespace=self._namespace)
         conn = self._conn()
         with conn.cursor() as cursor:
             for key in keys:
+                num_keys += 1
                 bkey = join_key_fragments(key, key_spec=key_spec)
+                keys_size += len(bkey)
                 bkey = psycopg2.Binary(bkey)
                 cursor.execute(cmd, (table_name, bkey))
                 if not (cursor.rowcount > 0):
@@ -245,8 +267,13 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                         keyraw = row[0]
                         if isinstance(keyraw, buffer):
                             keyraw = keyraw[:]
+                        num_values += 1
+                        values_size += len(val)
                         yield split_key(keyraw, key_spec), val
                     results = cursor.fetchmany()
+
+        end_time = time.time()
+        self.log_get(table_name, start_time, end_time, num_keys, keys_size, num_values, values_size)
 
     @detatch_on_exception
     def scan(self, table_name, *key_ranges, **kwargs):
@@ -258,6 +285,11 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                             ^^^^^^^^^^^^^^^^^^^^^^^^
                             start        finish of one range
         '''
+        start_time = time.time()
+        num_keys = 0
+        keys_size = 0
+        values_size = 0
+
         key_spec = self._table_names[table_name]
         if not key_ranges:
             key_ranges = [['', '']]
@@ -266,26 +298,33 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         conn = self._conn()
         with conn.cursor() as cursor:
             for kmin, kmax in key_ranges:
-                for rkey, rval in self._scan_subscan_kminmax(key_spec, cursor, table_name, kmin, kmax):
-                #for rkey, rval in self._scan_kminmax(key_spec, cursor, table_name, kmin, kmax):
+                for keyraw, rval in self._scan_subscan_kminmax(key_spec, cursor, table_name, kmin, kmax):
+                    rkey = split_key(keyraw, key_spec)
                     yield rkey, rval
-                    prevkey = rkey
+
+                    num_keys += 1
+                    keys_size += len(keyraw)
+                    values_size += len(rval)
+
+        end_time = time.time()
+        num_values = num_keys
+        self.log_scan(table_name, start_time, end_time, num_keys, keys_size, num_values, values_size)
 
     def _scan_subscan_kminmax(self, key_spec, cursor, table_name, kmin, kmax):
         prevkey = None
         while True:
             count = 0
-            for rkey, rval in self._scan_kminmax(key_spec, cursor, table_name, kmin, kmax):
+            for keyraw, rval in self._scan_kminmax(key_spec, cursor, table_name, kmin, kmax):
                 count += 1
-                if rkey != prevkey:
+                if keyraw != prevkey:
                     # don't double-return an edge value
-                    yield rkey, rval
-                prevkey = rkey
+                    yield keyraw, rval
+                prevkey = keyraw
             if count < self._scan_inner_limit:
                 # we didn't get up to limit, we must be done
                 return
             # else, we hit limit, we need to scan for more
-            kmin = prevkey
+            kmin = split_key(prevkey, key_spec)
 
     def _scan_kminmax(self, key_spec, cursor, table_name, kmin, kmax):
         if kmin:
@@ -298,7 +337,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
             finish = psycopg2.Binary(finish)
         else:
             finish = None
-        logger.debug('pg t=%r %r<=k<=%r (%r<=k<=%r)', table_name, kmin, kmax, start, finish)
+        #logger.debug('pg t=%r %r<=k<=%r (%s<=k<=%s)', table_name, kmin, kmax, start, finish)
         if start:
             if finish:
                 cmd = _GET_RANGE.format(namespace=self._namespace)
@@ -313,7 +352,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
             else:
                 cmd = _GET_ALL.format(namespace=self._namespace)
                 cursor.execute(cmd, (table_name, self._scan_inner_limit))
-        logger.debug('%r rows from %r', cursor.rowcount, cmd)
+        #logger.debug('%r rows from %r', cursor.rowcount, cmd)
         if not (cursor.rowcount > 0):
             return
         results = cursor.fetchmany()
@@ -328,7 +367,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                 keyraw = row[0]
                 if isinstance(keyraw, buffer):
                     keyraw = keyraw[:]
-                yield split_key(keyraw, key_spec), val
+                yield keyraw, val
             results = cursor.fetchmany()
 
     @detatch_on_exception
@@ -339,16 +378,30 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         number of (key, value) paris gathered into each batch for
         communication with DB.
         '''
+        start_time = time.time()
+        num_keys = 0
+        keys_size = 0
+
         key_spec = self._table_names[table_name]
-        def _delkey(k):
+        delete_statement_args = []
+        for k in keys:
             if len(k) != len(key_spec):
                 raise Exception('invalid key has %s uuids but wanted %s: %r' % (len(k), len(key_spec), k))
-            return (table_name, psycopg2.Binary(join_key_fragments(k, key_spec=key_spec)))
+            joined_key = join_key_fragments(k, key_spec=key_spec)
+            num_keys += 1
+            keys_size += len(joined_key)
+            delete_statement_args.append(
+                (table_name, psycopg2.Binary(joined_key))
+            )
+
         conn = self._conn()
         with conn.cursor() as cursor:
             cursor.executemany(
                 _DELETE.format(namespace=self._namespace),
-                map(_delkey, keys))
+                delete_statement_args)
+
+        end_time = time.time()
+        self.log_delete(table_name, start_time, end_time, num_keys, keys_size)
 
     # don't mark this one detatch_on_exception, that would be silly
     def close(self):
