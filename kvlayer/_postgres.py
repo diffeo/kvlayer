@@ -81,12 +81,16 @@ _CLEAR_TABLE = '''DELETE FROM kv_{namespace} WHERE t = %s'''
 # use cursor.callproc() instead of SELECT query.
 #_PUT = '''SELECT upsert_{namespace} (%s, %s, %s);'''
 
-_GET = '''SELECT k, v FROM kv_{namespace} WHERE t = %s AND k = %s;'''
+_GET_KV = 'SELECT k, v FROM kv_{namespace} WHERE t=%s'
+_GET_K = 'SELECT k FROM kv_{namespace} WHERE t=%s'
 
-_GET_RANGE = '''SELECT k, v FROM kv_{namespace} WHERE t = %s AND k >= %s AND k <= %s ORDER BY k ASC LIMIT %s;'''
-_GET_RANGE_FROM_START = '''SELECT k, v FROM kv_{namespace} WHERE t = %s AND k <= %s ORDER BY k ASC LIMIT %s;'''
-_GET_RANGE_TO_END = '''SELECT k, v FROM kv_{namespace} WHERE t = %s AND k >= %s ORDER BY k ASC LIMIT %s;'''
-_GET_ALL = '''SELECT k, v FROM kv_{namespace} WHERE t = %s ORDER BY k ASC LIMIT %s;'''
+_GET_EXACT = ' AND k=%s'
+_GET_MIN = ' AND k>=%s'
+_GET_MAX = ' AND k<%s'
+_SCAN_ORDER = ' ORDER BY k ASC'
+_INNER_LIMIT = ' LIMIT %s'
+
+_GET = _GET_KV + _GET_EXACT
 
 _DELETE = '''DELETE FROM kv_{namespace} WHERE t = %s AND k = %s;'''
 
@@ -140,13 +144,12 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         '''internal lazy connector'''
         if self.connection is None:
             self.connection = psycopg2.connect(self.storage_addresses[0])
-            self.connection.autocommit = True
         return self.connection
 
     def _namespace_table_exists(self):
-        conn = self._conn()
-        with conn.cursor() as cursor:
-            return _cursor_check_namespace_table(cursor, self._namespace)
+        with self._conn() as conn:
+            with conn.cursor() as cursor:
+                return _cursor_check_namespace_table(cursor, self._namespace)
 
     @detatch_on_exception
     def setup_namespace(self, table_names):
@@ -162,37 +165,42 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         '''
         self._table_names.update(table_names)
         self.normalize_namespaces(self._table_names)
-        conn = self._conn()
-        with conn.cursor() as cursor:
-            if _cursor_check_namespace_table(cursor, self._namespace):
-                # already exists
-                logger.debug('namespace %r already exists, not creating', self._namespace)
-                return
-            cursor.execute(_CREATE_TABLE.format(namespace=self._namespace))
+        with self._conn() as conn:
+            with conn.cursor() as cursor:
+                if _cursor_check_namespace_table(cursor, self._namespace):
+                    # already exists
+                    logger.debug('namespace %r already exists, not creating',
+                                 self._namespace)
+                    return
+                cursor.execute(_CREATE_TABLE.format(namespace=self._namespace))
 
     @detatch_on_exception
     def delete_namespace(self):
         '''Deletes all data from namespace.'''
-        conn = self._conn()
-        with conn.cursor() as cursor:
-            if not _cursor_check_namespace_table(cursor, self._namespace):
-                logger.debug('namespace %r does not exist, not dropping', self._namespace)
-                return
-            try:
-                cursor.execute(_DROP_TABLE.format(namespace=self._namespace))
-                cursor.execute(_DROP_TABLE_b.format(namespace=self._namespace))
-            except:
-                logger.warn('error on delete_namespace(%r)', self._namespace, exc_info=True)
+        with self._conn() as conn:
+            with conn.cursor() as cursor:
+                if not _cursor_check_namespace_table(cursor, self._namespace):
+                    logger.debug('namespace %r does not exist, not dropping',
+                                 self._namespace)
+                    return
+                try:
+                    cursor.execute(
+                        _DROP_TABLE.format(namespace=self._namespace))
+                    cursor.execute(
+                        _DROP_TABLE_b.format(namespace=self._namespace))
+                except:
+                    logger.warn('error on delete_namespace(%r)',
+                                self._namespace, exc_info=True)
 
     @detatch_on_exception
     def clear_table(self, table_name):
         'Delete all data from one table'
-        conn = self._conn()
-        with conn.cursor() as cursor:
-            cursor.execute(
-                _CLEAR_TABLE.format(namespace=self._namespace),
-                (table_name,)
-            )
+        with self._conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    _CLEAR_TABLE.format(namespace=self._namespace),
+                    (table_name,)
+                )
 
     @detatch_on_exception
     def put(self, table_name, *keys_and_values, **kwargs):
@@ -210,26 +218,47 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         num_keys = 0
 
         key_spec = self._table_names[table_name]
-        conn = self._conn()
-        with conn.cursor() as cursor:
-            for kv in keys_and_values:
-                ex = self.check_put_key_value(kv[0], kv[1], table_name, key_spec)
-                if ex:
-                    raise ex
-                num_keys += 1
-                keystr = join_key_fragments(kv[0], key_spec=key_spec)
-                keys_size += len(keystr)
-                values_size += len(kv[1])
-                #logger.debug('put k=%r from %r', keystr, kv[0])
-                keystr = psycopg2.Binary(keystr)
-                cursor.callproc(
-                    'upsert_{namespace}'.format(namespace=self._namespace),
-                    (table_name, keystr, psycopg2.Binary(kv[1])))
+        with self._conn() as conn:
+            with conn.cursor() as cursor:
+                for kv in keys_and_values:
+                    ex = self.check_put_key_value(kv[0], kv[1], table_name,
+                                                  key_spec)
+                    if ex:
+                        raise ex
+                    num_keys += 1
+                    keystr = join_key_fragments(kv[0], key_spec=key_spec)
+                    keys_size += len(keystr)
+                    values_size += len(kv[1])
+                    #logger.debug('put k=%r from %r', keystr, kv[0])
+                    keystr = psycopg2.Binary(keystr)
+                    cursor.callproc(
+                        'upsert_{namespace}'.format(namespace=self._namespace),
+                        (table_name, keystr, psycopg2.Binary(kv[1])))
 
         end_time = time.time()
         num_values = num_keys
 
-        self.log_put(table_name, start_time, end_time, num_keys, keys_size, num_values, values_size)
+        self.log_put(table_name, start_time, end_time, num_keys, keys_size,
+                     num_values, values_size)
+
+    def _unmarshal_k(self, row, key_spec):
+        '''Get the key tuple from a response row.'''
+        keyraw = row[0]
+        if isinstance(keyraw, buffer):
+            keyraw = keyraw[:]
+        return split_key(keyraw, key_spec)
+
+    def _unmarshal_kv(self, row, key_spec):
+        '''Get the (key,value) pair from a response row.'''
+        val = row[1]
+        if isinstance(val, buffer):
+            if len(val) > MAX_BLOB_BYTES:
+                logger.error('key=%r has blob of size %r over limit of %r',
+                             row[0], len(val), MAX_BLOB_BYTES)
+                return None
+            val = val[:]
+        key = self._unmarshal_k(row, key_spec)
+        return (key, val)
 
     @detatch_on_exception
     def get(self, table_name, *keys, **kwargs):
@@ -244,38 +273,30 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
 
         key_spec = self._table_names[table_name]
         cmd = _GET.format(namespace=self._namespace)
-        conn = self._conn()
         try:
-            with conn.cursor() as cursor:
+            with self._conn() as conn:
                 for key in keys:
                     num_keys += 1
                     bkey = join_key_fragments(key, key_spec=key_spec)
                     keys_size += len(bkey)
                     bkey = psycopg2.Binary(bkey)
-                    cursor.execute(cmd, (table_name, bkey))
-                    if not (cursor.rowcount > 0):
-                        yield key, None
-                        continue
-                    results = cursor.fetchmany()
-                    while results:
-                        for row in results:
-                            val = row[1]
-                            if isinstance(val, buffer):
-                                if len(val) > MAX_BLOB_BYTES:
-                                    logger.error('key=%r has blob of size %r over limit of %r', row[0], len(val), MAX_BLOB_BYTES)
-                                    continue  # TODO: raise instead of drop?
-                                val = val[:]
-                            keyraw = row[0]
-                            if isinstance(keyraw, buffer):
-                                keyraw = keyraw[:]
+                    with conn.cursor(name='get') as cursor:
+                        cursor.execute(cmd, (table_name, bkey))
+                        found = False
+                        for row in cursor:
+                            p = self._unmarshal_kv(row, key_spec)
+                            if p is None:
+                                continue
                             num_values += 1
-                            values_size += len(val)
-                            yield split_key(keyraw, key_spec), val
-                        results = cursor.fetchmany()
-
+                            values_size += len(p[1])
+                            yield p
+                            found = True
+                        if not found:
+                            yield key, None
         finally:
             end_time = time.time()
-            self.log_get(table_name, start_time, end_time, num_keys, keys_size, num_values, values_size)
+            self.log_get(table_name, start_time, end_time, num_keys,
+                         keys_size, num_values, values_size)
 
     @detatch_on_exception
     def scan(self, table_name, *key_ranges, **kwargs):
@@ -291,45 +312,86 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         num_keys = 0
         keys_size = 0
         values_size = 0
-
         key_spec = self._table_names[table_name]
-        if not key_ranges:
-            key_ranges = [['', '']]
-        def _pgkeyrange(kr):
-            return (table_name, kmin, kmax)
-        conn = self._conn()
-        try:
-            with conn.cursor() as cursor:
-                for kmin, kmax in key_ranges:
-                    for keyraw, rval in self._scan_subscan_kminmax(key_spec, cursor, table_name, kmin, kmax):
-                        rkey = split_key(keyraw, key_spec)
-                        yield rkey, rval
 
-                        num_keys += 1
-                        keys_size += len(keyraw)
-                        values_size += len(rval)
+        try:
+            for kmin, kmax in (key_ranges or [['', '']]):
+                for rkey, rval in self._scan_subscan_kminmax(key_spec, table_name,
+                                                             kmin, kmax):
+                    yield rkey, rval
+
+                    num_keys += 1
+                    keys_size += sum(len(str(kp)) for kp in rkey)
+                    values_size += len(rval)
+
         finally:
             end_time = time.time()
             num_values = num_keys
-            self.log_scan(table_name, start_time, end_time, num_keys, keys_size, num_values, values_size)
+            self.log_scan(table_name, start_time, end_time, num_keys,
+                          keys_size, num_values, values_size)
 
-    def _scan_subscan_kminmax(self, key_spec, cursor, table_name, kmin, kmax):
+    @detatch_on_exception
+    def scan_keys(self, table_name, *key_ranges, **kwargs):
+        '''Scan only the keys from a table.
+
+        Yield key tuples from querying table_name for items with keys
+        within the specified ranges.  If no key_ranges are provided,
+        then yield all keys in table.
+
+        This is equivalent to::
+
+            itertools.imap(lambda (k,v): k,
+                           self.scan(table_name, *key_ranges, **kwargs))
+
+        But it avoids copying the (potentially large) data values across
+        the network.
+
+        :param str table_name: name of table to scan
+        :param key_ranges: (`start`,`end`) key range pairs
+
+        '''
+        start_time = time.time()
+        num_keys = 0
+        keys_size = 0
+        key_spec = self._table_names[table_name]
+
+        try:
+            for kmin, kmax in (key_ranges or [['', '']]):
+                for rkey in self._scan_subscan_kminmax(key_spec, table_name,
+                                                       kmin, kmax,
+                                                       with_values=False):
+                    yield rkey
+
+                    num_keys += 1
+                    keys_size += sum(len(str(kp)) for kp in rkey)
+
+        finally:
+            end_time = time.time()
+            self.log_scan_keys(table_name, start_time, end_time, num_keys, keys_size)
+
+    def _scan_subscan_kminmax(self, key_spec, table_name, kmin, kmax,
+                              with_values=True):
         prevkey = None
         while True:
             count = 0
-            for keyraw, rval in self._scan_kminmax(key_spec, cursor, table_name, kmin, kmax):
+            for p in self._scan_kminmax(key_spec, table_name, kmin, kmax,
+                                        with_values):
+                if with_values:
+                    rkey = p[0]
+                else:
+                    rkey = p
                 count += 1
-                if keyraw != prevkey:
+                if rkey != prevkey:
                     # don't double-return an edge value
-                    yield keyraw, rval
-                prevkey = keyraw
-            if count < self._scan_inner_limit:
+                    yield p
+                prevkey = rkey
+            if not self._scan_inner_limit or count < self._scan_inner_limit:
                 # we didn't get up to limit, we must be done
                 return
             # else, we hit limit, we need to scan for more
-            kmin = split_key(prevkey, key_spec)
+            kmin = rkey
 
-    def _scan_kminmax(self, key_spec, cursor, table_name, kmin, kmax):
+    def _scan_kminmax(self, key_spec, table_name, kmin, kmax, with_values=True):
         if kmin:
             start = make_start_key(kmin, key_spec=key_spec)
             start = psycopg2.Binary(start)
@@ -341,37 +403,29 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         else:
             finish = None
         #logger.debug('pg t=%r %r<=k<=%r (%s<=k<=%s)', table_name, kmin, kmax, start, finish)
-        if start:
-            if finish:
-                cmd = _GET_RANGE.format(namespace=self._namespace)
-                cursor.execute(cmd, (table_name, start, finish, self._scan_inner_limit))
-            else:
-                cmd = _GET_RANGE_TO_END.format(namespace=self._namespace)
-                cursor.execute(cmd, (table_name, start, self._scan_inner_limit))
+        if with_values:
+            query = _GET_KV
+            unmarshal = lambda row: self._unmarshal_kv(row, key_spec)
         else:
-            if finish:
-                cmd = _GET_RANGE_FROM_START.format(namespace=self._namespace)
-                cursor.execute(cmd, (table_name, finish, self._scan_inner_limit))
-            else:
-                cmd = _GET_ALL.format(namespace=self._namespace)
-                cursor.execute(cmd, (table_name, self._scan_inner_limit))
-        #logger.debug('%r rows from %r', cursor.rowcount, cmd)
-        if not (cursor.rowcount > 0):
-            return
-        results = cursor.fetchmany()
-        while results:
-            for row in results:
-                val = row[1]
-                if isinstance(val, buffer):
-                    if len(val) > MAX_BLOB_BYTES:
-                        logger.error('key=%r has blob of size %r over limit of %r', row[0], len(val), MAX_BLOB_BYTES)
-                        continue  # TODO: raise instead of drop?
-                    val = val[:]
-                keyraw = row[0]
-                if isinstance(keyraw, buffer):
-                    keyraw = keyraw[:]
-                yield keyraw, val
-            results = cursor.fetchmany()
+            query = _GET_K
+            unmarshal = lambda row: self._unmarshal_k(row, key_spec)
+        query = query.format(namespace=self._namespace)
+        args = [table_name]
+        if start:
+            query += _GET_MIN
+            args.append(start)
+        if finish:
+            query += _GET_MAX
+            args.append(finish)
+        query += _SCAN_ORDER
+        if self._scan_inner_limit:
+            query += _INNER_LIMIT
+            args.append(self._scan_inner_limit)
+        with self._conn() as conn:
+            with conn.cursor(name='scan') as cursor:
+                cursor.execute(query, tuple(args))
+                for row in cursor:
+                    yield unmarshal(row)
 
     @detatch_on_exception
     def delete(self, table_name, *keys, **kwargs):
@@ -397,11 +451,11 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                 (table_name, psycopg2.Binary(joined_key))
             )
 
-        conn = self._conn()
-        with conn.cursor() as cursor:
-            cursor.executemany(
-                _DELETE.format(namespace=self._namespace),
-                delete_statement_args)
+        with self._conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.executemany(
+                    _DELETE.format(namespace=self._namespace),
+                    delete_statement_args)
 
         end_time = time.time()
         self.log_delete(table_name, start_time, end_time, num_keys, keys_size)
