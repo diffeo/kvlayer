@@ -116,7 +116,6 @@ def make_start_key(key_fragments, key_spec=None, splitter='\0', key_serializer=N
          len(key_fragments) > 0 and
          len(key_fragments) < len(key_spec))):
         pfx += splitter
-    print 'make_start_key %r %r %r'%(key_fragments, key_spec, pfx)
     return pfx
 
 
@@ -143,7 +142,6 @@ def make_end_key(key_fragments, key_spec=None, splitter='\0', key_serializer=Non
             pfx += '\0'
     else:
         pfx += '\xff'
-    print 'make_end_key %r %r %r'%(key_fragments, key_spec, pfx)
     return pfx
 
 
