@@ -245,35 +245,37 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         key_spec = self._table_names[table_name]
         cmd = _GET.format(namespace=self._namespace)
         conn = self._conn()
-        with conn.cursor() as cursor:
-            for key in keys:
-                num_keys += 1
-                bkey = join_key_fragments(key, key_spec=key_spec)
-                keys_size += len(bkey)
-                bkey = psycopg2.Binary(bkey)
-                cursor.execute(cmd, (table_name, bkey))
-                if not (cursor.rowcount > 0):
-                    yield key, None
-                    continue
-                results = cursor.fetchmany()
-                while results:
-                    for row in results:
-                        val = row[1]
-                        if isinstance(val, buffer):
-                            if len(val) > MAX_BLOB_BYTES:
-                                logger.error('key=%r has blob of size %r over limit of %r', row[0], len(val), MAX_BLOB_BYTES)
-                                continue  # TODO: raise instead of drop?
-                            val = val[:]
-                        keyraw = row[0]
-                        if isinstance(keyraw, buffer):
-                            keyraw = keyraw[:]
-                        num_values += 1
-                        values_size += len(val)
-                        yield split_key(keyraw, key_spec), val
+        try:
+            with conn.cursor() as cursor:
+                for key in keys:
+                    num_keys += 1
+                    bkey = join_key_fragments(key, key_spec=key_spec)
+                    keys_size += len(bkey)
+                    bkey = psycopg2.Binary(bkey)
+                    cursor.execute(cmd, (table_name, bkey))
+                    if not (cursor.rowcount > 0):
+                        yield key, None
+                        continue
                     results = cursor.fetchmany()
+                    while results:
+                        for row in results:
+                            val = row[1]
+                            if isinstance(val, buffer):
+                                if len(val) > MAX_BLOB_BYTES:
+                                    logger.error('key=%r has blob of size %r over limit of %r', row[0], len(val), MAX_BLOB_BYTES)
+                                    continue  # TODO: raise instead of drop?
+                                val = val[:]
+                            keyraw = row[0]
+                            if isinstance(keyraw, buffer):
+                                keyraw = keyraw[:]
+                            num_values += 1
+                            values_size += len(val)
+                            yield split_key(keyraw, key_spec), val
+                        results = cursor.fetchmany()
 
-        end_time = time.time()
-        self.log_get(table_name, start_time, end_time, num_keys, keys_size, num_values, values_size)
+        finally:
+            end_time = time.time()
+            self.log_get(table_name, start_time, end_time, num_keys, keys_size, num_values, values_size)
 
     @detatch_on_exception
     def scan(self, table_name, *key_ranges, **kwargs):
@@ -296,19 +298,20 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         def _pgkeyrange(kr):
             return (table_name, kmin, kmax)
         conn = self._conn()
-        with conn.cursor() as cursor:
-            for kmin, kmax in key_ranges:
-                for keyraw, rval in self._scan_subscan_kminmax(key_spec, cursor, table_name, kmin, kmax):
-                    rkey = split_key(keyraw, key_spec)
-                    yield rkey, rval
+        try:
+            with conn.cursor() as cursor:
+                for kmin, kmax in key_ranges:
+                    for keyraw, rval in self._scan_subscan_kminmax(key_spec, cursor, table_name, kmin, kmax):
+                        rkey = split_key(keyraw, key_spec)
+                        yield rkey, rval
 
-                    num_keys += 1
-                    keys_size += len(keyraw)
-                    values_size += len(rval)
-
-        end_time = time.time()
-        num_values = num_keys
-        self.log_scan(table_name, start_time, end_time, num_keys, keys_size, num_values, values_size)
+                        num_keys += 1
+                        keys_size += len(keyraw)
+                        values_size += len(rval)
+        finally:
+            end_time = time.time()
+            num_values = num_keys
+            self.log_scan(table_name, start_time, end_time, num_keys, keys_size, num_values, values_size)
 
     def _scan_subscan_kminmax(self, key_spec, cursor, table_name, kmin, kmax):
         prevkey = None
