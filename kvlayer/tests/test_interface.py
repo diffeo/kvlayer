@@ -343,6 +343,20 @@ def test_scan_keys_2d(client):
     assert scan_keys(kf(0,6), kf(6,0)) == keys
     assert scan_keys(k1f(0), k1f(0)) == []
 
+def test_scan_2d_prefix(client):
+    '''scan(('a',),('a',)) shouldn't find ('ab','c')'''
+    client.setup_namespace({'ts2': (str,str)})
+    client.put('ts2',
+               (('a','a'),'1'),
+               (('a','z'),'2'),
+               (('ab','b'),'3'),
+               (('ab','y'),'4'))
+
+    assert (list(client.scan('ts2', (('a',),('a',)))) ==
+            [(('a','a'),'1'),(('a','z'),'2')])  # but not anything ab
+    assert (list(client.scan_keys('ts2', (('a',),('a',)))) ==
+            [('a','a'),('a','z')])  # but not anything ab
+
 def test_scan_9042(client):
     tname = 'ts9000'
     client.setup_namespace({tname: (str,)})
@@ -440,7 +454,7 @@ def test_new_key_spec(client):
     ]
     client.put('kt4', *good_kt4_kvs)
     count = 0
-    for k,v in client.scan('kt4', (('foo',), ('foo',))):
+    for k,v in client.scan('kt4', (('foo',), ('fooz',))):
         assert (k,v) in good_kt4_kvs
         count += 1
     assert count == len(good_kt4_kvs)

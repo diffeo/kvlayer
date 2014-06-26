@@ -111,7 +111,13 @@ def make_start_key(key_fragments, key_spec=None, splitter='\0', key_serializer=N
     '''
     if key_fragments is None:
         return None
-    return join_key_fragments(key_fragments, splitter, key_spec, key_serializer)
+    pfx = join_key_fragments(key_fragments, splitter, key_spec, key_serializer)
+    if ((key_spec and
+         len(key_fragments) > 0 and
+         len(key_fragments) < len(key_spec))):
+        pfx += splitter
+    print 'make_start_key %r %r %r'%(key_fragments, key_spec, pfx)
+    return pfx
 
 
 def make_uuid_start_key(key_fragments, num_uuids=0):
@@ -127,7 +133,18 @@ def make_end_key(key_fragments, key_spec=None, splitter='\0', key_serializer=Non
     '''
     if key_fragments is None:
         return None
-    return join_key_fragments(key_fragments, splitter, key_spec, key_serializer) + '\xff'
+    pfx = join_key_fragments(key_fragments, splitter, key_spec, key_serializer)
+    if key_spec:
+        if len(key_fragments) == 0:
+            pfx += '\xff'
+        if len(key_fragments) < len(key_spec):
+            pfx += splitter[:-1] + chr(ord(splitter[-1]) + 1)
+        else:
+            pfx += '\0'
+    else:
+        pfx += '\xff'
+    print 'make_end_key %r %r %r'%(key_fragments, key_spec, pfx)
+    return pfx
 
 
 def make_uuid_end_key(key_fragments, num_uuids=0):
