@@ -12,11 +12,13 @@ This software is released under an MIT/X11 open source license.
 Copyright 2012-2014 Diffeo, Inc.
 '''
 from __future__ import absolute_import
+import contextlib
 import logging
 import re
 import time
 
 import psycopg2
+import psycopg2.pool
 
 from kvlayer._abstract_storage import AbstractStorage
 from kvlayer._utils import split_key, make_start_key, make_end_key, join_key_fragments
@@ -108,23 +110,6 @@ def _cursor_check_namespace_table(cursor, namespace):
     cursor.execute('SELECT 1 FROM pg_tables WHERE tablename ILIKE %s', ('kv_' + namespace,))
     return cursor.rowcount > 0
 
-
-# detatch_on_exception
-def detatch_on_exception(func):
-    def _doe_fwrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except:
-            try:
-                args[0].close()
-            except:
-                logger.error('failed trying to close', exc_info=True)
-                # don't re-raise the inner exception
-            # re-raise the problem from func()
-            raise
-    return _doe_fwrapper
-
-
 class PGStorage(AbstractStorage):
     def __init__(self):
         '''Initialize a storage instance for namespace.
@@ -137,21 +122,41 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         self.storage_addresses = self._config['storage_addresses']
         if not self.storage_addresses:
             raise ProgrammerError('postgres kvlayer needs config["storage_addresses"]')
-        self.connection = None
+        self.connection_pool = psycopg2.pool.SimpleConnectionPool(
+            self._config.get('min_connections', 2),
+            self._config.get('max_connections', 16),
+            self.storage_addresses[0]
+        )
         self._scan_inner_limit = int(self._config.get('scan_inner_limit', 1000))
 
+    @contextlib.contextmanager
     def _conn(self):
-        '''internal lazy connector'''
-        if self.connection is None:
-            self.connection = psycopg2.connect(self.storage_addresses[0])
-        return self.connection
+        '''Produce a PostgreSQL connection from the pool.
+
+        This also runs a single transaction on that connection.  On
+        successful completion, the transaction is committed; if any
+        exception is thrown, the transaction is aborted.
+
+        On successful completion the connection is returned to the
+        pool for reuse.  If any exception is thrown, the connection
+        is closed.
+
+        '''
+        conn = self.connection_pool.getconn()
+        try:
+            with conn:
+                yield conn
+        finally:
+            # This has logic to test whether the connection is closed
+            # and/or failed and correctly manages returning it to the
+            # pool (or not).
+            self.connection_pool.putconn(conn)
 
     def _namespace_table_exists(self):
         with self._conn() as conn:
             with conn.cursor() as cursor:
                 return _cursor_check_namespace_table(cursor, self._namespace)
 
-    @detatch_on_exception
     def setup_namespace(self, table_names):
         '''creates tables in the namespace.  Can be run multiple times with
         different table_names in order to expand the set of tables in
@@ -174,7 +179,6 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                     return
                 cursor.execute(_CREATE_TABLE.format(namespace=self._namespace))
 
-    @detatch_on_exception
     def delete_namespace(self):
         '''Deletes all data from namespace.'''
         with self._conn() as conn:
@@ -192,7 +196,6 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                     logger.warn('error on delete_namespace(%r)',
                                 self._namespace, exc_info=True)
 
-    @detatch_on_exception
     def clear_table(self, table_name):
         'Delete all data from one table'
         with self._conn() as conn:
@@ -202,7 +205,6 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                     (table_name,)
                 )
 
-    @detatch_on_exception
     def put(self, table_name, *keys_and_values, **kwargs):
         '''Save values for keys in table_name.  Each key must be a
         tuple of UUIDs of the length specified for table_name in
@@ -260,7 +262,6 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         key = self._unmarshal_k(row, key_spec)
         return (key, val)
 
-    @detatch_on_exception
     def get(self, table_name, *keys, **kwargs):
         '''Yield tuples of (key, value) from querying table_name for
         items with specified keys.
@@ -298,7 +299,6 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
             self.log_get(table_name, start_time, end_time, num_keys,
                          keys_size, num_values, values_size)
 
-    @detatch_on_exception
     def scan(self, table_name, *key_ranges, **kwargs):
         '''Yield tuples of (key, value) from querying table_name for
         items with keys within the specified ranges.  If no key_ranges
@@ -330,7 +330,6 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
             self.log_scan(table_name, start_time, end_time, num_keys,
                           keys_size, num_values, values_size)
 
-    @detatch_on_exception
     def scan_keys(self, table_name, *key_ranges, **kwargs):
         '''Scan only the keys from a table.
 
@@ -427,7 +426,6 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                 for row in cursor:
                     yield unmarshal(row)
 
-    @detatch_on_exception
     def delete(self, table_name, *keys, **kwargs):
         '''Delete all (key, value) pairs with specififed keys
 
@@ -465,11 +463,11 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         '''
         close connections and end use of this storage client
         '''
-        if self.connection:
+        if self.connection_pool:
             try:
-                self.connection.close()
+                self.connection_pool.closeall()
             finally:
-                self.connection = None
+                self.connection_pool = None
 
 
 # run this to cleanup any cruft from kvlayer unit tests

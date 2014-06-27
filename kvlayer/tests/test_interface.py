@@ -458,3 +458,37 @@ def test_new_key_spec(client):
         assert (k,v) in good_kt4_kvs
         count += 1
     assert count == len(good_kt4_kvs)
+
+def test_merge_join(client):
+    '''Test that we can read two tables at the same time.'''
+    client.setup_namespace({
+        't1': (str,),
+        't2': (str,),
+    })
+    client.put('t1',
+               (('a',),'one'),
+               (('b',),'two'),
+               (('d',),'four'))
+    client.put('t2',
+               (('a',),'one'),
+               (('c',),'three'))
+    # Find keys in t1 not in t2
+    iter1 = client.scan('t1')
+    iter2 = client.scan('t2')
+    missing = []
+    v1 = next(iter1, None)
+    v2 = next(iter2, None)
+    while v1:
+        if not v2:
+            missing.append(v1)
+            v1 = next(iter1, None)
+        elif v1[0] < v2[0]:
+            missing.append(v1)
+            v1 = next(iter1, None)
+        elif v1[0] == v2[0]:
+            v1 = next(iter1, None)
+            v2 = next(iter2, None)
+        else:
+            v2 = next(iter2, None)
+    assert missing == [(('b',),'two'),(('d',),'four')]
+        

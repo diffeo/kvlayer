@@ -123,10 +123,23 @@ and must begin with a letter or underscore.
       storage_addresses:
       - 'host=postgres.example.com port=5432 user=test dbname=test password=test'
 
+      # all of the following parameters are default values and are optional
+      # keep this many connections alive
+      min_connections: 2
+      # never create more than this many connections
+      max_connections: 16
+      # break large scans (using SQL) into chunks of this many
+      scan_inner_limit: 1000
+
 The backend assumes the user is able to run SQL ``CREATE TABLE`` and
 ``DROP TABLE`` statements.  Each kvlayer namespace is instantiated as
 an SQL table named ``kv_appname_namespace``; kvlayer tables are
 collections of rows within the namespace table sharing a common field.
+
+Within the system, the ``min_connections`` and ``max_connections``
+property apply per client object.  If ``min_connections`` is set to 0
+then the connection pool will never hold a connection alive, which
+typically adds a performance cost to reconnect.
 
 .. _PostgreSQL: http://www.postgresql.org
 .. _PostgreSQL connection string: http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYWORDS
