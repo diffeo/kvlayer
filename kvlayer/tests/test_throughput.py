@@ -1,7 +1,9 @@
 from __future__ import division, absolute_import
 import argparse
+import cProfile
 import multiprocessing
 import logging
+import os
 import Queue
 from signal import alarm, signal, SIGHUP, SIGTERM, SIGABRT, SIGALRM
 import sys
@@ -17,7 +19,7 @@ import yakonfig
 logger = logging.getLogger(__name__)
 
 def worker(operation, i_queue, o_queue, tasks_remaining,
-           class_config=None,
+           class_config=None, profile=False
     ):
     '''simple worker used by run_many below
 
@@ -32,6 +34,10 @@ i_queue and optionally passes something to o_queue
 operation(class_config) before using it inside each worker.
 
     '''
+    pr = None
+    if profile:
+        pr = cProfile.Profile()
+        pr.enable()
     if class_config is not None:
         ## operation is a class with __call__ so initialize it
         operation = operation(class_config)
@@ -44,9 +50,12 @@ operation(class_config) before using it inside each worker.
                 continue
             else:
                 break
+    if pr:
+        pr.create_stats()
+        pr.dump_stats('profile.%d.txt' % os.getpid())
 
 def run_many(operation, task_generator, num_workers=1, timeout=None,
-             class_config=None,
+             class_config=None, profile=False,
     ):
     '''test harness that runs num_workers as child processes and sends
 them tasks from task_generator via queue.  Results are harvested from
@@ -86,11 +95,11 @@ for response from run_many(do_search, queries, num_workers=10, timeout=5):
     def clean_exit(sig_num, frame):
         global run_many_not_killed
         run_many_not_killed = False
-        logger.critical('attempting clean_exit')
+        logger.debug('attempting clean_exit')
         pool.terminate()
-        logger.critical('pool terminated')
+        logger.debug('pool terminated')
         pool.join()
-        logger.critical('pool joined. Exiting.')
+        logger.debug('pool joined. Exiting.')
     for sig_num in [SIGTERM, SIGHUP, SIGABRT, SIGALRM]:
         signal(sig_num, clean_exit)
 
@@ -99,7 +108,8 @@ for response from run_many(do_search, queries, num_workers=10, timeout=5):
     for x in range(num_workers):
         async_res = pool.apply_async(
             worker, 
-            args=(operation, i_queue, o_queue, tasks_remaining, class_config))
+            args=(operation, i_queue, o_queue, tasks_remaining, class_config,
+                  profile))
         async_results.append(async_res)
 
     start_time = time.time()
@@ -111,12 +121,12 @@ for response from run_many(do_search, queries, num_workers=10, timeout=5):
             try:
                 async_res.get(0)
             except multiprocessing.TimeoutError:
-                logger.info('worker in progress')
+                pass
             except Exception, exc:
-                logger.info('worker died!', exc_info=True)
+                logger.critical('worker died!', exc_info=True)
                 raise
             else:
-                logger.info('worker finished')
+                logger.debug('worker finished')
                 assert async_res.ready()
                 async_results.remove(async_res)
         while elapsed < timeout:
@@ -142,7 +152,7 @@ for response from run_many(do_search, queries, num_workers=10, timeout=5):
 
     pool.close()
     pool.join()
-    logger.info('finished running %d worker processes' % num_workers)
+    logger.debug('finished running %d worker processes' % num_workers)
 
 
 def pass_through(task, o_queue):
@@ -188,7 +198,7 @@ class random_inserts(object):
             logger.critical('client failed!', exc_info=True)
             raise exc
         o_queue.put(u)
-        logger.info('put one_mb at %r', u)
+        logger.debug('put one_mb at %r', u)
 
 
 class many_gets(object):
@@ -204,10 +214,11 @@ class many_gets(object):
             raise exc
         assert len(kvs[0][1]) == 2**20
         o_queue.put((True, u))
-        logger.info('retrievied one_mb at %r', u)
+        logger.debug('retrievied one_mb at %r', u)
 
 
-def test_throughput_insert_random(client, num_workers=5, num_inserts=100):
+def test_throughput_insert_random(client, num_workers=5, num_inserts=100,
+                                  profile=False):
     client.setup_namespace(dict(t1=1))
     
     total_inserts = num_workers * num_inserts
@@ -215,27 +226,36 @@ def test_throughput_insert_random(client, num_workers=5, num_inserts=100):
     start_time = time.time()
     ret_vals = list(run_many(random_inserts, task_generator, 
                              class_config=client._config,
-                             num_workers=num_workers, timeout=total_inserts * 5))
+                             num_workers=num_workers,
+                             timeout=total_inserts * 5,
+                             profile=profile))
     elapsed = time.time() - start_time
     assert len(ret_vals) == total_inserts
     rate = total_inserts / elapsed
-    logger.info('%d MB written in %.1f seconds --> %.1f MB/sec across %d workers for storage_type=%s',
-                total_inserts, elapsed, rate, num_workers, client._config['storage_type'])
+    logger.info('%d MB written in %.1f seconds --> '
+                '%.1f MB/sec across %d workers for storage_type=%s',
+                total_inserts, elapsed, rate, num_workers,
+                client._config['storage_type'])
 
-    if client._config['storage_type'] in ['postgres', 'accumulo', 'cassandra', 'redis']:
+    if client._config['storage_type'] in ['postgres', 'accumulo',
+                                          'cassandra', 'redis']:
         start_time = time.time()
         count = 0
         for (found, u) in run_many(many_gets, ret_vals, 
                                    class_config=client._config,
-                                   num_workers=num_workers, timeout=total_inserts * 5):
+                                   num_workers=num_workers,
+                                   timeout=total_inserts * 5,
+                                   profile=profile):
             if not found:
                 raise Exception('failed to find %r' % u)
             count += 1
         elapsed = time.time() - start_time
         assert len(ret_vals) == total_inserts
         rate = total_inserts / elapsed
-        logger.info('%d MB read in %.1f seconds --> %.1f MB/sec across %d workers for storage_type=%s',
-                    total_inserts, elapsed, rate, num_workers, client._config['storage_type'])
+        logger.info('%d MB read in %.1f seconds --> '
+                    '%.1f MB/sec across %d workers for storage_type=%s',
+                    total_inserts, elapsed, rate, num_workers,
+                    client._config['storage_type'])
 
 
 class indexer(object):
@@ -278,7 +298,7 @@ class joiner(object):
             raise exc
         assert len(kvs[0][1]) == 2**20
         o_queue.put((True, u2))
-        logger.info('retrievied one_mb at %r', u2)
+        logger.debug('retrievied one_mb at %r', u2)
 
 @pytest.mark.skipif('True')
 def test_throughput_join(client):
@@ -315,25 +335,27 @@ def main():
                                      conflict_handler='resolve')
     parser.add_argument('storage_type')
     parser.add_argument('storage_addresses', default=[], action='append')
-    parser.add_argument('--app-name', default='kvlayer')
-    parser.add_argument('--namespace', default='test_throughput')
     parser.add_argument('--num-workers', default=5, type=int)
     parser.add_argument('--num-inserts', default=100, type=int)
+    parser.add_argument('--profile', action='store_true')
+    parser.add_argument('--verbose', action='store_true')
     modules = [yakonfig, kvlayer]
     args = yakonfig.parse_args(parser, modules)
-    #config = yakonfig.get_global_config()
 
-    logging.basicConfig(level=logging.DEBUG)
+    level = logging.INFO
+    if args.verbose:
+        level = logging.DEBUG
+    logging.basicConfig(level=level)
 
     if not args.storage_addresses:
         sys.exit('must specify at least one storage_address')
 
-    with yakonfig.defaulted_config([kvlayer], params=vars(args)):
-        client = kvlayer.client()
-        client.delete_namespace()
-        test_throughput_insert_random(
-            client, 
-            num_workers=args.num_workers, num_inserts=args.num_inserts,
-            )
-        client.delete_namespace()
+    client = kvlayer.client()
+    client.delete_namespace()
+    test_throughput_insert_random(
+        client, 
+        num_workers=args.num_workers, num_inserts=args.num_inserts,
+        profile=args.profile,
+    )
+    client.delete_namespace()
 
