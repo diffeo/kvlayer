@@ -144,6 +144,58 @@ typically adds a performance cost to reconnect.
 .. _PostgreSQL: http://www.postgresql.org
 .. _PostgreSQL connection string: http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYWORDS
 
+riak
+----
+
+Uses `Riak`_ for storage.  This backend is only available if the
+corresponding :mod:`riak` client library is installed.  Multiple
+``storage_addresses`` are actively encouraged for this backend. Each
+may be a simple string, or a dictionary containing keys ``host``,
+``http_port``, and ``pb_port`` if your setup is using non-standard
+port numbers.  A typical setup will look like:
+
+.. code-block:: yaml
+
+    kvlayer:
+      storage_type: riak
+      storage_addresses: [riak01, riak02, riak03, riak04, riak05]
+      # optional settings with their default values
+      protocol: pbc # or http or https
+      scan_limit: 100
+
+The setup from the Riak "Five-Minute Install" runs five separate
+Riak nodes all on localhost, resulting in configuration like
+
+.. code-block: yaml
+
+    kvlayer:
+      storage_type: riak
+      storage_addresses:
+      - { host: "127.0.0.1", pb_port: 10017, http_port: 10018 }
+      - { host: "127.0.0.1", pb_port: 10027, http_port: 10028 }
+      - { host: "127.0.0.1", pb_port: 10037, http_port: 10038 }
+      - { host: "127.0.0.1", pb_port: 10047, http_port: 10048 }
+      - { host: "127.0.0.1", pb_port: 10057, http_port: 10058 }
+
+One :mod:`kvlayer` namespace corresponds to one Riak bucket.
+
+The ``protocol`` setting selects between defaulting to the HTTP or
+protocol buffer APIs.  While Riak's default is generally ``http``,
+the ``pbc`` API seems to work equally well and is much faster.  The
+kvlayer backend's default is ``pbc``.
+
+The ``scan_limit`` setting determines how many results will be
+returned from each secondary index search.  A higher setting for this
+results in fewer network round-trips to get search results, but also
+results in higher latency to return each.  This affects both calls to
+the kvlayer scan API as well as calls to delete kvlayer tables, which
+are also Riak key scans.
+
+Your Riak cluster must be configured with secondary indexing enabled,
+and correspondingly, must be using the LevelDB backend.  The default
+bucket settings, and in particular setting ``allow_mult`` to
+``false``, are correct for :mod:`kvlayer`.
+
 cassandra
 ---------
 

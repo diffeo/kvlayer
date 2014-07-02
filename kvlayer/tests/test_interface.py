@@ -35,6 +35,12 @@ try:
 except ImportError, e:
     # backends.dont_append('postgres')
     pass
+try:
+    import riak
+    backends.append('riak')
+except ImportError, e:
+    # backends.dont_append('riak')
+    pass
 
 @pytest.fixture(scope='module',
                 params=backends)
@@ -70,7 +76,6 @@ def test_basic_storage(client):
     assert 0 == len(list(client.scan('t1')))
     # use time-based UUID 1, so these are ordered
     u1, u2, u3 = uuid.uuid1(), uuid.uuid1(), uuid.uuid1()
-    #pdb.set_trace()
     client.put('t1', ((u1, u2), b'88'))
     client.put('t2', ((u1, u2, u3), b'88'))
     assert 1 == len(list(client.scan('t1')))

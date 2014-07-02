@@ -123,14 +123,8 @@ setup(
         'Topic :: Utilities',
         'License :: OSI Approved :: MIT License',  ## MIT/X11 license http://opensource.org/licenses/MIT
     ],
-    # psycopg2 may be commented out to operate without postgres support
-    # Might be nice to have a conditional install_requires which determines
-    # what underlying database connectors can actually be supported on the install
-    # box. Perhaps something like:
-    # http://stackoverflow.com/questions/14036181/provide-a-complex-condition-in-install-requires-python-setuptoolss-setup-py
     install_requires=[
         'yakonfig >= 0.5.0',
-        #'psycopg2',
         'pycassa >= 1.10',
         'pyaccumulo >= 1.5.0.5',
         'pyyaml',
@@ -147,6 +141,10 @@ setup(
         'pytest-capturelog',
         'pytest-diffeo >= 0.1.4'
     ],
+    extras_require={
+        'Postgres': ['psycopg2'],
+        'Riak': ['riak'],
+    },
     entry_points={
         'console_scripts': [
             'kvlayer = kvlayer._client:main',

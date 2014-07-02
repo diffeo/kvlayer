@@ -1,0 +1,8 @@
+kvlayer:
+  storage_type: riak
+  storage_addresses:
+    - test-riak-1.diffeo.com
+    - test-riak-2.diffeo.com
+    - test-riak-3.diffeo.com
+    - test-riak-4.diffeo.com
+    - test-riak-5.diffeo.com

@@ -28,6 +28,11 @@ try:
 except ImportError:
     PGStorage = None
 
+try:
+    from kvlayer._riak import RiakStorage
+except ImportError:
+    RiakStorage = None
+
 logger = logging.getLogger(__name__)
 
 STORAGE_CLIENTS = dict(
@@ -42,6 +47,8 @@ STORAGE_CLIENTS = dict(
 
 if PGStorage:
     STORAGE_CLIENTS['postgres'] = PGStorage
+if RiakStorage:
+    STORAGE_CLIENTS['riak'] = RiakStorage
 
 def client():
     '''
