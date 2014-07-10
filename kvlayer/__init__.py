@@ -199,7 +199,8 @@ bucket settings, and in particular setting ``allow_mult`` to
 cassandra
 ---------
 
-Uses the Apache `Cassandra`_ distributed database.
+Uses the Apache `Cassandra`_ distributed database.  Note that this
+backend requires keys to be limited to tuples of UUIDs.
 
 .. code-block:: yaml
 
@@ -224,9 +225,7 @@ Having set up the global configuration, it is enough to call
 
 The API works in terms of "tables", though these are slightly
 different from tradational database tables.  Each table has keys which
-are tuples of a fixed length.  Tuple members must be
-:class:`uuid.UUID` objects unless the system is configured with
-``keys_must_be_uuid: false``.
+are tuples of a fixed length.
 
 .. autofunction:: client
 

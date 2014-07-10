@@ -56,8 +56,8 @@ class CStorage(AbstractStorage):
     http://www.slideshare.net/edanuff/indexing-in-cassandra
 
     """
-    def __init__(self):
-        super(CStorage, self).__init__()
+    def __init__(self, *args, **kwargs):
+        super(CStorage, self).__init__(*args, **kwargs)
         self.storage_addresses = self._config['storage_addresses']
         self.max_consistency_delay = self._config.get('max_consistency_delay', 120)
         ## avoid switching servers when creating/deleting namespaces
@@ -205,9 +205,7 @@ class CStorage(AbstractStorage):
         logger.debug('starting save')
         batch = self.tables[table_name].batch(queue_size=batch_size)
         for key, blob in keys_and_values:
-            ex = self.check_put_key_value(key, blob, table_name, num_uuids)
-            if ex:
-                raise ex
+            self.check_put_key_value(key, blob, table_name, num_uuids)
             if len(blob) + cur_bytes >= self.thrift_framed_transport_size_in_mb * 2**19:
                 logger.critical('len(blob)=%d + cur_bytes=%d >= thrift_framed_transport_size_in_mb/2 = %d'
                                 % (len(blob), cur_bytes, self.thrift_framed_transport_size_in_mb * 2**19))

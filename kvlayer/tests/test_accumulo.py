@@ -54,7 +54,6 @@ def client(namespace_string, config_path):
         logger.info('done cleaning up')
 
 def test_setup_namespace(client, direct):
-    #storage = AStorage()
     logger.info('creating namespace: %r' % client._namespace)
     client.setup_namespace({'table1': 1, 'table2': 1})
     logger.info('checking existence of tables')
@@ -64,12 +63,11 @@ def test_setup_namespace(client, direct):
 
 
 def test_delete_namespace(client, direct):
-    storage = AStorage()
     client.setup_namespace({'table1': 1, 'table2': 1})
     tables = direct.list_tables()
     assert client._test_ns('table1') in tables
     assert client._test_ns('table2') in tables
-    storage.delete_namespace()
+    client.delete_namespace()
     tables = direct.list_tables()
     assert client._test_ns('table1') not in tables
     assert client._test_ns('table2') not in tables

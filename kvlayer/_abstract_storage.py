@@ -15,8 +15,7 @@ import operator
 import time
 import uuid
 
-from kvlayer._exceptions import BadKey, ProgrammerError
-import yakonfig
+from kvlayer._exceptions import BadKey, ConfigurationError
 
 class AbstractStorage(object):
     '''Base class for all low-level storage implementations.
@@ -36,34 +35,65 @@ class AbstractStorage(object):
     __metaclass__ = abc.ABCMeta
 
     def check_put_key_value(self, key, value, table_name, key_spec):
-        "check that (key, value) are ok. return Exception or None if okay."
+        '''Check that a key/value pair are consistent with the schema.
+
+        :param tuple key: key to put
+        :param value: value to put (ignored)
+        :param str table_name: kvlayer table name (for errors only)
+        :param tuple key_spec: definition of the table key
+        :raise kvlayer._exceptions.BadKey: if `key` doesn't match `key_spec`
+
+        '''
         if not isinstance(key, tuple):
-            return BadKey('key should be tuple, but got %s' % (type(key),))
+            raise BadKey('key should be tuple, but got %s' % (type(key),))
         if len(key) != len(key_spec):
-            return BadKey('%r wants %r parts in key tuple, but got %r' % (table_name,  len(key_spec), len(key)))
+            raise BadKey('%r wants %r parts in key tuple, but got %r' %
+                         (table_name,  len(key_spec), len(key)))
         for kp, ks in zip(key, key_spec):
             if not isinstance(kp, ks):
-                return BadKey('part of key wanted type %s but got %s: %r' % (ks, type(kp), kp))
-        return None
+                raise BadKey('part of key wanted type %s but got %s: %r' %
+                             (ks, type(kp), kp))
 
-    @abc.abstractmethod
-    def __init__(self):
+    def __init__(self, config, app_name=None, namespace=None):
         '''Initialize a storage instance with config dict.
-        Typical config fields:
-        'namespace': string name of set of tables this kvlayer instance refers to
-        'app_name': string name of application code which is connecting
-        'storage_addresses': [list of server specs]
-        'username'
-        'password'
+
+        `config` is the configuration for this object; it may come
+        from :mod:`yakonfig` or elsewhere.  If `app_name` or `namespace`
+        are given as arguments to this method, they override the
+        corresponding parameters in the configuration.  These two
+        parameters _must_ be present, if not from the named arguments
+        then in the configuration, otherwise :class:`ConfigurationError`
+        will be raised.
+
+        This understands the following keys in `config`:
+
+        `app_name`
+          wrapper name for all namespaces
+        `namespace`
+          wrapper name for all managed tables
+        `storage_addresses`
+          list of locations of data storage; backend-specific
+        `log_stats`
+          if provided, name of a file to which to log statistics
+        `log_stats_interval_ops`
+          if provided, log stats after this many operations
+        `log_stats_interval_seconds`
+          if provided, log stats after this many seconds
+
+        :param dict config: local configuration dictionary
+        :param str app_name: optional app name override
+        :param str namespace: optional namespace override
+        :raise kvlayer._exceptions.ConfigurationError: if no `app_name`
+          or `namespace` could be found
         '''
-        self._config = yakonfig.get_global_config('kvlayer')
+        self._config = config
         self._table_names = {}
-        self._namespace = self._config.get('namespace', None)
+        self._namespace = namespace or self._config.get('namespace', None)
         if not self._namespace:
-            raise ProgrammerError('kvlayer requires a namespace')
-        self._app_name = self._config.get('app_name', None)
+            raise ConfigurationError('kvlayer requires a namespace')
+        self._app_name = app_name or self._config.get('app_name', None)
         if not self._app_name:
-            raise ProgrammerError('kvlayer requires an app_name')
+            raise ConfigurationError('kvlayer requires an app_name')
         self._require_uuid = self._config.get('keys_must_be_uuid', True)
         log_stats_cfg = self._config.get('log_stats', None)
         # StorageStats also consumes:

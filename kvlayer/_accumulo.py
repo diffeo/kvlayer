@@ -24,16 +24,16 @@ class AStorage(AbstractStorage):
     Accumulo storage implements kvlayer's AbstractStorage, which
     manages a set of tables as specified to setup_namespace
     '''
-    def __init__(self):
-        super(AStorage, self).__init__()
+    def __init__(self, *args, **kwargs):
+        super(AStorage, self).__init__(*args, **kwargs)
 
         self._connected = False
         addresses = self._config.get('storage_addresses', [])
         if not addresses:
             raise ProgrammerError('config lacks storage_addresses')
 
-        logger.info('accumulo thrift proxy supports only one address, using '
-                    'first: %r' % addresses)
+        #logger.info('accumulo thrift proxy supports only one address, using '
+        #            'first: %r' % addresses)
         address = addresses[0]
         if ':' not in address:
             self._host = address
@@ -135,9 +135,7 @@ class AStorage(AbstractStorage):
                                    timeout_ms=self._timeout_ms,
                                    threads=self._threads)
         for key, blob in keys_and_values:
-            ex = self.check_put_key_value(key, blob, table_name, key_spec)
-            if ex:
-                raise ex
+            self.check_put_key_value(key, blob, table_name, key_spec)
             if (len(blob) + cur_bytes >=
                     self.thrift_framed_transport_size_in_mb * 2 ** 19):
                 logger.debug('len(blob)=%d + cur_bytes=%d >= '

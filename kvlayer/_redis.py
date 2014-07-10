@@ -60,7 +60,7 @@ then return redis.error_reply('no such kvlayer table') end
 verify_lua_failed = 'no such kvlayer table'
 
 class RedisStorage(AbstractStorage):
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
         """Initialize a redis-based storage instance.
 
         Uses the global kvlayer configuration, with the following parameters:
@@ -90,7 +90,7 @@ class RedisStorage(AbstractStorage):
         Redis database number (defaults to 0)
 
         """
-        super(RedisStorage, self).__init__()
+        super(RedisStorage, self).__init__(*args, **kwargs)
         storage_addresses = self._config.get('storage_addresses', [])
         db_num = self._config.get('redis_db_num', 0)
         if len(storage_addresses) == 0:
@@ -258,10 +258,7 @@ class RedisStorage(AbstractStorage):
         for (k,v) in keys_and_values:
             #logger.debug('put {} {!r} {}'.format(table_name, k, v))
             key_spec = self._table_sizes[table_name]
-            ex = self.check_put_key_value(k, v, table_name,
-                                          key_spec)
-            if ex is not None:
-                raise ex
+            self.check_put_key_value(k, v, table_name, key_spec)
             params.append(join_key_fragments(k, key_spec=key_spec))
             params.append(v)
         script = conn.register_script(verify_lua + '''

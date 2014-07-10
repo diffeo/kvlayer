@@ -50,16 +50,46 @@ if PGStorage:
 if RiakStorage:
     STORAGE_CLIENTS['riak'] = RiakStorage
 
-def client():
+def client(config=None, storage_type=None, *args, **kwargs):
+    '''Create a kvlayer client object.
+
+    With no arguments, gets the global :mod:`kvlayer` configuration
+    from :mod:`yakonfig` and uses that.  A `config` dictionary, if
+    provided, is used in place of the :mod:`yakonfig` configuration.
+    `storage_type` overrides the corresponding field in the
+    configuration, but it must be supplied in one place or the other.
+    Any additional parameters are passed to the corresponding
+    backend's constructor.
+
+    >>> local_storage = kvlayer.client(config={}, storage_type='local',
+    ...                                app_name='app', namespace='ns')
+
+    If there is additional configuration under the value of
+    `storage_type`, that is overlaid over `config` and passed to the
+    storage implementation.
+
+    :param dict config: :mod:`kvlayer` configuration dictionary
+    :param str storage_type: name of storage implementation
+    :raise kvlayer._exceptions.ConfigurationError: if `storage_type`
+      is not provided or is invalid
+
     '''
-    constructs a storage client for the storage_type specified in config
-    '''
-    config = yakonfig.get_global_config('kvlayer')
+    if config is None:
+        config = yakonfig.get_global_config('kvlayer')
+    if storage_type is None:
+        try:
+            storage_type = config['storage_type']
+        except KeyError, exc:
+            raise ConfigurationError(
+                'No storage_type in kvlayer configuration')
+    if storage_type in config:
+        config = overlay_config(config, config[storage_type])
     try:
-        return STORAGE_CLIENTS[config['storage_type']]()
-    except Exception, exc:
-        logger.critical('config = %r' % config, exc_info=True)
-        raise
+        cls = STORAGE_CLIENTS[storage_type]
+    except KeyError, exc:
+        raise ConfigurationError('Invalid kvlayer storage_type {!r}'
+                                 .format(storage_type))
+    return cls(config, *args, **kwargs)
 
 class Actions(ArgParseCmd):
     def __init__(self, *args, **kwargs):

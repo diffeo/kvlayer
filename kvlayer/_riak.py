@@ -18,14 +18,14 @@ logger = logging.getLogger(__name__)
 
 
 class RiakStorage(AbstractStorage):
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
         '''Create a new Riak client object.
 
         This sets up a :class:`riak.RiakStorage` according to configuration,
         but in general this will not result in a network connection.
 
         '''
-        super(RiakStorage, self).__init__()
+        super(RiakStorage, self).__init__(*args, **kwargs)
 
         def make_node(s):
             if isinstance(s, basestring):
@@ -100,9 +100,7 @@ class RiakStorage(AbstractStorage):
         values_size = 0
 
         for k, v in keys_and_values:
-            ex = self.check_put_key_value(k, v, table_name, key_spec)
-            if ex:
-                raise ex
+            self.check_put_key_value(k, v, table_name, key_spec)
             key = join_key_fragments(k, key_spec=key_spec)
             # Always do this with a read/write to maintain vector clock
             # consistency...even though this means we're pushing objects

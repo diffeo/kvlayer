@@ -111,12 +111,12 @@ def _cursor_check_namespace_table(cursor, namespace):
     return cursor.rowcount > 0
 
 class PGStorage(AbstractStorage):
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
         '''Initialize a storage instance for namespace.
         uses the single string specifier for a connectionn to a postgres db
 http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYWORDS
         '''
-        super(PGStorage, self).__init__()
+        super(PGStorage, self).__init__(*args, **kwargs)
         if not _valid_namespace(self._namespace):
             raise ProgrammerError('namespace must match re: %r' % (_psql_identifier_re.pattern,))
         self.storage_addresses = self._config['storage_addresses']
@@ -223,10 +223,8 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         with self._conn() as conn:
             with conn.cursor() as cursor:
                 for kv in keys_and_values:
-                    ex = self.check_put_key_value(kv[0], kv[1], table_name,
-                                                  key_spec)
-                    if ex:
-                        raise ex
+                    self.check_put_key_value(kv[0], kv[1], table_name,
+                                             key_spec)
                     num_keys += 1
                     keystr = join_key_fragments(kv[0], key_spec=key_spec)
                     keys_size += len(keystr)

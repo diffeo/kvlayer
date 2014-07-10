@@ -20,8 +20,8 @@ class FileStorage(AbstractLocalStorage):
     '''
     File storage for testing and development
     '''
-    def __init__(self):
-        super(FileStorage, self).__init__()
+    def __init__(self, *args, **kwargs):
+        super(FileStorage, self).__init__(*args, **kwargs)
 
         filename = self._config['filename']
         if self._config.get('copy_to_filename', False):
@@ -31,7 +31,7 @@ class FileStorage(AbstractLocalStorage):
 
         if os.path.exists(filename) and os.path.getsize(filename) == 0:
             os.remove(filename)
-        logger.debug('Opening %s for kvlayer file storage', filename)
+        # logger.debug('Opening %s for kvlayer file storage', filename)
         self._data = shelve.open(filename,
                                 protocol= cPickle.HIGHEST_PROTOCOL,
                                 writeback=True)

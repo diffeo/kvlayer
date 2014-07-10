@@ -24,8 +24,8 @@ class AbstractLocalStorage(AbstractStorage):
 
     """
 
-    def __init__(self):
-        super(AbstractLocalStorage, self).__init__()
+    def __init__(self, *args, **kwargs):
+        super(AbstractLocalStorage, self).__init__(*args, **kwargs)
         self._connected = False
         self._raise_on_missing = self._config.get('raise_on_missing', True)
 
@@ -34,7 +34,7 @@ class AbstractLocalStorage(AbstractStorage):
         different table_names in order to expand the set of tables in
         the namespace.
         '''
-        logger.debug('creating tables: %r', table_names)
+        # logger.debug('creating tables: %r', table_names)
         self._table_names.update(table_names)
         self.normalize_namespaces(self._table_names)
         ## just store everything in a dict
@@ -54,9 +54,8 @@ class AbstractLocalStorage(AbstractStorage):
         values_size = 0
         num_keys = 0
         for key, val in keys_and_values:
-            ex = self.check_put_key_value(key, val, table_name, self._table_names[table_name])
-            if ex:
-                raise ex
+            self.check_put_key_value(key, val, table_name,
+                                     self._table_names[table_name])
             self._data[table_name][key] = val
             if self._log_stats is not None:
                 num_keys += 1
@@ -154,9 +153,27 @@ class LocalStorage(AbstractLocalStorage):
     """Local in-memory storage for testing.
 
     All instances of LocalStorage share the same underlying data.
+
+    As a special case, this ignores almost all of the configuration
+    metadata, and can be constructed with no parameters, not even
+    `app_name` or `namespace` (defaults will be provided to make
+    the base class happy).
+
     """
 
     _data = {}
+    
+    def __init__(self, config=None, app_name=None, namespace=None,
+                 *args, **kwargs):
+        if config is None:
+            config = {}
+        if app_name is None and 'app_name' not in config:
+            config['app_name'] = 'kvlayer'
+        if namespace is None and 'namespace' not in config:
+            config['namespace'] = 'kvlayer'
+        super(LocalStorage, self).__init__(config=config, app_name=app_name,
+                                           namespace=namespace, *args,
+                                           **kwargs)
 
     def delete_namespace(self):
         self._data.clear()
