@@ -168,8 +168,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
 
         :type table_names: dict(str = int)
         '''
-        self._table_names.update(table_names)
-        self.normalize_namespaces(self._table_names)
+        super(PGStorage, self).setup_namespace(table_names)
         with self._conn() as conn:
             with conn.cursor() as cursor:
                 if _cursor_check_namespace_table(cursor, self._namespace):

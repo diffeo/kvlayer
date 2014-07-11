@@ -76,9 +76,8 @@ class SplitS3Storage(AbstractStorage):
         return self.bucket.new_key(s3_key)
             
     def setup_namespace(self, table_names):
+        super(SplitS3Storage, self).setup_namespace(table_names)
         self.kvlclient.setup_namespace(table_names)
-        self._table_names.update(table_names)
-        self.normalize_namespaces(self._table_names)
 
     def delete_namespace(self):
         '''Deletes all data from all known tables.

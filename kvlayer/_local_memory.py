@@ -34,9 +34,7 @@ class AbstractLocalStorage(AbstractStorage):
         different table_names in order to expand the set of tables in
         the namespace.
         '''
-        # logger.debug('creating tables: %r', table_names)
-        self._table_names.update(table_names)
-        self.normalize_namespaces(self._table_names)
+        super(AbstractLocalStorage, self).setup_namespace(table_names)
         ## just store everything in a dict
         for table in table_names:
             if table not in self._data:

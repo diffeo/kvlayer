@@ -107,7 +107,6 @@ class RedisStorage(AbstractStorage):
         logger.debug('will connect to redis {!r}'.format(conn_kwargs))
         self._pool = redis.ConnectionPool(**conn_kwargs)
         self._table_keys = {}
-        self._table_sizes = {}
         pass
 
     def _connection(self):
@@ -145,6 +144,7 @@ class RedisStorage(AbstractStorage):
           int key lengths
 
         """
+        super(RedisStorage, self).setup_namespace(table_names)
         conn = self._connection()
         # We will do this by generating a short random key, and
         # assigning an empty hash to it.  If we can do this successfully
@@ -177,14 +177,12 @@ class RedisStorage(AbstractStorage):
                     logger.debug("setup_namespace: table {} uuid {}"
                                  .format(table, key))
                     self._table_keys[table] = key
-                    self._table_sizes[table] = table_names[table]
                     break
                 except redis.ResponseError, exc:
                     if tries == 0:
                         raise
                     tries -= 1
                     pass # try again with a new uuid
-        self.normalize_namespaces(self._table_sizes)
         return
 
     def delete_namespace(self):
@@ -204,7 +202,6 @@ class RedisStorage(AbstractStorage):
             conn.delete(*table_keys)
             conn.delete(*[k + 'k' for k in table_keys])
         self._table_keys = {}
-        self._table_sizes = {}
 
     def clear_table(self, table_name):
         """Delete all data from one table.
@@ -257,7 +254,7 @@ class RedisStorage(AbstractStorage):
         params = []
         for (k,v) in keys_and_values:
             #logger.debug('put {} {!r} {}'.format(table_name, k, v))
-            key_spec = self._table_sizes[table_name]
+            key_spec = self._table_names[table_name]
             self.check_put_key_value(k, v, table_name, key_spec)
             params.append(join_key_fragments(k, key_spec=key_spec))
             params.append(v)
@@ -302,7 +299,7 @@ class RedisStorage(AbstractStorage):
         if key is None:
             raise BadKey(table_name)
         #logger.debug('scan {} {!r}'.format(table_name, key_ranges))
-        key_spec = self._table_sizes[table_name]
+        key_spec = self._table_names[table_name]
         if len(key_ranges) == 0:
             # scan the whole table
             # just do this in one big call for simplicity
@@ -398,7 +395,7 @@ class RedisStorage(AbstractStorage):
         key = self._table_key(conn, table_name)
         if key is None:
             raise BadKey(key)
-        key_spec = self._table_sizes[table_name]
+        key_spec = self._table_names[table_name]
         #logger.debug('get {} {!r}'.format(table_name, keys))
         ks = [join_key_fragments(k, key_spec=key_spec) for k in keys]
         vs = conn.hmget(key, *ks)
@@ -433,7 +430,7 @@ class RedisStorage(AbstractStorage):
         if key is None:
             raise BadKey(table_name)
         logger.debug('delete {} {!r}'.format(table_name, keys))
-        key_spec = self._table_sizes[table_name]
+        key_spec = self._table_names[table_name]
         ks = [join_key_fragments(k, key_spec=key_spec) for k in keys]
         script = conn.register_script(verify_lua + '''
         for i = 1, #ARGV do

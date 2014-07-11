@@ -77,8 +77,7 @@ class CStorage(AbstractStorage):
             self.pool = None
         start_connect_time = time.time()
 
-        self._table_names.update(table_names)
-        self.normalize_namespaces(self._table_names)
+        super(CStorage, self).setup_namespace(table_names)
 
         sm = SystemManager(self._chosen_server)
         try:

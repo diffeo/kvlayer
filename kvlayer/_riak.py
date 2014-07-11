@@ -42,18 +42,6 @@ class RiakStorage(AbstractStorage):
         name = '{}_{}_{}'.format(self._app_name, self._namespace, table)
         return self.connection.bucket(name)
 
-    def setup_namespace(self, table_names):
-        '''Create tables in the namespace.
-
-        This is a required :mod:`kvlayer` method, but for Riak it
-        only saves `table_names` for future reference.
-
-        :param dict table_names: map of table name to key layout
-
-        '''
-        self._table_names.update(table_names)
-        self.normalize_namespaces(self._table_names)
-
     def delete_namespace(self):
         '''Deletes all data from the namespace.
 

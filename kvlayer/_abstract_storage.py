@@ -104,7 +104,6 @@ class AbstractStorage(object):
         else:
             self._log_stats = None
 
-    @abc.abstractmethod
     def setup_namespace(self, table_names):
         '''Create tables in the namespace.
 
@@ -125,17 +124,13 @@ class AbstractStorage(object):
         :param dict table_names: Mapping from table name to value type tuple
 
         '''
-        return
-
-    def normalize_namespaces(self, table_names):
-        '''Normalize table_names spec dictionary in place.
-
-        Replaces ints with a tuple of that many (uuid.UUID,)
-        '''
+        # Subclass implementations should call this superclass
+        # implementation to actually populate self._table_names.
         for k, v in table_names.iteritems():
             if isinstance(v, (int, long)):
                 assert v < 50, "assuming attempt at very long key is a bug"
-                table_names[k] = (uuid.UUID,) * v
+                v = (uuid.UUID,) * v
+            self._table_names[k] = v
 
     @abc.abstractmethod
     def delete_namespace(self):

@@ -101,9 +101,7 @@ class AStorage(AbstractStorage):
         different table_names in order to expand the set of tables in
         the namespace.
         '''
-        logger.debug('creating tables: %r', table_names)
-        self._table_names.update(table_names)
-        self.normalize_namespaces(self._table_names)
+        super(AStorage, self).setup_namespace(table_names)
         for table in table_names:
             if not self.conn.table_exists(self._ns(table)):
                 self._create_table(table)
