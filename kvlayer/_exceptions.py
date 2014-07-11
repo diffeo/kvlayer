@@ -47,6 +47,7 @@ class BadKey(KVLayerError):
     """
     pass
 
+
 class SerializationError(KVLayerError):
     """Converting between an item and a serialized form failed."""
     pass

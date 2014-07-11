@@ -144,6 +144,7 @@ setup(
     extras_require={
         'Postgres': ['psycopg2'],
         'Riak': ['riak'],
+        'S3': ['boto'],
     },
     entry_points={
         'console_scripts': [

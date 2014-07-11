@@ -22,30 +22,20 @@ import yaml
 from pytest_diffeo import redis_address
 import kvlayer
 from kvlayer import BadKey
+from kvlayer._client import STORAGE_CLIENTS
 import yakonfig
 
 logger = logging.getLogger(__name__)
 
-# TODO: fix cassandra for new flexible key-tuples
-#backends = ['local', 'filestorage', 'cassandra', 'accumulo', 'redis']
-backends = ['local', 'filestorage', 'redis', 'accumulo']
-try:
-    import psycopg2
-    backends.append('postgres')
-except ImportError, e:
-    # backends.dont_append('postgres')
-    pass
-try:
-    import riak
-    backends.append('riak')
-except ImportError, e:
-    # backends.dont_append('riak')
-    pass
-
 @pytest.fixture(scope='module',
-                params=backends)
+                params=STORAGE_CLIENTS.keys())
 def backend(request):
-    return request.param
+    backend = request.param
+    if backend == 'cassandra':
+        pytest.skip('cassandra doesn\'t support non-UUID keys')
+    if not request.fspath.dirpath('config_{}.yaml'.format(backend)).exists():
+        pytest.skip('no configuration file for backend {}'.format(backend))
+    return backend
 
 @pytest.yield_fixture(scope='function')
 def client(backend, request, tmpdir, namespace_string):

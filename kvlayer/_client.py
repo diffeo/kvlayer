@@ -22,6 +22,7 @@ from kvlayer._file_storage import FileStorage
 from kvlayer._redis import RedisStorage
 import yakonfig
 from yakonfig.cmd import ArgParseCmd
+from yakonfig.merge import overlay_config
 
 try:
     from kvlayer._postgres import PGStorage
@@ -32,6 +33,11 @@ try:
     from kvlayer._riak import RiakStorage
 except ImportError:
     RiakStorage = None
+
+try:
+    from kvlayer._split_s3 import SplitS3Storage
+except ImportError:
+    SplitS3Storage = None
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +55,8 @@ if PGStorage:
     STORAGE_CLIENTS['postgres'] = PGStorage
 if RiakStorage:
     STORAGE_CLIENTS['riak'] = RiakStorage
+if SplitS3Storage:
+    STORAGE_CLIENTS[SplitS3Storage.config_name] = SplitS3Storage
 
 def client(config=None, storage_type=None, *args, **kwargs):
     '''Create a kvlayer client object.
