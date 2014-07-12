@@ -187,16 +187,20 @@ def test_multiprocessing_harness_control_C():
 
 class random_inserts(object):
     def __init__(self, config):
-        self.client = kvlayer.client()
-        self.client.setup_namespace(dict(t1=1))
-        self.one_mb = ' ' * 2**20
+        try:
+            self.client = kvlayer.client()
+            self.client.setup_namespace(dict(t1=1))
+            self.one_mb = ' ' * 2**20
+        except Exception, exc:
+            logger.critical('client failed!', exc_info=True)
+            raise
 
     def __call__(self, u, o_queue):
         try:
             self.client.put('t1', ((u,), self.one_mb))
         except Exception, exc:
             logger.critical('client failed!', exc_info=True)
-            raise exc
+            raise
         o_queue.put(u)
         logger.debug('put one_mb at %r', u)
 
@@ -237,7 +241,7 @@ def test_throughput_insert_random(client, num_workers=5, num_inserts=100,
                 total_inserts, elapsed, rate, num_workers,
                 client._config['storage_type'])
 
-    if client._config['storage_type'] in ['postgres', 'accumulo',
+    if client._config['storage_type'] in ['postgres', 'postgrest', 'accumulo',
                                           'cassandra', 'redis']:
         start_time = time.time()
         count = 0
@@ -359,3 +363,5 @@ def main():
     )
     client.delete_namespace()
 
+if __name__ == '__main__':
+    main()

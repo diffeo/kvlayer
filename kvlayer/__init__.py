@@ -124,6 +124,46 @@ Each kvlayer table is instantiated as an Accumulo table named
 
 .. _Accumulo: http://accumulo.apache.org/
 
+postgrest
+---------
+
+Uses `PostgreSQL`_ for storage.  This backend is only available if the
+:mod:`psycopg2` module is installed.  The ``storage_addresses`` may be
+a single `PostgreSQL connection string`_, or may be a ``host:port``
+format with additional configuration.  The ``app_name`` and
+``namespace`` can only consist of alphanumeric characters,
+underscores, or ``$``, and must begin with a letter or underscore.
+
+This backend is newer than, less proven than, and incompatible with the
+``postgres`` backend described below.
+
+.. code-block:: yaml
+
+    kvlayer:
+      storage_type: postgrest
+      storage_addresses: ['postgres.example.com:5432']
+      username: test
+      password: test
+      dbname: test
+      # Equivalently, pack this all into a single SQL connection string
+      # storage_addresses:
+      # - 'host=postgres.example.com port=5432 user=test dbname=test password=test'
+
+      # all of the following parameters are default values and are optional
+      # keep this many connections alive
+      min_connections: 2
+      # never create more than this many connections
+      max_connections: 16
+
+The backend assumes the user is able to run SQL ``CREATE TABLE`` and
+``DROP TABLE`` statements.  Each kvlayer table is instantiated as an
+SQL table named ``appname_namespace_table``.
+
+Within the system, the ``min_connections`` and ``max_connections``
+property apply per client object.  If ``min_connections`` is set to 0
+then the connection pool will never hold a connection alive, which
+typically adds a performance cost to reconnect.
+
 postgres
 --------
 

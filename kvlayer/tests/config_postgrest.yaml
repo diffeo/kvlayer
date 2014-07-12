@@ -1,0 +1,6 @@
+kvlayer:
+  storage_type: postgrest
+  storage_addresses: [test-postgres.diffeo.com]
+  username: test
+  password: test
+  dbname: test

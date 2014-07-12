@@ -30,6 +30,11 @@ except ImportError:
     PGStorage = None
 
 try:
+    from kvlayer._postgrest import PostgresTableStorage
+except ImportError:
+    PostgresTableStorage = None
+
+try:
     from kvlayer._riak import RiakStorage
 except ImportError:
     RiakStorage = None
@@ -53,6 +58,8 @@ STORAGE_CLIENTS = dict(
 
 if PGStorage:
     STORAGE_CLIENTS['postgres'] = PGStorage
+if PostgresTableStorage:
+    STORAGE_CLIENTS[PostgresTableStorage.config_name] = PostgresTableStorage
 if RiakStorage:
     STORAGE_CLIENTS['riak'] = RiakStorage
 if SplitS3Storage:
