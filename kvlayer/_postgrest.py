@@ -225,19 +225,19 @@ class PostgresTableStorage(AbstractStorage):
                 # (May consider making this a knob.)
                 
                 # Function parameters
-                args = ['IN {} {}'.format(n, t)
+                args = ['IN {}p {}'.format(n, t)
                         for n, t in zip(cnames, ctypes)]
                 sql = '''
-                CREATE FUNCTION upsert_{0}({1}, IN v BYTEA)
+                CREATE FUNCTION upsert_{0}({1}, IN vp BYTEA)
                 RETURNS VOID AS
                 $$
                 BEGIN
                   LOOP
                     BEGIN
-                      INSERT INTO {0}({2}) VALUES ({2});
+                      INSERT INTO {0}({2}, v) VALUES ({3}, vp);
                       RETURN;
                     EXCEPTION WHEN unique_violation THEN
-                      UPDATE {0} SET v=v WHERE {3};
+                      UPDATE {0} SET v=vp WHERE {4};
                       IF found THEN
                         RETURN;
                       END IF;
@@ -248,8 +248,9 @@ class PostgresTableStorage(AbstractStorage):
                 LANGUAGE plpgsql
                 '''.format(self._table_name(name),
                            ', '.join(args), 
-                           ', '.join(cnames + ['v']),
-                           ' AND '.join('{0}={0}'.format(k) for k in cnames))
+                           ', '.join(cnames),
+                           ', '.join(k + 'p' for k in cnames),
+                           ' AND '.join('{0}={0}p'.format(k) for k in cnames))
                 try:
                     cursor.execute(sql)
                 except psycopg2.ProgrammingError, e:

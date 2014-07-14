@@ -116,6 +116,13 @@ def test_get(client):
     assert res[0][1] == b'83'
 
 
+def test_put_put(client):
+    client.setup_namespace(dict(t1=1))
+    u1 = uuid.uuid1()
+    client.put('t1', ((u1,),'a'))
+    client.put('t1', ((u1,),'b'))
+    assert list(client.get('t1', (u1,))) == [((u1,),'b')]
+
 
 def test_adding_tables(client):
     client.setup_namespace(dict(t1=2, t2=3))
