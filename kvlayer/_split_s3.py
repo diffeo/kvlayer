@@ -8,7 +8,7 @@ from __future__ import absolute_import
 import hashlib
 import time
 
-from boto.s3.connection import S3Connection
+import boto
 
 import kvlayer
 from kvlayer._abstract_storage import AbstractStorage
@@ -53,8 +53,13 @@ class SplitS3Storage(AbstractStorage):
                                         namespace=self._namespace)
 
         # Actually connect to S3
-        connection = S3Connection(aws_access_key_id=aws_access_key_id,
-                                  aws_secret_access_key=aws_secret_access_key)
+        connection = boto.connect_s3(
+            aws_access_key_id=aws_access_key_id,
+            aws_secret_access_key=aws_secret_access_key,
+            # Any sort of connection pooling apparently fails for
+            # HTTPS; see https://github.com/boto/boto/issues/1934
+            is_secure=False,
+        )
         self.bucket = connection.get_bucket(bucket_name)
 
     def _value_or_path(self, k):
