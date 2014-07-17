@@ -1,9 +1,8 @@
-'''
-Implementation of AbstractStorage using Cassandra
+'''Apache Accumulo kvlayer backend.
 
-Your use of this software is governed by your license agreement.
+.. This software is released under an MIT/X11 open source license.
+   Copyright 2012-2014 Diffeo, Inc.
 
-Copyright 2012-2013 Diffeo, Inc.
 '''
 
 import re
@@ -13,7 +12,8 @@ from kvlayer._exceptions import ProgrammerError
 from kvlayer._abstract_storage import AbstractStorage
 from pyaccumulo import Accumulo, Mutation, Range, BatchWriter
 from pyaccumulo.iterators import RowDeletingIterator
-from pyaccumulo.proxy.ttypes import IteratorScope, AccumuloSecurityException
+from pyaccumulo.proxy.ttypes import IteratorScope, \
+    AccumuloSecurityException, IteratorSetting
 from _utils import split_key, make_start_key, make_end_key, join_key_fragments
 
 logger = logging.getLogger('kvlayer')
@@ -151,7 +151,19 @@ class AStorage(AbstractStorage):
         batch_writer.close()
 
     def scan(self, table_name, *key_ranges, **kwargs):
+        return self._scan(table_name, key_ranges, keys_only=False)
+
+    def scan_keys(self, table_name, *key_ranges, **kwargs):
+        return self._scan(table_name, key_ranges, keys_only=True)
+
+    def _scan(self, table_name, key_ranges, keys_only):
         key_spec = self._table_names[table_name]
+        iterators=[]
+        if keys_only:
+            iterators.append(IteratorSetting(
+                name='SortedKeyIterator', priority=10,
+                iteratorClass='org.apache.accumulo.core.iterators.'
+                'SortedKeyIterator', properties={}))
         if not key_ranges:
             key_ranges = [['', '']]
         for start_key, stop_key in key_ranges:
@@ -178,13 +190,19 @@ class AStorage(AbstractStorage):
                     erow = make_end_key(stop_key, key_spec=key_spec)
                 key_range = Range(srow=srow, erow=erow, sinclude=True, einclude=True)
                 scanner = self.conn.scan(self._ns(table_name),
-                                         scanrange=key_range)
+                                         scanrange=key_range,
+                                         iterators=iterators)
             else:
-                scanner = self.conn.scan(self._ns(table_name))
+                scanner = self.conn.scan(self._ns(table_name),
+                                         iterators=iterators)
 
             for row in scanner:
                 total_count += 1
-                yield split_key(row.row, key_spec), row.val
+                key = split_key(row.row, key_spec)
+                if keys_only:
+                    yield key
+                else:
+                    yield key, row.val
 
     def get(self, table_name, *keys, **kwargs):
         for key in keys:
