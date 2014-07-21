@@ -5,16 +5,19 @@
 
 '''
 
-import re
 import logging
-from kvlayer._decorators import retry
-from kvlayer._exceptions import ProgrammerError
-from kvlayer._abstract_storage import AbstractStorage
+import re
+import time
+
 from pyaccumulo import Accumulo, Mutation, Range, BatchWriter
 from pyaccumulo.iterators import RowDeletingIterator
 from pyaccumulo.proxy.ttypes import IteratorScope, \
     AccumuloSecurityException, IteratorSetting
-from _utils import split_key, make_start_key, make_end_key, join_key_fragments
+
+from kvlayer._abstract_storage import AbstractStorage
+from kvlayer._decorators import retry
+from kvlayer._exceptions import ProgrammerError
+from kvlayer._utils import split_key, make_start_key, make_end_key, join_key_fragments
 
 logger = logging.getLogger('kvlayer')
 
@@ -124,39 +127,74 @@ class AStorage(AbstractStorage):
 
     @retry([AccumuloSecurityException])
     def put(self, table_name, *keys_and_values, **kwargs):
+        start_time = time.time()
+        num_keys = 0
+        keys_size = 0
+        num_values = 0
+        values_size = 0
+
         key_spec = self._table_names[table_name]
         cur_bytes = 0
-        batch_writer = BatchWriter(conn=self.conn,
-                                   table=self._ns(table_name),
-                                   max_memory=self._max_memory,
-                                   latency_ms=self._latency_ms,
-                                   timeout_ms=self._timeout_ms,
-                                   threads=self._threads)
-        for key, blob in keys_and_values:
-            self.check_put_key_value(key, blob, table_name, key_spec)
-            if (len(blob) + cur_bytes >=
-                    self.thrift_framed_transport_size_in_mb * 2 ** 19):
-                logger.debug('len(blob)=%d + cur_bytes=%d >= '
-                             'thrift_framed_transport_size_in_mb/2 = %d',
-                             len(blob), cur_bytes,
-                             self.thrift_framed_transport_size_in_mb * 2 ** 19)
-                logger.debug('pre-emptively sending only what has been '
-                             'batched, and will send this item in next batch.')
-                batch_writer.flush()
-                cur_bytes = 0
-            mut = Mutation(join_key_fragments(key, key_spec=key_spec))
-            mut.put(cf='', cq='', val=blob)
-            batch_writer.add_mutation(mut)
-            cur_bytes += len(blob)
-        batch_writer.close()
+
+        try:
+            batch_writer = BatchWriter(conn=self.conn,
+                                       table=self._ns(table_name),
+                                       max_memory=self._max_memory,
+                                       latency_ms=self._latency_ms,
+                                       timeout_ms=self._timeout_ms,
+                                       threads=self._threads)
+            for key, blob in keys_and_values:
+                self.check_put_key_value(key, blob, table_name, key_spec)
+                if (len(blob) + cur_bytes >=
+                        self.thrift_framed_transport_size_in_mb * 2 ** 19):
+                    logger.debug('len(blob)=%d + cur_bytes=%d >= '
+                                 'thrift_framed_transport_size_in_mb/2 = %d',
+                                 len(blob), cur_bytes,
+                                 self.thrift_framed_transport_size_in_mb * 2 ** 19)
+                    logger.debug('pre-emptively sending only what has been '
+                                 'batched, and will send this item in next batch.')
+                    batch_writer.flush()
+                    cur_bytes = 0
+                joined_key = join_key_fragments(key, key_spec=key_spec)
+                num_keys += 1
+                keys_size += len(joined_key)
+                num_values += 1
+                values_size += len(blob)
+                mut = Mutation(joined_key)
+                mut.put(cf='', cq='', val=blob)
+                batch_writer.add_mutation(mut)
+                cur_bytes += len(blob)
+            batch_writer.close()
+        finally:
+            end_time = time.time()
+            self.log_put(table_name, start_time, end_time, num_keys, keys_size,
+                         num_values, values_size)
 
     def scan(self, table_name, *key_ranges, **kwargs):
-        return self._scan(table_name, key_ranges, keys_only=False)
+        start_time = time.time()
+        stats = _scanstats()
+
+        try:
+            for kv in self._scan(table_name, key_ranges, keys_only=False, stats=stats):
+                yield kv
+        finally:
+            end_time = time.time()
+            self.log_scan(table_name, start_time, end_time, stats.num_keys,
+                          stats.keys_size, stats.num_values, stats.values_size)
 
     def scan_keys(self, table_name, *key_ranges, **kwargs):
-        return self._scan(table_name, key_ranges, keys_only=True)
+        start_time = time.time()
+        stats = _scanstats()
 
-    def _scan(self, table_name, key_ranges, keys_only):
+        try:
+            for kv in self._scan(table_name, key_ranges, keys_only=True, stats=stats):
+                yield kv
+        finally:
+            end_time = time.time()
+            self.log_scan_keys(table_name, start_time, end_time,
+                               stats.num_keys, stats.keys_size)
+
+    def _scan(self, table_name, key_ranges, keys_only, stats):
         key_spec = self._table_names[table_name]
         iterators=[]
         if keys_only:
@@ -198,20 +236,40 @@ class AStorage(AbstractStorage):
 
             for row in scanner:
                 total_count += 1
-                key = split_key(row.row, key_spec)
+                keyraw = row.row
+                stats.num_keys += 1
+                stats.keys_size += len(keyraw)
+                key = split_key(keyraw, key_spec)
                 if keys_only:
                     yield key
                 else:
+                    if row.val is not None:
+                        stats.num_values += 1
+                        stats.values_size += len(row.val)
                     yield key, row.val
 
     def get(self, table_name, *keys, **kwargs):
-        for key in keys:
-            gen = self.scan(table_name, (key, key))
-            v = None
-            for kk, vv in gen:
-                if kk == key:
-                    v = vv
-            yield key, v
+        start_time = time.time()
+        stats = _scanstats()
+        num_keys = 0
+        keys_size = 0
+        num_values = 0
+        values_size = 0
+
+        try:
+            for key in keys:
+                gen = self._scan(table_name, [(key, key)], keys_only=False, stats=stats)
+                v = None
+                for kk, vv in gen:
+                    if kk == key:
+                        v = vv
+                yield key, v
+
+        finally:
+            end_time = time.time()
+            self.log_get(table_name, start_time, end_time,
+                         stats.num_keys, stats.keys_size,
+                         stats.num_values, stats.values_size)
 
     def close(self):
         self._connected = False
@@ -222,17 +280,36 @@ class AStorage(AbstractStorage):
         self.close()
 
     def delete(self, table_name, *keys, **kwargs):
-        batch_writer = BatchWriter(conn=self.conn,
-                                   table=self._ns(table_name),
-                                   max_memory=self._max_memory,
-                                   latency_ms=self._latency_ms,
-                                   timeout_ms=self._timeout_ms,
-                                   threads=self._threads)
-        for key in keys:
-            mut = Mutation(join_key_fragments(key, key_spec=self._table_names[table_name]))
-            mut.put(cf='', cq='', val='DEL_ROW')
-            batch_writer.add_mutation(mut)
-        batch_writer.close()
+        start_time = time.time()
+        num_keys = 0
+        keys_size = 0
+
+        try:
+            batch_writer = BatchWriter(conn=self.conn,
+                                       table=self._ns(table_name),
+                                       max_memory=self._max_memory,
+                                       latency_ms=self._latency_ms,
+                                       timeout_ms=self._timeout_ms,
+                                       threads=self._threads)
+            for key in keys:
+                joined_key = join_key_fragments(key, key_spec=self._table_names[table_name])
+                num_keys += 1
+                keys_size += len(joined_key)
+                mut = Mutation(joined_key)
+                mut.put(cf='', cq='', val='DEL_ROW')
+                batch_writer.add_mutation(mut)
+            batch_writer.close()
+        finally:
+            end_time = time.time()
+            self.log_delete(table_name, start_time, end_time, num_keys, keys_size)
+
+
+class _scanstats(object):
+    def __init__(self):
+        self.num_keys = 0
+        self.keys_size = 0
+        self.num_values = 0
+        self.values_size = 0
 
 
 def _string_decrement(x):

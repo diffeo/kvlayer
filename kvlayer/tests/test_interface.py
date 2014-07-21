@@ -12,6 +12,10 @@ import os
 import pdb
 import random
 import sys
+try:
+    from cStringIO import StringIO
+except:
+    from StringIO import StringIO
 import time
 import uuid
 
@@ -40,6 +44,13 @@ def backend(request):
 @pytest.yield_fixture(scope='function')
 def client(backend, request, tmpdir, namespace_string):
     config_path = str(request.fspath.dirpath('config_{}.yaml'.format(backend)))
+    # read and parse the config file, insert an object
+    with open(config_path, 'r') as f:
+        file_config = yaml.load(f)
+        # Insert an object into the config which stats will write to.
+        # Below we can get the stats text and log it here.
+        # (Normal stats flow logs to file.)
+        file_config['kvlayer']['log_stats'] = StringIO()
     params = dict(
         app_name='kvlayer',
         namespace=namespace_string,
@@ -54,11 +65,18 @@ def client(backend, request, tmpdir, namespace_string):
     if backend == 'redis':
         params['storage_addresses'] = [ redis_address(request) ]
 
-    with yakonfig.defaulted_config([kvlayer], filename=config_path,
-                                   params=params):
+    with yakonfig.defaulted_config(
+            [kvlayer],
+            config=file_config,
+            params=params):
         client = kvlayer.client()
         client.delete_namespace()
         yield client
+        if client._log_stats is not None:
+            client._log_stats.flush()
+            logger.info('storage stats (%s %s):\n%s',
+                        backend, request.function.__name__,
+                        file_config['kvlayer']['log_stats'].getvalue())
         client.delete_namespace()
 
 def test_basic_storage(client):

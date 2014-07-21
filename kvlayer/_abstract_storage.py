@@ -374,9 +374,12 @@ class OpStatsPerTable(object):
             bpk=self.num_keys and ((1.0*self.keys_size)/self.num_keys)
         )
         if self.num_values > 0:
-            out += '{v} values for {vb} bytes ({bpv} B/val)'.format(
+            out += '{v} values for {vb} bytes ({bpv:0.1f} B/val)'.format(
                 v=self.num_values,
                 vb=self.values_size,
                 bpv=(1.0*self.values_size)/self.num_values
             )
+        if self.total_time > 0:
+            out += ' {:0.1f} (k+v)B/s'.format(
+                (1.0*(self.keys_size + self.values_size))/self.total_time)
         return out
