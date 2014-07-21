@@ -512,3 +512,59 @@ def test_merge_join(client):
             v2 = next(iter2, None)
     assert missing == [(('b',),'two'),(('d',),'four')]
         
+def test_partial_scan(client):
+    '''Test that reading part of a table, then starting a new scan,
+    doesn't break.'''
+    client.setup_namespace({'t1': (str,)})
+    client.put('t1',
+               (('a',),'one'),
+               (('b',),'two'),
+               (('c',),'three'),
+               (('d',),'four'))
+
+    s1 = client.scan('t1')
+    assert next(s1, None) == (('a',),'one')
+    assert next(s1, None) == (('b',),'two')
+
+    s2 = client.scan('t1')
+    assert next(s2, None) == (('a',),'one')
+    assert next(s2, None) == (('b',),'two')
+    assert next(s2, None) == (('c',),'three')
+    assert next(s2, None) == (('d',),'four')
+    assert next(s2, None) is None
+
+def test_partial_scan_keys(client):
+    '''Test that reading part of a table, then starting a new scan,
+    doesn't break.'''
+    client.setup_namespace({'t1': (str,)})
+    client.put('t1',
+               (('a',),'one'),
+               (('b',),'two'),
+               (('c',),'three'),
+               (('d',),'four'))
+
+    s1 = client.scan('t1')
+    assert next(s1, None) == (('a',),'one')
+    assert next(s1, None) == (('b',),'two')
+
+    s2 = client.scan_keys('t1')
+    assert next(s2, None) == ('a',)
+    assert next(s2, None) == ('b',)
+    assert next(s2, None) == ('c',)
+    assert next(s2, None) == ('d',)
+    assert next(s2, None) is None
+
+def test_scan_name_oddity(client):
+    client.setup_namespace({'index': (str,str,str)})
+    row = (('NAME','alistair','vid'),'1')
+    client.put('index', row)
+    s = client.scan('index', (('NAME','a'), ('NAME','a\xff')))
+    assert list(s) == [row]
+    s = client.scan('index', (('NAME','al'), ('NAME','al\xff')))
+    assert list(s) == [row]
+    s = client.scan('index', (('NAME','ali'), ('NAME','ali\xff')))
+    assert list(s) == [row]
+    s = client.scan('index', (('NAME','alis'), ('NAME','alis\xff')))
+    assert list(s) == [row]
+    s = client.scan('index', (('NAME','alist'), ('NAME','alist\xff')))
+    assert list(s) == [row]

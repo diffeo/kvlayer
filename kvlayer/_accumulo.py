@@ -5,7 +5,9 @@
 
 '''
 
+from __future__ import absolute_import
 import logging
+import random
 import re
 import time
 
@@ -35,15 +37,13 @@ class AStorage(AbstractStorage):
         if not addresses:
             raise ProgrammerError('config lacks storage_addresses')
 
-        #logger.info('accumulo thrift proxy supports only one address, using '
-        #            'first: %r' % addresses)
-        address = addresses[0]
-        if ':' not in address:
-            self._host = address
-            self._port = 50096
-        else:
-            self._host, self._port = address.split(':')
-            self._port = int(self._port)
+        def str_to_pair(address):
+            if ':' not in address:
+                return (address, 50096)
+            else:
+                h,p = address.split(':')
+                return (h, int(p))
+        self._addresses = map(str_to_pair, addresses)
 
         ## The following are all parameters to the accumulo
         ## batch interfaces.
@@ -67,8 +67,10 @@ class AStorage(AbstractStorage):
     @property
     def conn(self):
         if not self._conn:
-            logger.info('connecting to Accumulo')
-            self._conn = Accumulo(self._host, self._port,
+            host, port = random.choice(self._addresses)
+            logger.debug('connecting to Accumulo %s:%d',
+                         host, port)
+            self._conn = Accumulo(host, port,
                                   self._user, self._password)
             self._connected = True
         return self._conn
