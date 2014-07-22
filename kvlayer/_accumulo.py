@@ -1,4 +1,5 @@
-'''Apache Accumulo kvlayer backend.
+'''Implementation of AbstractStorage using Apache Accumulo; requires the
+Accumulo Thrift Proxy that is available in Accumulo 1.4.4+
 
 .. This software is released under an MIT/X11 open source license.
    Copyright 2012-2014 Diffeo, Inc.
@@ -21,8 +22,7 @@ from kvlayer._decorators import retry
 from kvlayer._exceptions import ProgrammerError
 from kvlayer._utils import split_key, make_start_key, make_end_key, join_key_fragments
 
-logger = logging.getLogger('kvlayer')
-
+logger = logging.getLogger(__name__)
 
 class AStorage(AbstractStorage):
     '''
