@@ -13,7 +13,7 @@ import time
 import pytest
 
 import kvlayer
-from kvlayer.tests.test_interface import client, backend # fixture
+from kvlayer.tests.test_interface import client, backend, tmpfile # fixture
 import yakonfig
 
 logger = logging.getLogger(__name__)

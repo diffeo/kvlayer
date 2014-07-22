@@ -12,10 +12,7 @@ import os
 import pdb
 import random
 import sys
-try:
-    from cStringIO import StringIO
-except:
-    from StringIO import StringIO
+import tempfile
 import time
 import uuid
 
@@ -42,15 +39,25 @@ def backend(request):
     return backend
 
 @pytest.yield_fixture(scope='function')
-def client(backend, request, tmpdir, namespace_string):
+def tmpfile():
+    f = tempfile.NamedTemporaryFile(delete=False)
+    fpath = f.name
+    yield fpath
+    try:
+        os.remove(fpath)
+    except OSError:
+        pass
+
+@pytest.yield_fixture(scope='function')
+def client(backend, request, tmpdir, tmpfile, namespace_string):
     config_path = str(request.fspath.dirpath('config_{}.yaml'.format(backend)))
-    # read and parse the config file, insert an object
+    # read and parse the config file, insert a file path for logging stats
     with open(config_path, 'r') as f:
         file_config = yaml.load(f)
-        # Insert an object into the config which stats will write to.
+        # Insert a file path into the config which stats will write to.
         # Below we can get the stats text and log it here.
         # (Normal stats flow logs to file.)
-        file_config['kvlayer']['log_stats'] = StringIO()
+        file_config['kvlayer']['log_stats'] = tmpfile
     params = dict(
         app_name='kvlayer',
         namespace=namespace_string,
@@ -76,7 +83,7 @@ def client(backend, request, tmpdir, namespace_string):
             client._log_stats.flush()
             logger.info('storage stats (%s %s):\n%s',
                         backend, request.function.__name__,
-                        file_config['kvlayer']['log_stats'].getvalue())
+                        open(file_config['kvlayer']['log_stats']).read())
         client.delete_namespace()
 
 def test_basic_storage(client):
