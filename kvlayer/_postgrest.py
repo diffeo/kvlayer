@@ -302,8 +302,8 @@ class PostgresTableStorage(AbstractStorage):
         sql = 'SELECT v FROM ' + tn + ' ' + where
         with self._cursor() as cursor:
             for k in keys:
-                k = self._massage_key_tuple(key_spec, k)
-                cursor.execute(sql, k)
+                pg_key = self._massage_key_tuple(key_spec, k)
+                cursor.execute(sql, pg_key)
                 found = False
                 for row in cursor:
                     assert not found
