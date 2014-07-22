@@ -565,3 +565,13 @@ def test_scan_name_oddity(client):
     assert list(s) == [row]
     s = client.scan('index', (('NAME','alist'), ('NAME','alist\xff')))
     assert list(s) == [row]
+
+def test_get_returns_keys(client):
+    client.setup_namespace({'t': (str,)})
+    key = ('fubar',)
+    client.put('t', (key, '1'))
+    results = list(client.get('t', key))
+    assert len(results) == 1
+    k, v = results[0]
+    assert k == key
+    assert v == '1'
