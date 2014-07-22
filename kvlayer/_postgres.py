@@ -21,7 +21,8 @@ import psycopg2
 import psycopg2.pool
 
 from kvlayer._abstract_storage import AbstractStorage
-from kvlayer._utils import split_key, make_start_key, make_end_key, join_key_fragments
+from kvlayer._utils import make_start_key, make_end_key, \
+    serialize_key, deserialize_key
 from kvlayer._exceptions import ProgrammerError
 
 
@@ -225,7 +226,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                     self.check_put_key_value(kv[0], kv[1], table_name,
                                              key_spec)
                     num_keys += 1
-                    keystr = join_key_fragments(kv[0], key_spec=key_spec)
+                    keystr = serialize_key(kv[0], key_spec=key_spec)
                     keys_size += len(keystr)
                     values_size += len(kv[1])
                     #logger.debug('put k=%r from %r', keystr, kv[0])
@@ -245,7 +246,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         keyraw = row[0]
         if isinstance(keyraw, buffer):
             keyraw = keyraw[:]
-        return split_key(keyraw, key_spec)
+        return deserialize_key(keyraw, key_spec)
 
     def _unmarshal_kv(self, row, key_spec):
         '''Get the (key,value) pair from a response row.'''
@@ -275,7 +276,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
             with self._conn() as conn:
                 for key in keys:
                     num_keys += 1
-                    bkey = join_key_fragments(key, key_spec=key_spec)
+                    bkey = serialize_key(key, key_spec=key_spec)
                     keys_size += len(bkey)
                     bkey = psycopg2.Binary(bkey)
                     with conn.cursor(name='get') as cursor:
@@ -439,7 +440,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         for k in keys:
             if len(k) != len(key_spec):
                 raise Exception('invalid key has %s uuids but wanted %s: %r' % (len(k), len(key_spec), k))
-            joined_key = join_key_fragments(k, key_spec=key_spec)
+            joined_key = serialize_key(k, key_spec=key_spec)
             num_keys += 1
             keys_size += len(joined_key)
             delete_statement_args.append(

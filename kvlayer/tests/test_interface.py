@@ -575,3 +575,13 @@ def test_get_returns_keys(client):
     k, v = results[0]
     assert k == key
     assert v == '1'
+
+def test_key_escaping(client):
+    client.setup_namespace({'t': (str, str, str)})
+    key = ('a\0b', 'a%b', 'a%00b')
+    client.put('t', (key, '1'))
+    val = list(client.get('t', key))
+    assert len(val) == 1
+    k, v = val[0]
+    assert k == key
+    assert v == '1'

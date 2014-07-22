@@ -11,8 +11,8 @@ import time
 import riak
 
 from kvlayer._abstract_storage import AbstractStorage
-from kvlayer._utils import split_key, join_key_fragments, make_start_key, \
-    make_end_key
+from kvlayer._utils import make_start_key, make_end_key, \
+    serialize_key, deserialize_key
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ class RiakStorage(AbstractStorage):
 
         for k, v in keys_and_values:
             self.check_put_key_value(k, v, table_name, key_spec)
-            key = join_key_fragments(k, key_spec=key_spec)
+            key = serialize_key(k, key_spec=key_spec)
             # Always do this with a read/write to maintain vector clock
             # consistency...even though this means we're pushing objects
             # around more than we need to
@@ -163,7 +163,7 @@ class RiakStorage(AbstractStorage):
                 for k in results:
                     num_keys += 1
                     keys_size += len(k)
-                    key = split_key(k, key_spec)
+                    key = deserialize_key(k, key_spec)
                     # Contrary to what the Riak documentation claims,
                     # in practice the $key and $bucket indexes seem
                     # to contain every key that ever existed.  That
@@ -207,7 +207,7 @@ class RiakStorage(AbstractStorage):
         # key lists are almost always pretty small.
 
         for k in keys:
-            key = join_key_fragments(k, key_spec=key_spec)
+            key = serialize_key(k, key_spec=key_spec)
             num_keys += 1
             keys_size += len(key)
             obj = bucket.get(key)
@@ -231,7 +231,7 @@ class RiakStorage(AbstractStorage):
         keys_size = 0
 
         for k in keys:
-            key = join_key_fragments(k, key_spec=key_spec)
+            key = serialize_key(k, key_spec=key_spec)
             num_keys += 1
             keys_size += len(key)
             # Always do this with a read/write to maintain vector clock
