@@ -7,12 +7,12 @@ Your use of this software is governed by your license agreement.
 Copyright 2012-2014 Diffeo, Inc.
 '''
 
-import abc
 import logging
 import time
 
 from kvlayer._abstract_storage import AbstractStorage
-from kvlayer._utils import _requires_connection, make_start_key, make_end_key, join_key_fragments
+from kvlayer._utils import make_start_key, make_end_key, \
+    serialize_key, _requires_connection
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ class AbstractLocalStorage(AbstractStorage):
             self._data[table_name][key] = val
             if self._log_stats is not None:
                 num_keys += 1
-                keys_size += len(join_key_fragments(key))
+                keys_size += len(serialize_key(key))
                 values_size += len(val)
 
         end_time = time.time()
@@ -74,10 +74,8 @@ class AbstractLocalStorage(AbstractStorage):
 
         key_spec = self._table_names[table_name]
         key_ranges = list(key_ranges)
-        specific_key_range = True
         if not key_ranges:
             key_ranges = [[None, None]]
-            specific_key_range = False
         for start, finish in key_ranges:
             total_count = 0
             start = make_start_key(start, key_spec=key_spec)
@@ -85,8 +83,9 @@ class AbstractLocalStorage(AbstractStorage):
             for key in sorted(self._data[table_name].iterkeys()):
                 ## given a range, mimic the behavior of DBs that tell
                 ## you if they failed to find a key
-                ## LocalStorage does get/put on the Python tuple as the key, stringify for sort comparison
-                joined_key = join_key_fragments(key, key_spec=key_spec)
+                ## LocalStorage does get/put on the Python tuple as the key, 
+                ## stringify for sort comparison
+                joined_key = serialize_key(key, key_spec=key_spec)
                 if (start is not None) and (start > joined_key):
                     continue
                 if (finish is not None) and (finish < joined_key):
@@ -96,14 +95,15 @@ class AbstractLocalStorage(AbstractStorage):
                 yield key, val
 
                 if self._log_stats is not None:
-                    keys_size += len(join_key_fragments(key))
+                    keys_size += len(serialize_key(key))
                     values_size += len(val)
                     num_keys += 1
                     values_size += len(val)
 
         end_time = time.time()
         num_values = num_keys
-        self.log_scan(table_name, start_time, end_time, num_keys, keys_size, num_values, values_size)
+        self.log_scan(table_name, start_time, end_time, num_keys, keys_size,
+                      num_values, values_size)
 
     @_requires_connection
     def get(self, table_name, *keys, **kwargs):
@@ -116,7 +116,7 @@ class AbstractLocalStorage(AbstractStorage):
         for key in keys:
             if self._log_stats is not None:
                 num_keys += 1
-                keys_size += len(join_key_fragments(key))
+                keys_size += len(serialize_key(key))
             try:
                 key, value = key, self._data[table_name][key]
                 yield key, value
@@ -137,7 +137,7 @@ class AbstractLocalStorage(AbstractStorage):
         for key in keys:
             if self._log_stats is not None:
                 num_keys += 1
-                keys_size += len(join_key_fragments(key))
+                keys_size += len(serialize_key(key))
             self._data[table_name].pop(key, None)
 
         end_time = time.time()

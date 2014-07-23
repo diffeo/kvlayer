@@ -20,7 +20,8 @@ from pyaccumulo.proxy.ttypes import IteratorScope, \
 from kvlayer._abstract_storage import AbstractStorage
 from kvlayer._decorators import retry
 from kvlayer._exceptions import ProgrammerError
-from kvlayer._utils import split_key, make_start_key, make_end_key, join_key_fragments
+from kvlayer._utils import make_start_key, make_end_key, \
+    serialize_key, deserialize_key
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +158,7 @@ class AStorage(AbstractStorage):
                                  'batched, and will send this item in next batch.')
                     batch_writer.flush()
                     cur_bytes = 0
-                joined_key = join_key_fragments(key, key_spec=key_spec)
+                joined_key = serialize_key(key, key_spec=key_spec)
                 num_keys += 1
                 keys_size += len(joined_key)
                 num_values += 1
@@ -241,7 +242,7 @@ class AStorage(AbstractStorage):
                 keyraw = row.row
                 stats.num_keys += 1
                 stats.keys_size += len(keyraw)
-                key = split_key(keyraw, key_spec)
+                key = deserialize_key(keyraw, key_spec)
                 if keys_only:
                     yield key
                 else:
@@ -253,10 +254,6 @@ class AStorage(AbstractStorage):
     def get(self, table_name, *keys, **kwargs):
         start_time = time.time()
         stats = _scanstats()
-        num_keys = 0
-        keys_size = 0
-        num_values = 0
-        values_size = 0
 
         try:
             for key in keys:
@@ -294,7 +291,8 @@ class AStorage(AbstractStorage):
                                        timeout_ms=self._timeout_ms,
                                        threads=self._threads)
             for key in keys:
-                joined_key = join_key_fragments(key, key_spec=self._table_names[table_name])
+                joined_key = serialize_key(
+                    key, key_spec=self._table_names[table_name])
                 num_keys += 1
                 keys_size += len(joined_key)
                 mut = Mutation(joined_key)

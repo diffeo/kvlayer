@@ -12,10 +12,7 @@ import os
 import pdb
 import random
 import sys
-try:
-    from cStringIO import StringIO
-except:
-    from StringIO import StringIO
+from StringIO import StringIO  # cStringIO is not pickable
 import time
 import uuid
 
@@ -568,3 +565,23 @@ def test_scan_name_oddity(client):
     assert list(s) == [row]
     s = client.scan('index', (('NAME','alist'), ('NAME','alist\xff')))
     assert list(s) == [row]
+
+def test_get_returns_keys(client):
+    client.setup_namespace({'t': (str,)})
+    key = ('fubar',)
+    client.put('t', (key, '1'))
+    results = list(client.get('t', key))
+    assert len(results) == 1
+    k, v = results[0]
+    assert k == key
+    assert v == '1'
+
+def test_key_escaping(client):
+    client.setup_namespace({'t': (str, str, str)})
+    key = ('a\0b', 'a%b', 'a%00b')
+    client.put('t', (key, '1'))
+    val = list(client.get('t', key))
+    assert len(val) == 1
+    k, v = val[0]
+    assert k == key
+    assert v == '1'

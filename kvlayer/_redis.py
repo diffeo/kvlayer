@@ -27,7 +27,7 @@ mapped table name plus "k" is a sorted set of key names (only, all
 with score 0, to support :meth:`RedisStorage.scan`).
 
 This currently uses pure-ASCII key values (using
-:func:`kvlayer._utils.join_key_fragments`) and intermediate table row IDs.
+:func:`kvlayer._utils.serialize_key`) and intermediate table row IDs.
 Redis should in principle be able to handle packed-binary values,
 which would be a quarter the size.
 
@@ -48,7 +48,8 @@ import redis
 
 from kvlayer._abstract_storage import AbstractStorage
 from kvlayer._exceptions import BadKey, ProgrammerError
-from kvlayer._utils import join_key_fragments, split_key, make_start_key, make_end_key
+from kvlayer._utils import make_start_key, make_end_key, \
+    serialize_key, deserialize_key
 
 logger = logging.getLogger(__name__)
 
@@ -256,7 +257,7 @@ class RedisStorage(AbstractStorage):
             #logger.debug('put {} {!r} {}'.format(table_name, k, v))
             key_spec = self._table_names[table_name]
             self.check_put_key_value(k, v, table_name, key_spec)
-            params.append(join_key_fragments(k, key_spec=key_spec))
+            params.append(serialize_key(k, key_spec=key_spec))
             params.append(v)
         script = conn.register_script(verify_lua + '''
         for i = 1, #ARGV, 2 do
@@ -306,7 +307,7 @@ class RedisStorage(AbstractStorage):
             res = conn.hgetall(key)
             for k in sorted(res.iterkeys()):
                 if k == '': continue
-                uuids = split_key(k, key_spec)
+                uuids = deserialize_key(k, key_spec)
                 yield (uuids, res[k])
         for start, end in key_ranges:
             find_first = '''
@@ -364,7 +365,7 @@ class RedisStorage(AbstractStorage):
             keys = res[0::2]
             values = res[1::2]
             for k,v in zip(keys, values):
-                uuids = split_key(k, key_spec)
+                uuids = deserialize_key(k, key_spec)
                 yield (uuids, v)
 
     def get(self, table_name, *keys, **kwargs):
@@ -397,11 +398,11 @@ class RedisStorage(AbstractStorage):
             raise BadKey(key)
         key_spec = self._table_names[table_name]
         #logger.debug('get {} {!r}'.format(table_name, keys))
-        ks = [join_key_fragments(k, key_spec=key_spec) for k in keys]
+        ks = [serialize_key(k, key_spec=key_spec) for k in keys]
         vs = conn.hmget(key, *ks)
         for (k, v) in zip(ks, vs):
             # v may be None if the key isn't there; yield it anyways
-            yield (tuple(split_key(k, key_spec)),v)
+            yield (deserialize_key(k, key_spec), v)
             
     def delete(self, table_name, *keys, **kwargs):
         """Delete specific pairs from the table.
@@ -431,7 +432,7 @@ class RedisStorage(AbstractStorage):
             raise BadKey(table_name)
         logger.debug('delete {} {!r}'.format(table_name, keys))
         key_spec = self._table_names[table_name]
-        ks = [join_key_fragments(k, key_spec=key_spec) for k in keys]
+        ks = [serialize_key(k, key_spec=key_spec) for k in keys]
         script = conn.register_script(verify_lua + '''
         for i = 1, #ARGV do
           redis.call('hdel', KEYS[1], ARGV[i])

@@ -12,7 +12,8 @@ import random
 import logging
 import traceback
 from collections import defaultdict
-from kvlayer._utils import join_uuids, split_uuids, make_start_key, make_end_key, join_key_fragments
+from kvlayer._utils import make_start_key, make_end_key, \
+    join_uuids, split_uuids
 from kvlayer._abstract_storage import AbstractStorage
 from kvlayer._utils import _requires_connection
 from thrift.transport.TTransport import TTransportException
