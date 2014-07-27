@@ -10,6 +10,7 @@ import pytest
 
 from kvlayer._exceptions import BadKey
 from kvlayer._utils import serialize_key, deserialize_key
+from kvlayer.tests.test_interface import backend, client
 
 def test_serialize_key():
     assert serialize_key(('a', 'b')) == 'a\x00b'
