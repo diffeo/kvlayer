@@ -22,6 +22,12 @@ def main():
     args = parser.parse_args()
     test_dir = os.path.dirname(__file__)
     response = pytest.main(['-v', '-v',
+                            ## the pytest `coverage` spews tracebacks
+                            ## when run in parallel, so maybe don't do
+                            ## this:
+                            '-n', '8',
+                            ## without these, we skip some tests
+                            '--runslow', '--runperf',
                             '--redis-address', args.redis_address,
                             '-k', 'not (cassandra or accumulo or postgres)',
                             test_dir])
