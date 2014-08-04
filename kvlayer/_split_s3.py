@@ -13,7 +13,7 @@ import boto
 import kvlayer
 from kvlayer._abstract_storage import AbstractStorage
 from kvlayer._exceptions import ConfigurationError
-from kvlayer._utils import join_key_fragments
+from kvlayer._utils import serialize_key
 
 class SplitS3Storage(AbstractStorage):
     config_name = 'split_s3'
@@ -71,7 +71,7 @@ class SplitS3Storage(AbstractStorage):
         raise ConfigurationError('split_s3 storage requires ' + k)
 
     def _s3_key(self, table_name, k):
-        key = join_key_fragments(k, key_spec=self._table_names[table_name])
+        key = serialize_key(k, key_spec=self._table_names[table_name])
         hasher = hashlib.sha256()
         hasher.update(key)
         key_hash = hasher.hexdigest()
