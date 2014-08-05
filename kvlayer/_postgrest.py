@@ -23,6 +23,7 @@ implementation.
 from __future__ import absolute_import
 import contextlib
 import logging
+import os
 import re
 import uuid
 
@@ -44,6 +45,18 @@ class PostgresTableStorage(AbstractStorage):
         'min_connections': 2,
         'max_connections': 16,
     }
+    @classmethod
+    def discover_config(cls, config, prefix):
+        if 'storage_addresses' in config:
+            return
+        addr = os.environ.get('POSTGRES_PORT_5432_TCP_ADDR')
+        port = os.environ.get('POSTGRES_PORT_5432_TCP_PORT')
+        if addr and port:
+            config['storage_addresses'] = [addr + ':' + port]
+            # This is what the standard Docker postgres:9.3 container gives
+            config.setdefault('username', 'postgres')
+            config.setdefault('password', 'postgres')  # not actually needed
+            config.setdefault('dbname', 'postgres')
 
     def __init__(self, *args, **kwargs):
         '''Create a new PostgreSQL kvlayer client.'''

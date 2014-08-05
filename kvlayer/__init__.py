@@ -378,5 +378,5 @@ Instance Collections
 
 from kvlayer._client import client
 from kvlayer.config import config_name, default_config, add_arguments, \
-    runtime_keys, check_config
+    runtime_keys, discover_config, check_config
 from kvlayer._exceptions import DatabaseEmpty, BadKey

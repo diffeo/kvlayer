@@ -14,6 +14,7 @@ import uuid
 
 import yaml
 
+import dblogger
 import kvlayer
 from kvlayer._accumulo import AStorage
 from kvlayer._cassandra import CStorage
@@ -174,7 +175,7 @@ def main():
     parser = argparse.ArgumentParser()
     action = Actions()
     action.add_arguments(parser)
-    args = yakonfig.parse_args(parser, [yakonfig, kvlayer])
+    args = yakonfig.parse_args(parser, [yakonfig, dblogger, kvlayer])
     action.main(args)
 
 if __name__ == '__main__':

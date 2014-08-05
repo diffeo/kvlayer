@@ -124,7 +124,8 @@ setup(
         'License :: OSI Approved :: MIT License',  ## MIT/X11 license http://opensource.org/licenses/MIT
     ],
     install_requires=[
-        'yakonfig >= 0.5.0',
+        'dblogger >= 0.4.0',
+        'yakonfig >= 0.6.0',
         'pycassa >= 1.10',
         'pyaccumulo >= 1.5.0.5',
         'pyyaml',

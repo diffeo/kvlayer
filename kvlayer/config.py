@@ -57,6 +57,63 @@ runtime_keys = dict(
     kvlayer_copy_to_filename = 'copy_to_filename',
 )
 
+def discover_config(config, prefix):
+    '''Look out in the world to find kvlayer configuration.
+
+    This will generally try to populate the `storage_type` and
+    `storage_addresses` parameters, if a reasonable default for those
+    can be found.
+
+    '''
+
+    # If the caller specified a top-level storage_addresses, stop
+    # (Even if they didn't specify storage_type)
+    if 'storage_addresses' in config:
+        return
+
+    # Or, if they specified both storage_type and a subconfig with
+    # storage_addresses, stop
+    storage_type = config.get('storage_type', None)
+    if (storage_type is not None and
+        storage_type in config and
+        'storage_addresses' in config[storage_type]):
+        return
+
+    # Otherwise we can try to do discovery (either specifically on
+    # storage_type, or on the alphabetically-first thing that has
+    # anything)
+
+    # Do we have a storage_addresses for some storage_type already?
+    for name in sorted(STORAGE_CLIENTS.iterkeys()):
+        if storage_type is not None and storage_type != name:
+            continue
+        if name not in config:
+            continue
+        if 'storage_addresses' not in config[name]:
+            continue
+        # We found something!
+        if storage_type is None:
+            config['storage_type'] = name
+        return
+
+    # Is there some storage_type that can find itself?
+    for name in sorted(STORAGE_CLIENTS.iterkeys()):
+        if storage_type is not None and storage_type != name:
+            continue
+        impl = STORAGE_CLIENTS[name]
+        if not hasattr(impl, 'discover_config'):
+            continue
+        sub_config = config.get(name, {})
+        impl.discover_config(sub_config, prefix + '.' + name)
+        if 'storage_addresses' not in sub_config:
+            continue
+        # Again, we found something!
+        config[name] = sub_config
+        if storage_type is None:
+            config['storage_type'] = name
+        return
+
+
 def check_config(config, name):
     if 'storage_type' not in config:
         raise ConfigurationError('{} must have a storage_type'
