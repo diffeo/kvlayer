@@ -287,7 +287,7 @@ class StorageStats(object):
                 return
         if self._interval_seconds is not None:
             now = time.time()
-            if self._interval_s_last_flushed + self._interval_seconds < now():
+            if self._interval_s_last_flushed + self._interval_seconds < now:
                 self.flush()
                 self._interval_s_last_flushed = now
                 self._op_interval_counter = 0

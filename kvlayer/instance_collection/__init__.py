@@ -28,6 +28,11 @@ import collections
 from cStringIO import StringIO
 import importlib
 import itertools
+import json
+import logging
+import traceback
+
+import yaml
 
 import streamcorpus
 from kvlayer._exceptions import ProgrammerError, SerializationError
@@ -42,52 +47,35 @@ try:
 except Exception, exc:
     protocol = TBinaryProtocol
 
-class AugmentedStringIO(object):
-    def __init__(self, blob):
-        fh = StringIO(blob)
-        self._fh = fh
-        self.getvalue = fh.getvalue
-        self.seek = fh.seek
-        self.close = fh.close
-        self.read = fh.read
 
-    def readAll(self, sz):
-        '''
-        This method allows TBinaryProtocolAccelerated to actually function.
+logger = logging.getLogger(__name__)
 
-        Copied from here
-        http://svn.apache.org/repos/asf/hive/trunk/service/lib/py/thrift/transport/TTransport.py
-        '''
-        buff = ''
-        have = 0
-        while (have < sz):
-            chunk = self.read(sz - have)
-            have += len(chunk)
-            buff += chunk
 
-            if len(chunk) == 0:
-                raise EOFError()
+class YamlSerializer(object):
+    def __init__(self, config=None):
+        pass
 
-        return buff
+    def loads(self, blob):
+        return yaml.load(blob)
 
-import json
-import yaml
-yaml.loads = yaml.load
-yaml.dumps = yaml.dump
+    def dumps(self, ob):
+        return yaml.dump(ob)
 
 ## global singleton dict of registered serializers
 registered_serializers = dict(
     ## include "yaml" and "json" as defaults
     # must provide a callable that returns a thing with dumps/loads
-    yaml=lambda: yaml,
-    json=lambda: json,
+    yaml=YamlSerializer,
+    json=json,
     )
 
 def register(name, serializer):
     global registered_serializers
     registered_serializers[name] = serializer
 
-class InstanceCollection(collections.MutableMapping):
+# was a MutableMapping, but now it's just an object and it defines all the dict-like operations explicitly.
+#class InstanceCollection(collections.MutableMapping):
+class InstanceCollection(object):
     '''A mapping of keys to serializable instance types.
 
     This maintains two sets of data: Python objects probably of some
@@ -117,7 +105,7 @@ class InstanceCollection(collections.MutableMapping):
         self._instances = dict()
         if isinstance(data, BlobCollection):
             self.blobs = data
-        elif isinstance(data, collections.Mapping):
+        elif isinstance(data, (collections.Mapping, InstanceCollection)):
             self._bc = BlobCollection()
             self._bc.collection_type = self._clsname
             self.update(data)
@@ -141,8 +129,7 @@ class InstanceCollection(collections.MutableMapping):
             bc = data
         else:
             bc = BlobCollection()
-            i_fh = AugmentedStringIO(data)
-            i_transport = TTransport.TBufferedTransport(i_fh)
+            i_transport = TTransport.TMemoryBuffer(data)
             i_protocol = protocol(i_transport)
             bc.read( i_protocol )
 
@@ -178,8 +165,8 @@ class InstanceCollection(collections.MutableMapping):
         raise NotImplemented()
 
     def __repr__(self):
-        return '{}(keys={!r}'.format(self.__class__.__name__,
-                                     self._bc.typed_blobs.keys())
+        return '{}(keys={!r})'.format(self.__class__.__name__,
+                                     self.keys())
 
     @property
     def _clsname(self):
@@ -196,18 +183,33 @@ class InstanceCollection(collections.MutableMapping):
 
         '''
         for key, obj in self._instances.items():
-            ## save the deserialized instance for repeated use
-            serializer_name = self._bc.typed_blobs[key].serializer
-            serializer_class = registered_serializers.get(serializer_name)
-            if not serializer_class:
-                raise SerializationError(
-                    '{!r} has serializer={!r}, but that is not registered'
-                    .format(key, serializer_name))
-            serializer = serializer_class()
-            if self._bc.typed_blobs[key].config:
-                serializer.configure(self._bc.typed_blobs[key].config)
+            serializer = self._get_serializer(key)
             self._bc.typed_blobs[key].blob = serializer.dumps(obj)
         return self._bc
+
+    def _get_serializer(self, key):
+        if key not in self._bc.typed_blobs:
+            ival = self._instances[key]
+            assert ival is not None
+            serializer_name = type(ival).__name__
+            self._bc.typed_blobs[key] = TypedBlob(serializer_name)
+        else:
+            serializer_name = self._bc.typed_blobs[key].serializer
+        serializer_class = registered_serializers.get(serializer_name)
+        if not serializer_class:
+            raise SerializationError(
+                '{!r} has serializer={!r}, but that is not registered'
+                .format(key, serializer_name))
+        if hasattr(serializer_class, '__call__'):
+            serializer = serializer_class(self._bc.typed_blobs[key].config)
+        else:
+            serializer = serializer_class
+        assert hasattr(serializer, 'loads'), 'invalid seralizer {!r} missing method "loads"'.format(serializer)
+        assert hasattr(serializer, 'dumps'), 'invalid seralizer {!r} missing method "dumps"'.format(serializer)
+        if hasattr(serializer, 'configure') and (key in self._bc.typed_blobs):
+            serializer.configure(self._bc.typed_blobs[key].config)
+        return serializer
+
     @blobs.setter
     def blobs(self, bc):
         '''Replace the :class:`BlobCollection` for this :class:`InstanceCollection`.
@@ -240,8 +242,7 @@ class InstanceCollection(collections.MutableMapping):
         if blob_collection_blob is None:
             bc.collection_type = self._clsname
         else:
-            i_fh = AugmentedStringIO(blob_collection_blob)
-            i_transport = TTransport.TBufferedTransport(i_fh)
+            i_transport = TTransport.TMemoryBuffer(blob_collection_blob)
             i_protocol = protocol(i_transport)
             bc.read( i_protocol )
         self.blobs = bc
@@ -276,71 +277,80 @@ class InstanceCollection(collections.MutableMapping):
         if key not in self._instances:
             if key not in self._bc.typed_blobs:
                 return self.__missing__(key)
-            serializer_name = self._bc.typed_blobs[key].serializer
-            serializer_class = registered_serializers.get(serializer_name)
-            if not serializer_class:
-                raise SerializationError(
-                    '{!r} has serializer={!r}, but that is not registered'
-                    .format(key, serializer_name))
-            serializer = serializer_class()
-            if self._bc.typed_blobs[key].config:
-                serializer.configure(self._bc.typed_blobs[key].config)
+            serializer = self._get_serializer(key)
             ## hold on to the deserialized instance for repeated use
             self._instances[key] = serializer.loads(self._bc.typed_blobs[key].blob)
         return self._instances[key]
 
+    def get(self, key, *args):
+        if key in self._instances:
+            return self._instances[key]
+        if key in self._bc.typed_blobs:
+            serializer = self._get_serializer(key)
+            val = serializer.loads(self._bc.typed_blobs[key].blob)
+            self._instances[key] = val
+            return val
+        if args:
+            return args[0]
+        return self.__missing__(key)
+
     def __setitem__(self, key, value):
-        self.__missing__(key)
         self._instances[key] = value
 
     def __delitem__(self, key):
-        del self._instances[key]
-        del self._bc.typed_blobs[key]
+        ok = False
+        if key in self._instances:
+            del self._instances[key]
+            ok = True
+        if key in self._bc.typed_blobs:
+            del self._bc.typed_blobs[key]
+            ok = True
+        if not ok:
+            raise KeyError(key)
 
     def pop(self, key, default=None):
         if key in self:
             value = self.__getitem__(key)
-            self._bc.typed_blobs.pop(key)
-            self._instances.pop(key)
+            self._bc.typed_blobs.pop(key, None)
+            self._instances.pop(key, None)
             return value
         elif default is not None:
             return default
         else:
             raise IndexError('%r is not in %r' % (key, self))
 
-    def insert(self, key, value, serializer_name, config=None):
-        '''Insert a value into the collection with an explicit serializer.
+    def iteritems(self):
+        for key in self.iterkeys():
+            yield key, self[key]
 
-        This allows the caller to insert a value with the name of the
-        serializer and an optional configuration block.  The
-        serializer must be registered via the :func:`register`
-        function.  In most cases, this will be called by the
-        :meth:`__missing__` function, and ordinary :meth:`__setitem__`
-        will correctly populate the item.
+    def items(self):
+        return list(self.iteritems())
 
-        :param key: mapping key
-        :param value: mapping value
-        :param str serializer_name: registered name of the binary
-          serializer for `value`
-        :param dict config: configuration associated with the object
-
-        '''
-        global registered_serializers
-        if serializer_name not in registered_serializers:
-            raise ProgrammerError('serializer_name=%r is not registered'
-                                  % serializer_name)
-        self._instances[key] = value
-        if config is None:
-            config = {}
-        self._bc.typed_blobs[key] = TypedBlob(serializer = serializer_name,
-                                        config = config)
-
-    def __iter__(self):
-        for key in self._bc.typed_blobs.keys():
+    def iterkeys(self):
+        for key in self._instances.iterkeys():
             yield key
+        for key in self._bc.typed_blobs.keys():
+            if key not in self._instances:
+                yield key
+
+    def keys(self):
+        return list(self.iterkeys())
+
+    def itervalues(self):
+        for k,v in self.iteritems():
+            yield v
+
+    def values(self):
+        return list(self.itervalues())
+
+    def update(self, odict):
+        for k,v in odict.iteritems():
+            self[k] = v
+
+    __iter__ = iterkeys
 
     def __len__(self):
-        return len(self._bc.typed_blobs)
+        return len(set(iter(self)))
 
 
 class Chunk(streamcorpus.Chunk):

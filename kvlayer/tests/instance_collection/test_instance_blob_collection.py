@@ -38,10 +38,13 @@ class Thing(object):
     def __eq__(self, other):
         return self.data == other.data
 
+    def __repr__(self):
+        return 'Thing({!r})'.format(self.dumps())
+
 class ThingSerializer(object):
 
-    def __init__(self):
-        self.config = {}
+    def __init__(self, config=None):
+        self.config = config or {}
 
     def loads(self, blob):
         if self.config.get('compress') == 'gz':
@@ -64,20 +67,34 @@ class ThingSerializer(object):
     def configure(self, config):
         self.config = config
 
+class ThingSerializerGZ(ThingSerializer):
+    def __init__(self, config=None):
+        super(ThingSerializerGZ, self).__init__(config)
+        self.config['compress'] = 'gz'
+
+    def configure(self, config):
+        self.config = config
+        self.config['compress'] = 'gz'
+
+
 class ThingCollection(InstanceCollection):
     def __missing__(self, key):
-        self.insert(key, Thing(), 'Thing')
+        val = Thing()
+        self[key] = val
+        return val
 
 class OtherThingCollection(InstanceCollection):
     def __missing__(self, key):
-        self.insert(key, Thing(), 'Thing')
+        val = Thing()
+        self[key] = val
+        return val
 
 def test_instance_collection():
 
     register('Thing', ThingSerializer)
 
     ic = ThingCollection()
-    ic.insert('thing1', Thing(yaml.dump(dict(hello='people'))), 'Thing')
+    ic['thing1'] = Thing(yaml.dump(dict(hello='people')))
     ic['thing1']['another'] = 'more'
     ic['thing1'].do_more_things()
     ic_str = ic.dumps()
@@ -95,10 +112,10 @@ def test_instance_collection():
 
 def test_instance_collection_gzip():
 
-    register('Thing', ThingSerializer)
+    register('Thing', ThingSerializerGZ)
 
     ic = ThingCollection()
-    ic.insert('thing1', Thing(yaml.dump(dict(hello='people'))), 'Thing', config=dict(compress='gz'))
+    ic['thing1'] = Thing(yaml.dump(dict(hello='people')))
     ic['thing1']['another'] = 'more'
     ic['thing1'].do_more_things()
     ic_str = ic.dumps()
@@ -124,10 +141,12 @@ def test_instance_collection_gzip():
 
 def test_instance_collection_yaml_json():
 
+    register('dict', json)
+
     ic = ThingCollection()
-    ic.insert('thing2', dict(hello='people'), 'yaml')
+    ic['thing2'] = dict(hello='people')
     ic['thing2']['another'] = 'more'
-    ic.insert('thing3', dict(hello='people2'), 'json')
+    ic['thing3'] = dict(hello='people2')
     ic_str = ic.dumps()
     
     ic2 = ThingCollection(ic_str)
@@ -150,7 +169,7 @@ def test_throughput_instance_collection():
 
     register('Thing', ThingSerializer)
     ic = ThingCollection()
-    ic.insert('thing1', Thing(yaml.dump(dict(one_mb=' ' * 2**20))), 'Thing')
+    ic['thing1'] = Thing(yaml.dump(dict(one_mb=' ' * 2**20)))
     ic_str = ic.dumps()
     
     start_time = time.time()
@@ -170,7 +189,7 @@ def test_chunk_blob_collection():
 
     register('Thing', ThingSerializer)
     ic = ThingCollection()
-    ic.insert('thing1', Thing(yaml.dump(dict(hello='people'))), 'Thing')
+    ic['thing1'] = Thing(yaml.dump(dict(hello='people')))
     ic['thing1']['another'] = 'more'
 
     o_chunk.add(ic)
@@ -184,8 +203,9 @@ def test_chunk_blob_collection():
 def test_cant_create_instancecollection():
     '''InstanceCollection(str) must have its runtime type exactly match the
     serialized type in str'''
+    register('dict', json)
     ic = ThingCollection()
-    ic.insert('thing', dict(hello='people'), 'yaml')
+    ic['thing'] = dict(hello='people')
     ic_str = ic.dumps()
 
     with pytest.raises(SerializationError):
