@@ -45,7 +45,7 @@ def call_git_describe(abbrev=4):
     try:
         p = Popen(['git', 'describe', '--abbrev=%d' % abbrev],
                   stdout=PIPE, stderr=PIPE, 
-                  cwd=os.path.dirname(__file__))
+                  cwd=os.path.dirname(os.path.abspath(__file__)))
         p.stderr.close()
         describe_line = p.stdout.readlines()[0].strip()
 
@@ -61,15 +61,16 @@ def call_git_describe(abbrev=4):
 
         else:
             ver, rel, source_hash = parts
-            ver_x, ver_y, ver_z = ver.split('.')
-            ## go to the next z-increment or "patch" release
-            ver_z = int(ver_z) + 1
-            version = '%s.%s.%d.dev%s' % (ver_x, ver_y, ver_z, rel)
+            version_parts = ver.split('.')
+            lasti = len(version_parts) - 1
+            # increment whatever the last part of this a.b.c.d.yadda
+            version_parts[lasti] = str(int(version_parts[lasti]) + 1)
+            version = '{}.dev{}'.format('.'.join(version_parts), rel)
 
         return version, source_hash
  
     except Exception, exc:
-        '''
+        #'''
         sys.stderr.write('line: %r\n' % line)
         sys.stderr.write(traceback.format_exc(exc))
         try:
@@ -80,7 +81,7 @@ def call_git_describe(abbrev=4):
             sys.stderr.write('os.getcwd()=%s\n' % os.getcwd())
         except Exception, exc:
             sys.stderr.write(traceback.format_exc(exc))
-        '''
+        #'''
         return None, None
  
  
