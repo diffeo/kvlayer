@@ -40,6 +40,12 @@ from subprocess import Popen, PIPE
  
  
 def call_git_describe(abbrev=4):
+    dot_git = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        '.git')
+    if not os.path.exists(dot_git):
+        return None, None
+
     line = None
     p = None
     try:
@@ -70,7 +76,6 @@ def call_git_describe(abbrev=4):
         return version, source_hash
  
     except Exception, exc:
-        #'''
         sys.stderr.write('line: %r\n' % line)
         sys.stderr.write(traceback.format_exc(exc))
         try:
@@ -81,7 +86,6 @@ def call_git_describe(abbrev=4):
             sys.stderr.write('os.getcwd()=%s\n' % os.getcwd())
         except Exception, exc:
             sys.stderr.write(traceback.format_exc(exc))
-        #'''
         return None, None
  
  
