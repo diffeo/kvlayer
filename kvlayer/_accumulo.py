@@ -126,7 +126,7 @@ class AStorage(AbstractStorage):
 
     def clear_table(self, table_name):
         self.conn.delete_table(self._ns(table_name))
-        self.conn.create_table(self._ns(table_name))
+        self._create_table(table_name)
 
     @retry([AccumuloSecurityException])
     def put(self, table_name, *keys_and_values, **kwargs):
