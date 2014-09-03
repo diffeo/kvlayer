@@ -142,7 +142,7 @@ class PostgresTableStorage(AbstractStorage):
 
     def _table_name(self, table_name):
         '''Get the SQL table name of a kvlayer table.'''
-        return '{}_{}_{}'.format(self._app_name, self._namespace, table_name)
+        return '{}_{}.{}'.format(self._app_name, self._namespace, table_name)
 
     def _columns(self, key_spec):
         '''Get the names of the columns for a specific table.'''
@@ -206,6 +206,9 @@ class PostgresTableStorage(AbstractStorage):
 
         '''
         super(PostgresTableStorage, self).setup_namespace(table_names)
+        with self._cursor() as cursor:
+            cursor.execute('CREATE SCHEMA IF NOT EXISTS {}_{}'
+                           .format(self._app_name, self._namespace))
         for name, key_spec in self._table_names.iteritems():
             with self._cursor() as cursor:
                 cnames = self._columns(key_spec)
@@ -241,16 +244,18 @@ class PostgresTableStorage(AbstractStorage):
                 args = ['IN {}p {}'.format(n, t)
                         for n, t in zip(cnames, ctypes)]
                 sql = '''
-                CREATE FUNCTION upsert_{0}({1}, IN vp BYTEA)
+                CREATE FUNCTION {app}_{ns}.upsert_{table}
+                  ({argstr}, IN vp BYTEA)
                 RETURNS VOID AS
                 $$
                 BEGIN
                   LOOP
                     BEGIN
-                      INSERT INTO {0}({2}, v) VALUES ({3}, vp);
+                      INSERT INTO {app}_{ns}.{table}({colstr}, v)
+                             VALUES ({values}, vp);
                       RETURN;
                     EXCEPTION WHEN unique_violation THEN
-                      UPDATE {0} SET v=vp WHERE {4};
+                      UPDATE {app}_{ns}.{table} SET v=vp WHERE {expr};
                       IF found THEN
                         RETURN;
                       END IF;
@@ -259,11 +264,14 @@ class PostgresTableStorage(AbstractStorage):
                 END;
                 $$
                 LANGUAGE plpgsql
-                '''.format(self._table_name(name),
-                           ', '.join(args), 
-                           ', '.join(cnames),
-                           ', '.join(k + 'p' for k in cnames),
-                           ' AND '.join('{0}={0}p'.format(k) for k in cnames))
+                '''.format(app=self._app_name,
+                           ns=self._namespace,
+                           table=name,
+                           argstr=', '.join(args),
+                           colstr=', '.join(cnames),
+                           values=', '.join(k + 'p' for k in cnames),
+                           expr=' AND '.join('{0}={0}p'.format(k)
+                                             for k in cnames))
                 try:
                     cursor.execute(sql)
                 except psycopg2.ProgrammingError, e:
@@ -277,17 +285,10 @@ class PostgresTableStorage(AbstractStorage):
                     pass
 
     def delete_namespace(self):
-        '''Delete all of the known tables.'''
+        '''Find and delete all of the tables.'''
         with self._cursor() as cursor:
-            for name, key_spec in self._table_names.iteritems():
-                tn = self._table_name(name)
-                cnames = self._columns(key_spec)
-                ctypes = [self._python_to_sql_type(t) for t in key_spec]
-                cursor.execute('DROP TABLE {}'.format(tn))
-                args = ['IN {} {}'.format(n, t)
-                        for n, t in zip(cnames, ctypes)]
-                cursor.execute('DROP FUNCTION upsert_{}({}, IN v BYTEA)'
-                               .format(tn, ', '.join(args)))
+            cursor.execute('DROP SCHEMA IF EXISTS {}_{} CASCADE'
+                           .format(self._app_name, self._namespace))
 
     def clear_table(self, table_name):
         '''Clear out a single table.'''
@@ -297,13 +298,13 @@ class PostgresTableStorage(AbstractStorage):
     def put(self, table_name, *keys_and_values, **kwargs):
         '''Write data into a table.'''
         key_spec = self._table_names[table_name]
-        tn = self._table_name(table_name)
         with self._cursor() as cursor:
             for k, v in keys_and_values:
                 self.check_put_key_value(k, v, table_name, key_spec)
                 k = self._massage_key_tuple(key_spec, k)
                 v = self._massage_key_part(str, v)
-                cursor.callproc('upsert_' + tn, k + (v,))
+                cursor.callproc(self._table_name('upsert_' + table_name),
+                                k + (v,))
 
     def get(self, table_name, *keys, **kwargs):
         '''Get values out of the database.'''
