@@ -1,13 +1,11 @@
 #!/usr/bin/env python
 
 import os
-import sys
 import fnmatch
 import subprocess
 
 ## prepare to run PyTest as a command
 from distutils.core import Command
-from distutils.dir_util import remove_tree
 
 from setuptools import setup, find_packages
 
@@ -19,6 +17,7 @@ AUTHOR = 'Diffeo, Inc.'
 AUTHOR_EMAIL = 'support@diffeo.com'
 DESC = 'table-oriented abstraction layer over key-value stores'
 
+
 def read_file(file_name):
     file_path = os.path.join(
         os.path.dirname(__file__),
@@ -26,12 +25,14 @@ def read_file(file_name):
         )
     return open(file_path).read()
 
+
 def recursive_glob(treeroot, pattern):
     results = []
     for base, dirs, files in os.walk(treeroot):
         goodfiles = fnmatch.filter(files, pattern)
         results.extend(os.path.join(base, f) for f in goodfiles)
     return results
+
 
 def recursive_glob_with_tree(treeroot, pattern):
     results = []
@@ -43,41 +44,10 @@ def recursive_glob_with_tree(treeroot, pattern):
         results.append((base, one_dir_results))
     return results
 
-class Thrift(Command):
-    '''run thrift'''
-    description = 'run thrift generator from IDL to generated python'
-
-    user_options = [
-        ('force', 'f',
-         "run all the build commands even if we don't need to")
-        ]
-
-    boolean_options = ['force']
-
-    def initialize_options(self):
-        self.force = 0
-    def finalize_options(self):
-        pass
-    def run(self):
-        self.maybe_thrift_gen('kvlayer/instance_collection/blob_collection.thrift', 'kvlayer/instance_collection')
-
-    def maybe_thrift_gen(self, thrift_src, outdir, renamefunc=None):
-        if renamefunc is None:
-            renamefunc = lambda x: x
-        self.make_file(
-            thrift_src,
-            os.path.join(outdir, renamefunc('ttypes.py')),
-            self._run_thrift,
-            [thrift_src, outdir, renamefunc])
-
-    def _run_thrift(self, thrift_src, outdir, renamefunc):
-        self.spawn(['thrift', '--gen', 'py:new_style,slots', thrift_src])
-        for fname in ('constants.py', 'ttypes.py'):
-            self.copy_file('gen-py/kvlayer/instance_collection/blob_collection/' + fname, os.path.join(outdir, renamefunc(fname)))
-        remove_tree('gen-py')
 
 def _myinstall(pkgspec):
     subprocess.check_call(['pip', 'install', pkgspec])
+
 
 class PyTest(Command):
     '''run py.test'''
@@ -115,7 +85,6 @@ setup(
     packages=find_packages(),
     cmdclass={
         'test': PyTest,
-        'thrift': Thrift,
     },
     # We can select proper classifiers later
     classifiers=[

@@ -369,11 +369,6 @@ are tuples of a fixed length.
 .. autoclass:: DatabaseEmpty
 .. autoclass:: BadKey
 
-Instance Collections
-====================
-
-.. automodule:: kvlayer.instance_collection
-
 '''
 
 from kvlayer._client import client
