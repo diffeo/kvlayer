@@ -121,7 +121,7 @@ def check_config(config, name):
     if config['storage_type'] not in STORAGE_CLIENTS:
         raise ConfigurationError('invalid {} storage_type {}'
                                  .format(name, config['storage_type']))
-    if 'namespace' not in config:
-        raise ConfigurationError('{} requires a namespace'.format(name))
-    if 'app_name' not in config:
-        raise ConfigurationError('{} requires an app_name'.format(name))
+    # if 'namespace' not in config:
+    #     raise ConfigurationError('{} requires a namespace'.format(name))
+    # if 'app_name' not in config:
+    #     raise ConfigurationError('{} requires an app_name'.format(name))

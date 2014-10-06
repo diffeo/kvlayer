@@ -36,6 +36,8 @@ def backend(request):
         pytest.skip('cassandra doesn\'t support non-UUID keys')
     if not request.fspath.dirpath('config_{}.yaml'.format(backend)).exists():
         pytest.skip('no configuration file for backend {}'.format(backend))
+    if backend != 'mongodb':
+        pytest.skip('TODO: DELETE: temporarily skipping non nuodb backends')
     return backend
 
 @pytest.yield_fixture(scope='function')

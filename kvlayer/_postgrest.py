@@ -206,9 +206,11 @@ class PostgresTableStorage(AbstractStorage):
 
         '''
         super(PostgresTableStorage, self).setup_namespace(table_names)
+        logger.debug('postgrest setup_namespace %r', table_names)
         with self._cursor() as cursor:
-            cursor.execute('CREATE SCHEMA IF NOT EXISTS {}_{}'
-                           .format(self._app_name, self._namespace))
+            sql = 'CREATE SCHEMA IF NOT EXISTS {}_{}'.format(self._app_name, self._namespace)
+            logger.debug('%r', sql)
+            cursor.execute(sql)
         for name, key_spec in self._table_names.iteritems():
             with self._cursor() as cursor:
                 cnames = self._columns(key_spec)
@@ -219,6 +221,7 @@ class PostgresTableStorage(AbstractStorage):
                        'PRIMARY KEY ({}))'
                        .format(self._table_name(name), ', '.join(columns),
                                ', '.join(cnames)))
+                logger.debug('%r', sql)
                 cursor.execute(sql)
 
                 # Create an "upsert" stored procedure.

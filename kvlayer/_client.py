@@ -46,6 +46,10 @@ try:
 except ImportError:
     SplitS3Storage = None
 
+# TODO: wrap in try/except
+from kvlayer._nuodb import NuodbStorage
+from kvlayer._mongodb import MongoStorage
+
 logger = logging.getLogger(__name__)
 
 STORAGE_CLIENTS = dict(
@@ -66,6 +70,11 @@ if RiakStorage:
     STORAGE_CLIENTS['riak'] = RiakStorage
 if SplitS3Storage:
     STORAGE_CLIENTS[SplitS3Storage.config_name] = SplitS3Storage
+if NuodbStorage:
+    STORAGE_CLIENTS['nuodb'] = NuodbStorage
+if MongoStorage:
+    STORAGE_CLIENTS['mongodb'] = MongoStorage
+
 
 def client(config=None, storage_type=None, *args, **kwargs):
     '''Create a kvlayer client object.

@@ -1,0 +1,6 @@
+kvlayer:
+  storage_type: nuodb
+  host: localhost
+  user: dba
+  password: goalie
+  database: test
