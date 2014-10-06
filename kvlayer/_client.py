@@ -22,6 +22,7 @@ from kvlayer._local_memory import LocalStorage
 from kvlayer._file_storage import FileStorage
 from kvlayer._redis import RedisStorage
 import yakonfig
+from yakonfig import ConfigurationError
 from yakonfig.cmd import ArgParseCmd
 from yakonfig.merge import overlay_config
 
