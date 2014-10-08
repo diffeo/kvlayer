@@ -249,29 +249,19 @@ class RedisStorage(AbstractStorage):
 
         """
         conn = self._connection()
-        key = self._table_key(conn, table_name)
-        if key is None:
+        table_key = self._table_key(conn, table_name)
+        if table_key is None:
             raise BadKey(table_name)
-        params = []
-        for (k,v) in keys_and_values:
-            #logger.debug('put {} {!r} {}'.format(table_name, k, v))
+        table_key_k = table_key + 'k'
+
+        pipeline = conn.pipeline(transaction=False)
+        for (k, v) in keys_and_values:
             key_spec = self._table_names[table_name]
             self.check_put_key_value(k, v, table_name, key_spec)
-            params.append(serialize_key(k, key_spec=key_spec))
-            params.append(v)
-        script = conn.register_script(verify_lua + '''
-        for i = 1, #ARGV, 2 do
-          redis.call('hset', KEYS[1], ARGV[i], ARGV[i+1])
-          redis.call('zadd', KEYS[2], 0, ARGV[i])
-        end
-        return redis.status_reply(KEYS[1])
-        ''')
-        try:
-            script(keys=[key, key + 'k'], args=params)
-        except redis.ResponseError, exc:
-            if str(exc) == verify_lua_failed:
-                raise BadKey(table_name)
-            raise
+            k = serialize_key(k, key_spec=key_spec)
+            pipeline.hset(table_key, k, v)
+            pipeline.zadd(table_key_k, 0, k)
+        pipeline.execute()
 
     def scan(self, table_name, *key_ranges, **kwargs):
         """Yield pairs from selected ranges in some table.
