@@ -5,16 +5,14 @@ Copyright 2012-2014 Diffeo, Inc.
 '''
 from __future__ import absolute_import
 import argparse
-from cStringIO import StringIO
 import logging
-import sys
-import termios
-import tty
 import uuid
 
-import yaml
+try:
+    import dblogger
+except ImportError:
+    dblogger = None
 
-import dblogger
 import kvlayer
 from kvlayer._accumulo import AStorage
 from kvlayer._cassandra import CStorage
@@ -172,11 +170,16 @@ class Actions(ArgParseCmd):
             else:
                 self.stdout.write('{!r}\n'.format(v))
 
+
 def main():
     parser = argparse.ArgumentParser()
     action = Actions()
     action.add_arguments(parser)
-    args = yakonfig.parse_args(parser, [yakonfig, dblogger, kvlayer])
+    modules = [yakonfig]
+    if dblogger:
+        modules += [dblogger]
+    modules += [kvlayer]
+    args = yakonfig.parse_args(parser, modules)
     action.main(args)
 
 if __name__ == '__main__':
