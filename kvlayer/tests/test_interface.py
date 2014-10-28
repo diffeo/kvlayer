@@ -1,22 +1,15 @@
 """Basic functional tests for all of the kvlayer backends.
 
-Your use of this software is governed by your license agreement.
-
-Copyright 2012-2014 Diffeo, Inc.
+.. This software is released under an MIT/X11 open source license.
+   Copyright 2012-2014 Diffeo, Inc.
 
 """
 from __future__ import absolute_import
-import errno
 import logging
-import os
-import pdb
 import random
-import sys
 from StringIO import StringIO  # cStringIO is not pickable
-import time
 import uuid
 
-import py
 import pytest
 import yaml
 
@@ -154,25 +147,6 @@ def test_adding_tables(client):
     assert 1 == len(list(client.scan('t3', ((u1,), (u1,)))))
     assert 0 == len(list(client.scan('t2', ((u2,), (u3,)))))
 
-@pytest.mark.performance
-def test_large_writes(client):
-    client.setup_namespace(dict(t1=2, t2=3))
-
-    u1, u2, u3 = uuid.uuid1(), uuid.uuid1(), uuid.uuid1()
-
-    fifteen_mb_string = b' ' * 15 * 2 ** 20
-    ## chop off the end to leave room for thrift message overhead
-    long_string = fifteen_mb_string[: -256]
-
-    num = 10
-
-    for rows in xrange(num):
-        logger.info('writing 1 string of length %d' % len(long_string))
-        client.put('t1', ((u1, u2), long_string))
-
-    logger.info('writing %d strings of length %d' % (num, len(long_string)))
-    client.put('t1', *(((u1, u2), long_string) for row in xrange(num)))
-
 
 def test_setup_namespace_idempotent(client):
     client.setup_namespace(dict(t1=2))
@@ -189,24 +163,6 @@ def test_setup_namespace_idempotent(client):
     client.setup_namespace(dict(t1=2))
     assert 0 == len(list(client.scan('t1')))
     assert 0 == len(list(client.scan('t1', ((u1,), (u1,)))))
-
-
-@pytest.mark.performance
-def test_storage_speed(client):
-    client.setup_namespace(dict(t1=2, t2=3))
-    num_rows = 10 ** 4
-    t1 = time.time()
-    client.put('t1', *[((uuid.uuid4(), uuid.uuid4()), b'')
-                       for i in xrange(num_rows)])
-    t2 = time.time()
-    results = list(client.scan('t1', batch_size=num_rows))
-    t3 = time.time()
-    assert num_rows == len(results)
-    put_rate = float(num_rows) / (t2 - t1)
-    get_rate = float(num_rows) / (t3 - t2)
-    logger.info('%d rows put=%.1f sec (%.1f per sec) '
-                'get=%.1f sec (%.1f per sec)' % (
-                num_rows, (t2 - t1), put_rate, (t3 - t2), get_rate))
 
 
 def test_clear_table(client):

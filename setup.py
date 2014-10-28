@@ -93,7 +93,6 @@ setup(
         'License :: OSI Approved :: MIT License',  ## MIT/X11 license http://opensource.org/licenses/MIT
     ],
     install_requires=[
-        'dblogger >= 0.4.0',
         'yakonfig >= 0.6.0',
         'pycassa >= 1.10',
         'pyaccumulo >= 1.5.0.5',
@@ -101,27 +100,19 @@ setup(
         'cql',
         'streamcorpus >= 0.3.23',
         'redis',
-        # test dependencies
-        'guppy',
-        'pytest',
-        'pytest-cov',
-        'pytest-xdist',
-        'pytest-timeout',
-        'pytest-incremental',
-        'pytest-capturelog',
-        'pytest-diffeo >= 0.1.4'
     ],
     extras_require={
         'Postgres': ['psycopg2'],
         'Riak': ['riak'],
         'S3': ['boto'],
+        'unittest': ['pytest', 'pytest-diffeo'],
     },
     entry_points={
         'console_scripts': [
             'kvlayer = kvlayer._client:main',
             'kvlayer_test = kvlayer.tests.run:main',
-            'kvlayer_throughput_test = kvlayer.tests.test_throughput:main',
+            'kvlayer_performance = kvlayer.tests.performance:main',
         ]
     },
-    include_package_data = True,
+    include_package_data=True,
 )
