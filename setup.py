@@ -98,7 +98,6 @@ setup(
         'pyaccumulo >= 1.5.0.5',
         'pyyaml',
         'cql',
-        'streamcorpus >= 0.3.23',
         'redis',
     ],
     extras_require={
