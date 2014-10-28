@@ -1,5 +1,6 @@
 from __future__ import absolute_import
 import uuid
+import sys
 
 import pytest
 
@@ -7,7 +8,7 @@ import kvlayer
 from kvlayer._local_memory import LocalStorage
 import yakonfig
 
-@pytest.yield_fixture(scope='module')
+@pytest.yield_fixture
 def local_storage():
     config_yaml = """
 kvlayer:
@@ -19,6 +20,7 @@ kvlayer:
     with yakonfig.defaulted_config([kvlayer], yaml=config_yaml):
         local_storage = LocalStorage()
         yield local_storage
+        local_storage.delete_namespace()
 
 def test_local_storage_singleton(local_storage):
     local_storage.setup_namespace(dict(meta=1))
@@ -66,3 +68,47 @@ def test_delete_namespace(local_storage):
     local_storage2 = LocalStorage()
     local_storage2.setup_namespace(dict(meta=1))
     assert list(local_storage2.get('meta', u)) == [(u, None)]
+
+
+def test_empty_key(local_storage):
+    k = ('', 'a')
+    local_storage.setup_namespace({'meta': (str, str)})
+    local_storage.put('meta', (k, '1'))
+    assert list(local_storage.get('meta', k)) == [(k, '1')]
+
+
+def test_long_key(local_storage):
+    k = ('a', long(5))
+    local_storage.setup_namespace({'meta': (str, long)})
+    local_storage.put('meta', (k, '1'))
+    assert list(local_storage.get('meta', k)) == [(k, '1')]
+
+
+def test_empty_scan(local_storage):
+    k = ('', 'a')
+    local_storage.setup_namespace({'meta': (str, str)})
+    local_storage.put('meta', (k, '1'))
+    assert list(local_storage.scan('meta', (k, k))) == [(k, '1')]
+
+
+def test_long_scan(local_storage):
+    k = ('a', long(5))
+    local_storage.setup_namespace({'meta': (str, long)})
+    local_storage.put('meta', (k, '1'))
+
+    s, e = ('a', long(1)), ('a', long(10))
+    assert list(local_storage.scan('meta', (s, e))) == [(k, '1')]
+
+
+def test_negative_int_scan(local_storage):
+    '''Demontrates improper ordering of signed integers.'''
+    k = (-1,)
+    local_storage.setup_namespace({'meta': (int,)})
+    local_storage.put('meta', (k, '1'))
+
+    s, e = (-2,), (0,)
+    assert list(local_storage.scan('meta')) == [(k, '1')]
+
+    assert list(local_storage.scan('meta', (s, e))) == []
+    # This should be:
+    # assert list(local_storage.scan('meta', (s, e))) == [(k, '1')]
