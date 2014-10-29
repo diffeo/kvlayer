@@ -334,7 +334,7 @@ def run_all_perftests(redis_address=None):
         if not os.path.exists(config):
             continue
         params = {'app_name': 'kvlayer_performance',
-                  'namespace': uuid.uuid1().hex}
+                  'namespace': 'ns' + uuid.uuid1().hex}
         if name == 'filestorage':
             params['kvlayer_filename'] = os.tmpnam()
         if name == 'redis' and redis_address is not None:
