@@ -15,6 +15,7 @@ exception, or 0 otherwise.
 from __future__ import absolute_import, division, print_function
 import argparse
 import cProfile
+import logging
 import multiprocessing
 import os
 import Queue
@@ -22,6 +23,9 @@ import sys
 import time
 import traceback
 import uuid
+
+logger = logging.getLogger(__name__)
+
 
 try:
     import dblogger
@@ -35,16 +39,20 @@ from kvlayer._client import STORAGE_CLIENTS
 
 # Straightforward performance-oriented tests
 
-def perftest_large_writes(client):
+# chop off the end of 15MB to leave room for thrift message overhead
+fifteen_MB_minus_overhead = 15 * 2 ** 20 - 256
+
+def perftest_large_writes(client, item_size=fifteen_MB_minus_overhead, 
+                          num_items_per_batch=1, num_batches=10):
     client.setup_namespace(dict(t1=2, t2=3))
 
     u1, u2 = uuid.uuid1(), uuid.uuid1()
 
-    fifteen_mb_string = b' ' * 15 * 2 ** 20
-    # chop off the end to leave room for thrift message overhead
-    long_string = fifteen_mb_string[: -256]
+    long_string = b' ' * item_size
 
-    num = 10
+    ## send ten batches, so we get some averaging
+    
+    num = num_batches * num_items_per_batch
     total_bytes = num * len(long_string)
     print('Testing large writes ({} rows of {} KB)'
           .format(num, len(long_string)/1024))
@@ -59,7 +67,8 @@ def perftest_large_writes(client):
     print ('{} single  rows put={:.1f} sec ({:.1f} per sec, {:.1f} KB/s)'
            .format(num, dt, num / dt, total_bytes / (1024 * dt)))
 
-    client.put('t1', *(((u1, u2), long_string) for row in xrange(num)))
+    for _ in xrange(num_batches):
+        client.put('t1', *(((u1, u2), long_string) for row in xrange(num_items_per_batch)))
     t3 = time.time()
 
     dt = t3 - t2
@@ -226,56 +235,98 @@ def worker(operation, i_queue, o_queue, tasks_remaining,
         pr.dump_stats('profile.%d.txt' % os.getpid())
 
 
-class random_inserts(object):
+class simple_app(object):
+    def __init__(self, config):
+        self.client = kvlayer.client()
+        self.client.setup_namespace(dict(t1=2))
+        self.item_size = config.pop('item_size', fifteen_MB_minus_overhead)
+        self.long_string = b' ' * self.item_size
+        self.num_batches = config.pop('num_batches', 10)
+        self.num_items_per_batch = config.pop('num_items_per_batch', 1)
+        self.num_items = self.num_batches * self.num_items_per_batch
+
+
+class random_inserts(simple_app):
     '''Worker function that inserts 1 MB keys in a table.'''
-    def __init__(self, config):
-        self.client = kvlayer.client()
-        self.client.setup_namespace(dict(t1=1))
-        self.one_mb = ' ' * 2**20
-
     def __call__(self, u, o_queue):
-        self.client.put('t1', ((u,), self.one_mb))
-        o_queue.put(u)
+        for _ in xrange(self.num_batches):
+            keys = [(u, uuid.uuid4())
+                    for _ in xrange(self.num_items_per_batch)]
+            try:
+                self.client.put('t1', *((key, self.long_string) for key in keys))
+                for key in keys:
+                    o_queue.put(key)
+            except Exception, exc:
+                logger.critical('failed', exc_info=True)
+                sys.exit(str(exc))
 
 
-class many_gets(object):
+class many_gets(simple_app):
     '''Worker function that retrieves keys from a table.'''
-    def __init__(self, config):
-        self.client = kvlayer.client()
-        self.client.setup_namespace(dict(t1=1))
-
-    def __call__(self, u, o_queue):
-        list(self.client.get('t1', (u,)))
-        o_queue.put((True, u))
+    def __call__(self, key, o_queue):
+        try:
+            assert list(self.client.get('t1', key))
+            o_queue.put((True, key))
+        except Exception, exc:
+            logger.critical('failed', exc_info=True)
+            sys.exit(str(exc))
 
 
 def perftest_throughput_insert_random(num_workers=4,
-                                      num_inserts=100, profile=False):
+                                      profile=False, 
+                                      item_size=fifteen_MB_minus_overhead, 
+                                      num_items_per_batch=1, 
+                                      num_batches=10,
+                                      ):
     '''Measure concurrent write throughput writing data to a table.'''
+    num_inserts = num_items_per_batch * num_batches
     total_inserts = num_workers * num_inserts
-    task_generator = (uuid.uuid4() for x in xrange(total_inserts))
+    task_generator = (uuid.uuid4() for x in xrange(num_workers))
+    class_config = dict(
+        item_size=item_size,
+        num_items_per_batch=num_items_per_batch, 
+        num_batches=num_batches,
+        )
     start_time = time.time()
     ret_vals = list(run_many(random_inserts, task_generator,
                              timeout=total_inserts * 5,
-                             class_config={},
+                             class_config=class_config,
                              num_workers=num_workers,
                              profile=profile))
+
+
     elapsed = time.time() - start_time
-    assert len(ret_vals) == total_inserts
+    assert len(ret_vals) == total_inserts, (len(ret_vals), num_workers, num_batches, num_items_per_batch)
+    total_bytes = item_size * total_inserts
     rate = total_inserts / elapsed
-    print('{} MB written in {:.1f} seconds --> '
-          '{:.1f} MB/sec across {} workers'
-          .format(total_inserts, elapsed, rate, num_workers))
+    print(
+        'parallel {} workers, {} batches, {} items per batch, '
+        '{} bytes per item, '
+        '{} inserts ({:.4f} MB) written in {:.1f} seconds --> '
+        '{:.1f} items/sec, {:.4f} MB/s'
+        .format(
+            num_workers, num_batches, num_items_per_batch, item_size,
+            total_inserts, total_bytes / 2**20, elapsed, 
+            rate, total_bytes / (2**20 * elapsed)))
+    sys.stdout.flush()
     return ret_vals
 
 
 def perftest_throughput_many_gets(ret_vals=[], num_workers=4,
+                                  item_size=fifteen_MB_minus_overhead, 
+                                  num_items_per_batch=1, 
+                                  num_batches=10,
                                   profile=False):
     '''Measure concurrent read throughput reading data from a table.'''
+    class_config = dict(
+        item_size=item_size,
+        num_items_per_batch=num_items_per_batch, 
+        num_batches=num_batches,
+        )
     start_time = time.time()
     count = 0
     for (found, u) in run_many(many_gets, ret_vals,
-                               class_config={},
+                               class_config=class_config,
                                num_workers=num_workers,
                                timeout=len(ret_vals) * 5,
                                profile=profile):
@@ -283,13 +334,30 @@ def perftest_throughput_many_gets(ret_vals=[], num_workers=4,
         count += 1
     elapsed = time.time() - start_time
     assert count == len(ret_vals)
+
+    num_inserts = num_items_per_batch * num_batches
+    total_inserts = num_workers * num_inserts
+    total_bytes = item_size * total_inserts
+    rate = total_inserts / elapsed
+
     rate = count / elapsed
-    print('{} MB read in {:.1f} seconds --> '
-          '{:.1f} MB/sec across {} workers'
-          .format(count, elapsed, rate, num_workers))
+    print(
+        'parallel {} workers, {} batches, {} items per batch, '
+        '{} bytes per item, '
+        '{} items ({:.4f} MB) read in {:.1f} seconds --> '
+        '{:.1f} items/sec, {:.4f} MB/s'
+        .format(
+            num_workers, num_batches, num_items_per_batch, item_size,
+            count, total_bytes/2**20, elapsed, rate,
+            total_bytes / (2**20 * elapsed)
+        ))
+    sys.stdout.flush()
 
-
-def run_perftests(num_workers=4, num_inserts=100, profile=False):
+def run_perftests(num_workers=4, 
+                  item_size=fifteen_MB_minus_overhead,
+                  num_items_per_batch=1,
+                  num_batches=10,
+                  profile=False):
     '''Run all of the performance tests.
 
     Must be run in a :mod:`yakonfig` context.
@@ -303,13 +371,26 @@ def run_perftests(num_workers=4, num_inserts=100, profile=False):
     try:
         client = kvlayer.client()
         client.delete_namespace()
-        perftest_large_writes(client)
+        perftest_large_writes(client, item_size=item_size, 
+                              num_items_per_batch=num_items_per_batch,
+                              num_batches=num_batches)
         client.delete_namespace()
         perftest_storage_speed(client)
         client.delete_namespace()
         if name not in ['filestorage']:
-            ret_vals = perftest_throughput_insert_random()
-            perftest_throughput_many_gets(ret_vals)
+            ret_vals = perftest_throughput_insert_random(
+                num_workers=num_workers,
+                item_size=item_size,
+                num_items_per_batch=num_items_per_batch,
+                num_batches=num_batches,
+            )
+            perftest_throughput_many_gets(
+                ret_vals=ret_vals,
+                num_workers=num_workers,
+                item_size=item_size,
+                num_items_per_batch=num_items_per_batch,
+                num_batches=num_batches,
+            )
         client.close()
     except Exception:
         traceback.print_exc()
@@ -354,7 +435,16 @@ def main():
         description='Run kvlayer performance tests on a single backend.',
         conflict_handler='resolve')
     parser.add_argument('--num-workers', default=4, type=int)
-    parser.add_argument('--num-inserts', default=100, type=int)
+    parser.add_argument('--item-size', default=fifteen_MB_minus_overhead, type=int, 
+                        help='size of the items to push in the large writes test, '
+                        'defaults to maximum size per record in thrift RPC server '
+                        'example, i.e. 15MB minus a bit of overhead')
+    parser.add_argument('--num-items-per-batch', default=1, type=int, 
+                        help='number of items per batch in the large writes test, '
+                        'defaults to 1')
+    parser.add_argument('--num-batches', default=10, type=int, 
+                        help='number of batches in the large writes test, '
+                        'defaults to 10')
     parser.add_argument('--profile', action='store_true')
     modules = [yakonfig]
     if dblogger:
@@ -363,7 +453,9 @@ def main():
     args = yakonfig.parse_args(parser, modules)
 
     return run_perftests(num_workers=args.num_workers,
-                         num_inserts=args.num_inserts,
+                         item_size=args.item_size,
+                         num_items_per_batch=args.num_items_per_batch,
+                         num_batches=args.num_batches,
                          profile=args.profile)
 
 
