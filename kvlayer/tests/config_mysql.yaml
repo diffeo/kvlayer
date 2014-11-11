@@ -1,0 +1,6 @@
+kvlayer:
+  storage_type: mysql
+  storage_addresses: [localhost]
+  user: bolson
+  password: diffeo
+#  dbname: test

@@ -35,6 +35,11 @@ except ImportError:
     PostgresTableStorage = None
 
 try:
+    from kvlayer._mysql import MysqlTableStorage
+except ImportError:
+    MysqlTableStorage = None
+
+try:
     from kvlayer._riak import RiakStorage
 except ImportError:
     RiakStorage = None
@@ -60,6 +65,8 @@ if PGStorage:
     STORAGE_CLIENTS['postgres'] = PGStorage
 if PostgresTableStorage:
     STORAGE_CLIENTS[PostgresTableStorage.config_name] = PostgresTableStorage
+if MysqlTableStorage:
+    STORAGE_CLIENTS[MysqlTableStorage.config_name] = MysqlTableStorage
 if RiakStorage:
     STORAGE_CLIENTS['riak'] = RiakStorage
 if SplitS3Storage:
