@@ -10,16 +10,36 @@ import random
 from StringIO import StringIO  # cStringIO is not pickable
 import uuid
 
+import pkg_resources
 import pytest
 import yaml
 
 from pytest_diffeo import redis_address
 import kvlayer
 from kvlayer import BadKey
-from kvlayer._client import STORAGE_CLIENTS
+from kvlayer._client import STORAGE_CLIENTS, load_entry_point_kvlayer_impls
 import yakonfig
 
 logger = logging.getLogger(__name__)
+
+
+_extension_test_configs = {}
+
+def load_entry_point_kvlayer_test_configs():
+    global _extension_test_configs
+    for entry_point in pkg_resources.iter_entry_points('kvlayer.test_config'):
+        try:
+            name = entry_point.name
+            constructor = entry_point.load()
+            _extension_test_configs[name] = constructor()
+        except:
+            logger.error('failed loading kvlayer test_config %r', entry_point and entry_point.name, exc_info=True)
+
+
+# run at global scope to ensure it's before we might possibly need STORAGE_CLIENTS in any context
+load_entry_point_kvlayer_impls()
+load_entry_point_kvlayer_test_configs()
+
 
 @pytest.fixture(scope='module',
                 params=STORAGE_CLIENTS.keys())
@@ -27,20 +47,27 @@ def backend(request):
     backend = request.param
     if backend == 'cassandra':
         pytest.skip('cassandra doesn\'t support non-UUID keys')
-    if not request.fspath.dirpath('config_{}.yaml'.format(backend)).exists():
+    if backend in _extension_test_configs:
+        pass # okay
+    elif not request.fspath.dirpath('config_{}.yaml'.format(backend)).exists():
         pytest.skip('no configuration file for backend {}'.format(backend))
     return backend
 
 @pytest.yield_fixture(scope='function')
 def client(backend, request, tmpdir, namespace_string):
-    config_path = str(request.fspath.dirpath('config_{}.yaml'.format(backend)))
-    # read and parse the config file, insert an object
-    with open(config_path, 'r') as f:
-        file_config = yaml.load(f)
-        # Insert an object into the config which stats will write to.
-        # Below we can get the stats text and log it here.
-        # (Normal stats flow logs to file.)
-        file_config['kvlayer']['log_stats'] = StringIO()
+    if backend in _extension_test_configs:
+        file_config = yaml.load(_extension_test_configs[backend])
+    else:
+        config_path = str(request.fspath.dirpath('config_{}.yaml'.format(backend)))
+        # read and parse the config file, insert an object
+        with open(config_path, 'r') as f:
+            file_config = yaml.load(f)
+
+    # Insert an object into the config which stats will write to.
+    # Below we can get the stats text and log it here.
+    # (Normal stats flow logs to file.)
+    file_config['kvlayer']['log_stats'] = StringIO()
+
     params = dict(
         app_name='kvlayer',
         namespace=namespace_string,

@@ -8,6 +8,8 @@ import argparse
 import logging
 import uuid
 
+import pkg_resources
+
 try:
     import dblogger
 except ImportError:
@@ -35,11 +37,6 @@ except ImportError:
     PostgresTableStorage = None
 
 try:
-    from kvlayer._mysql import MysqlTableStorage
-except ImportError:
-    MysqlTableStorage = None
-
-try:
     from kvlayer._riak import RiakStorage
 except ImportError:
     RiakStorage = None
@@ -65,12 +62,26 @@ if PGStorage:
     STORAGE_CLIENTS['postgres'] = PGStorage
 if PostgresTableStorage:
     STORAGE_CLIENTS[PostgresTableStorage.config_name] = PostgresTableStorage
-if MysqlTableStorage:
-    STORAGE_CLIENTS[MysqlTableStorage.config_name] = MysqlTableStorage
 if RiakStorage:
     STORAGE_CLIENTS['riak'] = RiakStorage
 if SplitS3Storage:
     STORAGE_CLIENTS[SplitS3Storage.config_name] = SplitS3Storage
+
+
+def load_entry_point_kvlayer_impls():
+    for entry_point in pkg_resources.iter_entry_points('kvlayer.impl'):
+        try:
+            name = entry_point.name
+            constructor = entry_point.load()
+            if name in STORAGE_CLIENTS:
+                logger.warn('kvlayer impl %r %s replaces existing impl %s', name, constructor, STORAGE_CLIENTS[name])
+            STORAGE_CLIENTS[name] = constructor
+        except:
+            logger.error('failed loading kvlayer impl %r', entry_point and entry_point.name, exc_info=True)
+
+
+_load_entry_point_kvlayer_impls_done = False
+
 
 def client(config=None, storage_type=None, *args, **kwargs):
     '''Create a kvlayer client object.
@@ -96,6 +107,7 @@ def client(config=None, storage_type=None, *args, **kwargs):
       is not provided or is invalid
 
     '''
+    global _load_entry_point_kvlayer_impls_done
     if config is None:
         config = yakonfig.get_global_config('kvlayer')
     if storage_type is None:
@@ -106,11 +118,16 @@ def client(config=None, storage_type=None, *args, **kwargs):
                 'No storage_type in kvlayer configuration')
     if storage_type in config:
         config = overlay_config(config, config[storage_type])
-    try:
-        cls = STORAGE_CLIENTS[storage_type]
-    except KeyError, exc:
+
+    if (storage_type not in STORAGE_CLIENTS) and (not _load_entry_point_kvlayer_impls_done):
+        load_entry_point_kvlayer_impls()
+        _load_entry_point_kvlayer_impls_done = True
+
+    if storage_type not in STORAGE_CLIENTS:
         raise ConfigurationError('Invalid kvlayer storage_type {!r}'
                                  .format(storage_type))
+
+    cls = STORAGE_CLIENTS[storage_type]
     return cls(config, *args, **kwargs)
 
 class Actions(ArgParseCmd):
