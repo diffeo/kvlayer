@@ -1,0 +1,6 @@
+kvlayer:
+  storage_type: hbase
+  storage_addresses: ['localhost:17111']
+  username: test
+  password: test
+  dbname: test

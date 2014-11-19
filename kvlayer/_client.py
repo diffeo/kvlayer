@@ -46,6 +46,12 @@ try:
 except ImportError:
     SplitS3Storage = None
 
+try:
+    from kvlayer._hbase import HBaseStorage
+except ImportError:
+    HBaseStorage = None
+
+
 logger = logging.getLogger(__name__)
 
 STORAGE_CLIENTS = dict(
@@ -66,7 +72,8 @@ if RiakStorage:
     STORAGE_CLIENTS['riak'] = RiakStorage
 if SplitS3Storage:
     STORAGE_CLIENTS[SplitS3Storage.config_name] = SplitS3Storage
-
+if HBaseStorage:
+    STORAGE_CLIENTS['hbase'] = HBaseStorage
 
 def load_entry_point_kvlayer_impls():
     for entry_point in pkg_resources.iter_entry_points('kvlayer.impl'):
