@@ -9,6 +9,7 @@ Copyright 2012-2014 Diffeo, Inc.
 import logging
 import re
 import random
+import time
 
 import happybase as hbase
 
@@ -102,6 +103,11 @@ class HBaseStorage(AbstractStorage):
         self._create_table(table_name)
 
     def put(self, table_name, *keys_and_values, **kwargs):
+        start_time = time.time()
+        keys_size = 0
+        values_size = 0
+        num_keys = 0
+
         key_spec = self._table_names[table_name]
         cur_bytes = 0
         table = self.conn.table(table_name)
@@ -110,8 +116,11 @@ class HBaseStorage(AbstractStorage):
             ex = self.check_put_key_value(key, blob, table_name, key_spec)
             if ex:
                 raise ex
+            num_keys += 1
             skey = serialize_key(key, key_spec)
             morelen = len(blob) + len(skey)
+            keys_size += len(skey)
+            values_size += len(blob)
             if (morelen + cur_bytes) >= self.max_batch_bytes:
                 logger.debug('len(blob)=%d + cur_bytes=%d >= '
                              'max_batch_bytes = %d',
@@ -127,7 +136,17 @@ class HBaseStorage(AbstractStorage):
         if cur_bytes > 0:
             batch.send()
 
+        end_time = time.time()
+        num_values = num_keys
+
+        self.log_put(table_name, start_time, end_time, num_keys, keys_size,
+                     num_values, values_size)
+
     def scan(self, table_name, *key_ranges, **kwargs):
+        start_time = time.time()
+        num_keys = 0
+        keys_size = 0
+        values_size = 0
         key_spec = self._table_names[table_name]
         if not key_ranges:
             key_ranges = [['', '']]
@@ -152,16 +171,104 @@ class HBaseStorage(AbstractStorage):
 
             for row in scanner:
                 total_count += 1
-                yield deserialize_key(row[0], key_spec), row[1]['d:d']
+                val = row[1]['d:d']
+                yield deserialize_key(row[0], key_spec), val
+                num_keys += 1
+                keys_size += len(row[0])
+                values_size += len(val)
+
+        end_time = time.time()
+        num_values = num_keys
+        self.log_scan(table_name, start_time, end_time, num_keys,
+                      keys_size, num_values, values_size)
+
+    def scan_keys(self, table_name, *key_ranges, **kwargs):
+        '''Scan only the keys from a table.
+
+        Yield key tuples from querying table_name for items with keys
+        within the specified ranges.  If no key_ranges are provided,
+        then yield all keys in table.
+
+        This is equivalent to::
+
+            itertools.imap(lambda (k,v): k,
+                           self.scan(table_name, *key_ranges, **kwargs))
+
+        But it avoids copying the (potentially large) data values across
+        the network.
+
+        :param str table_name: name of table to scan
+        :param key_ranges: (`start`,`end`) key range pairs
+
+        '''
+        start_time = time.time()
+        num_keys = 0
+        keys_size = 0
+        values_size = 0
+        key_spec = self._table_names[table_name]
+        if not key_ranges:
+            key_ranges = [['', '']]
+        table = self.conn.table(table_name)
+        for start_key, stop_key in key_ranges:
+            total_count = 0
+            # start_row is inclusive >=
+            # end_row is exclusive <
+            if start_key or stop_key:
+                if not start_key:
+                    srow = None
+                else:
+                    srow = make_start_key(start_key, key_spec=key_spec)
+                    #srow = _string_decrement(srow)
+                if not stop_key:
+                    erow = None
+                else:
+                    erow = make_end_key(stop_key, key_spec=key_spec)
+                scanner = table.scan(row_start=srow, row_stop=erow, columns=())
+            else:
+                scanner = table.scan(columns=())
+
+            for row in scanner:
+                total_count += 1
+                yield deserialize_key(row[0], key_spec)
+                num_keys += 1
+                keys_size += len(row[0])
+
+        end_time = time.time()
+        self.log_scan_keys(table_name, start_time, end_time, num_keys, keys_size)
+
 
     def get(self, table_name, *keys, **kwargs):
+        start_time = time.time()
+        num_keys = 0
+        keys_size = 0
+        num_values = 0
+        values_size = 0
+
+        key_spec = self._table_names[table_name]
+        table = self.conn.table(table_name)
         for key in keys:
-            gen = self.scan(table_name, (key, key))
-            v = None
-            for kk, vv in gen:
-                if kk == key:
-                    v = vv
-            yield key, v
+            skey = serialize_key(key, key_spec)
+            keys_size += len(skey)
+            num_keys += 1
+            cf = table.row(skey, columns=['d:d'])
+            val = cf.get('d:d', None)
+            if val is not None:
+                num_values += 1
+                values_size += len(val)
+            yield key, val
+            ## TODO: is .row or .cells faster?
+            # values = table.cells(skey, 'd:d', versions=1)
+            # if values:
+            #     val = values[0]
+            #     yield key, val
+            #     num_values += 1
+            #     values_size += len(val)
+            # else:
+            #     yield key, None
+
+        end_time = time.time()
+        self.log_get(table_name, start_time, end_time, num_keys,
+                     keys_size, num_values, values_size)
 
     def delete(self, table_name, *keys, **kwargs):
         key_spec = self._table_names[table_name]
