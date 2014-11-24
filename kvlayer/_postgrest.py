@@ -25,6 +25,7 @@ import contextlib
 import logging
 import os
 import re
+import time
 import uuid
 
 import psycopg2
@@ -33,6 +34,7 @@ import psycopg2.extras
 import psycopg2.pool
 
 from kvlayer._abstract_storage import AbstractStorage
+from kvlayer._decorators import retry
 from kvlayer._exceptions import ConfigurationError, ProgrammerError
 
 logger = logging.getLogger(__name__)
@@ -118,15 +120,26 @@ class PostgresTableStorage(AbstractStorage):
         is closed.
 
         '''
-        conn = self.connection_pool.getconn()
-        try:
-            with conn:
-                yield conn
-        finally:
-            # This has logic to test whether the connection is closed
-            # and/or failed and correctly manages returning it to the
-            # pool (or not).
-            self.connection_pool.putconn(conn)
+        tries = 5
+        for _ in xrange(tries):
+            conn = self.connection_pool.getconn()
+            try:
+                try:
+                    with conn.cursor() as cursor:
+                        cursor.execute('SELECT 1')
+                except (psycopg2.DatabaseError, psycopg2.InterfaceError):
+                    logging.warn('connection is gone, maybe retrying...',
+                                 exc_info=True)
+                    time.sleep(0.5)
+                    continue
+                with conn:
+                    yield conn
+                    break
+            finally:
+                # This has logic to test whether the connection is closed
+                # and/or failed and correctly manages returning it to the
+                # pool (or not).
+                self.connection_pool.putconn(conn)
 
     @contextlib.contextmanager
     def _cursor(self, name=None):
