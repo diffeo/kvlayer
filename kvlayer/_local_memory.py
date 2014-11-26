@@ -1,12 +1,19 @@
+'''Pure in-memory backend for kvlayer.
+
+.. This software is released under an MIT/X11 open source license.
+   Copyright 2012-2014 Diffeo, Inc.
+
+The :class:`LocalStorage` backend is mostly useful in test environments:
+it stores all :mod:`kvlayer` data in a Python dictionary.
+
+.. autoclass:: AbstractLocalStorage
+   :show-inheritance:
+
+.. autoclass:: LocalStorage
+   :show-inheritance:
+
 '''
-Implementation of AbstractStorage using local memory
-instead of a DB backend
-
-Your use of this software is governed by your license agreement.
-
-Copyright 2012-2014 Diffeo, Inc.
-'''
-
+from __future__ import absolute_import
 import logging
 import time
 
@@ -15,6 +22,7 @@ from kvlayer._utils import make_start_key, make_end_key, \
     serialize_key, _requires_connection
 
 logger = logging.getLogger(__name__)
+
 
 class AbstractLocalStorage(AbstractStorage):
     """Local in-memory storage for testing.
@@ -30,20 +38,32 @@ class AbstractLocalStorage(AbstractStorage):
         self._raise_on_missing = self._config.get('raise_on_missing', True)
 
     def setup_namespace(self, table_names):
-        '''creates tables in the namespace.  Can be run multiple times with
-        different table_names in order to expand the set of tables in
-        the namespace.
-        '''
         super(AbstractLocalStorage, self).setup_namespace(table_names)
-        ## just store everything in a dict
+
+        if self._app_name not in self._data:
+            self._data[self._app_name] = {}
+        if self._namespace not in self._data[self._app_name]:
+            self._data[self._app_name][self._namespace] = {}
+
         for table in table_names:
-            if table not in self._data:
-                self._data[table] = dict()
+            if table not in self.data:
+                self.data[table] = dict()
+
         self._connected = True
+
+    def delete_namespace(self):
+        if ((self._app_name in self._data and
+             self._namespace in self._data[self._app_name])):
+            del self._data[self._app_name][self._namespace]
+
+    @property
+    def data(self):
+        '''The underlying dictionary for this namespace.'''
+        return self._data[self._app_name][self._namespace]
 
     @_requires_connection
     def clear_table(self, table_name):
-        self._data[table_name] = dict()
+        self.data[table_name] = dict()
 
     @_requires_connection
     def put(self, table_name, *keys_and_values, **kwargs):
@@ -54,7 +74,7 @@ class AbstractLocalStorage(AbstractStorage):
         for key, val in keys_and_values:
             self.check_put_key_value(key, val, table_name,
                                      self._table_names[table_name])
-            self._data[table_name][key] = val
+            self.data[table_name][key] = val
             if self._log_stats is not None:
                 num_keys += 1
                 keys_size += len(serialize_key(key))
@@ -63,7 +83,8 @@ class AbstractLocalStorage(AbstractStorage):
         end_time = time.time()
         num_values = num_keys
 
-        self.log_put(table_name, start_time, end_time, num_keys, keys_size, num_values, values_size)
+        self.log_put(table_name, start_time, end_time, num_keys, keys_size,
+                     num_values, values_size)
 
     @_requires_connection
     def scan(self, table_name, *key_ranges, **kwargs):
@@ -80,18 +101,18 @@ class AbstractLocalStorage(AbstractStorage):
             total_count = 0
             start = make_start_key(start, key_spec=key_spec)
             finish = make_end_key(finish, key_spec=key_spec)
-            for key in sorted(self._data[table_name].iterkeys()):
-                ## given a range, mimic the behavior of DBs that tell
-                ## you if they failed to find a key
-                ## LocalStorage does get/put on the Python tuple as the key, 
-                ## stringify for sort comparison
+            for key in sorted(self.data[table_name].iterkeys()):
+                # given a range, mimic the behavior of DBs that tell
+                # you if they failed to find a key
+                # LocalStorage does get/put on the Python tuple as the key,
+                # stringify for sort comparison
                 joined_key = serialize_key(key, key_spec=key_spec)
                 if (start is not None) and (start > joined_key):
                     continue
                 if (finish is not None) and (finish < joined_key):
                     continue
                 total_count += 1
-                val = self._data[table_name][key]
+                val = self.data[table_name][key]
                 yield key, val
 
                 if self._log_stats is not None:
@@ -118,7 +139,7 @@ class AbstractLocalStorage(AbstractStorage):
                 num_keys += 1
                 keys_size += len(serialize_key(key))
             try:
-                key, value = key, self._data[table_name][key]
+                key, value = key, self.data[table_name][key]
                 yield key, value
                 num_values += 1
                 values_size += len(value)
@@ -126,7 +147,8 @@ class AbstractLocalStorage(AbstractStorage):
                 yield key, None
 
         end_time = time.time()
-        self.log_get(table_name, start_time, end_time, num_keys, keys_size, num_values, values_size)
+        self.log_get(table_name, start_time, end_time, num_keys, keys_size,
+                     num_values, values_size)
 
     @_requires_connection
     def delete(self, table_name, *keys):
@@ -138,14 +160,15 @@ class AbstractLocalStorage(AbstractStorage):
             if self._log_stats is not None:
                 num_keys += 1
                 keys_size += len(serialize_key(key))
-            self._data[table_name].pop(key, None)
+            self.data[table_name].pop(key, None)
 
         end_time = time.time()
         self.log_delete(table_name, start_time, end_time, num_keys, keys_size)
 
     def close(self):
-        ## prevent reading until connected again
+        # prevent reading until connected again
         self._connected = False
+
 
 class LocalStorage(AbstractLocalStorage):
     """Local in-memory storage for testing.
@@ -160,7 +183,7 @@ class LocalStorage(AbstractLocalStorage):
     """
 
     _data = {}
-    
+
     def __init__(self, config=None, app_name=None, namespace=None,
                  *args, **kwargs):
         if config is None:
