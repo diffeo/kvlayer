@@ -20,6 +20,7 @@ import multiprocessing
 import os
 import Queue
 import sys
+import threading
 import time
 import traceback
 import uuid
@@ -42,7 +43,8 @@ from kvlayer._client import STORAGE_CLIENTS
 # chop off the end of 15MB to leave room for thrift message overhead
 fifteen_MB_minus_overhead = 15 * 2 ** 20 - 256
 
-def perftest_large_writes(client, item_size=fifteen_MB_minus_overhead, 
+# TODO: is this actually a well formed test?
+def perftest_large_writes(client, item_size=fifteen_MB_minus_overhead,
                           num_items_per_batch=1, num_batches=10):
     client.setup_namespace(dict(t1=2, t2=3))
 
@@ -64,6 +66,9 @@ def perftest_large_writes(client, item_size=fifteen_MB_minus_overhead,
     t2 = time.time()
 
     dt = t2 - t1
+
+    single_put_bps = total_bytes / dt
+
     print ('{} single  rows put={:.1f} sec ({:.1f} per sec, {:.1f} KB/s)'
            .format(num, dt, num / dt, total_bytes / (1024 * dt)))
 
@@ -75,11 +80,17 @@ def perftest_large_writes(client, item_size=fifteen_MB_minus_overhead,
     print ('{} batched rows put={:.1f} sec ({:.1f} per sec, {:.1f} KB/s)'
            .format(num, dt, num / dt, total_bytes / (1024 * dt)))
 
+    batch_put_bps = total_bytes / dt
+    return single_put_bps, batch_put_bps
 
+
+# TODO: is this actually a useful test? it's not parameterized in any way (unless there are external setup changes)
 def perftest_storage_speed(client):
+    "return (read bytes per second, wryte bytes per second)"
     client.setup_namespace(dict(t1=2, t2=3))
     num_rows = 10 ** 4
-    print('Testing storage I/O ({} rows)'.format(num_rows))
+    key_size = 33 # two 16-byte uuid plus splitter, approx 33 bytes
+    print('Testing key-only I/O ({} rows) * (~33 byte keys)'.format(num_rows))
     t1 = time.time()
     client.put('t1', *[((uuid.uuid4(), uuid.uuid4()), b'')
                        for i in xrange(num_rows)])
@@ -93,6 +104,9 @@ def perftest_storage_speed(client):
           'put={:.1f} sec ({:.1f} per sec) '
           'get={:.1f} sec ({:.1f} per sec)'
           .format(num_rows, (t2 - t1), put_rate, (t3 - t2), get_rate))
+
+    num_bytes = num_rows * key_size
+    return num_bytes / (t3 - t2), num_bytes / (t2 - t1)
 
 
 # The giant complex multiprocessing-based concurrent performance test
@@ -126,6 +140,11 @@ def run_many(operation, task_generator, timeout, num_workers=1,
 
     '''
 
+    if num_workers == 1:
+        for resp in run_local(operation, task_generator, timeout, num_workers, class_config, profile):
+            yield resp
+        return
+
     task_generator = iter(task_generator)
 
     manager = multiprocessing.Manager()
@@ -158,7 +177,7 @@ def run_many(operation, task_generator, timeout, num_workers=1,
             except multiprocessing.TimeoutError:
                 pass
             except Exception:
-                print('*** multiprocessing worker failed')
+                logger.error('multiprocessing worker failed', exc_info=True)
                 async_results.remove(async_res)
             else:
                 assert async_res.ready()
@@ -190,6 +209,44 @@ def run_many(operation, task_generator, timeout, num_workers=1,
     pool.join()
 
 
+def run_local(operation, task_generator, timeout, num_workers=1,
+             class_config=None, profile=False):
+    '''Like run_many but locally without multiprocessing'''
+    assert num_workers == 1
+    #task_generator = iter(task_generator)
+    i_queue = Queue.Queue(maxsize=10)
+    o_queue = Queue.Queue(maxsize=10)
+
+    tasks_remaining = threading.Event()
+    tasks_remaining.set()
+
+    def pusher():
+        for task in task_generator:
+            i_queue.put(task)
+        tasks_remaining.clear()
+
+    push_thread = threading.Thread(target=pusher)
+    push_thread.start()
+
+    worker_thread = threading.Thread(
+        target=worker,
+        args=(operation, i_queue, o_queue, tasks_remaining, class_config,
+              profile))
+
+    #start_time = time.time()
+    worker_thread.start()
+
+    # TODO: worker signalling so that we can get finer end time than 1.0 second
+    while worker_thread.is_alive():
+        try:
+            resp = o_queue.get(True, 1.0)
+            yield resp
+        except Queue.Empty:
+            pass
+
+    #elapsed = time.time() - start_time
+
+
 def worker(operation, i_queue, o_queue, tasks_remaining,
            class_config=None, profile=False):
     '''Simple task runner.
@@ -214,6 +271,7 @@ def worker(operation, i_queue, o_queue, tasks_remaining,
       and write to a pid-specific file in the current directory
 
     '''
+    logger.info('worker entry')
     pr = None
     if profile:
         pr = cProfile.Profile()
@@ -221,6 +279,7 @@ def worker(operation, i_queue, o_queue, tasks_remaining,
     if class_config is not None:
         # operation is a class with __call__ so initialize it
         operation = operation(class_config)
+    logger.info('worker queue')
     while 1:
         try:
             task = i_queue.get(timeout=0.3)
@@ -230,6 +289,9 @@ def worker(operation, i_queue, o_queue, tasks_remaining,
                 continue
             else:
                 break
+        except:
+            logger.error('worker error', exc_info=True)
+            raise
     if pr:
         pr.create_stats()
         pr.dump_stats('profile.%d.txt' % os.getpid())
@@ -237,6 +299,7 @@ def worker(operation, i_queue, o_queue, tasks_remaining,
 
 class simple_app(object):
     def __init__(self, config):
+        logger.info('thing init')
         self.client = kvlayer.client()
         self.client.setup_namespace(dict(t1=2))
         self.item_size = config.pop('item_size', fifteen_MB_minus_overhead)
@@ -309,7 +372,7 @@ def perftest_throughput_insert_random(num_workers=4,
             total_inserts, total_bytes / 2**20, elapsed, 
             rate, total_bytes / (2**20 * elapsed)))
     sys.stdout.flush()
-    return ret_vals
+    return ret_vals, (total_bytes / elapsed)
 
 
 def perftest_throughput_many_gets(ret_vals=[], num_workers=4,
@@ -352,12 +415,16 @@ def perftest_throughput_many_gets(ret_vals=[], num_workers=4,
             total_bytes / (2**20 * elapsed)
         ))
     sys.stdout.flush()
+    return total_bytes / elapsed
+
 
 def run_perftests(num_workers=4, 
                   item_size=fifteen_MB_minus_overhead,
                   num_items_per_batch=1,
                   num_batches=10,
-                  profile=False):
+                  profile=False,
+                  splitter='\t',
+                  out=None):
     '''Run all of the performance tests.
 
     Must be run in a :mod:`yakonfig` context.
@@ -365,37 +432,53 @@ def run_perftests(num_workers=4,
     :return: 0 on success, 1 on any exception
 
     '''
+    if out is None:
+        out = sys.stdout
     rc = 0
     name = yakonfig.get_global_config('kvlayer')['storage_type']
     print('Running tests on backend "{}"'.format(name))
+    header = ['#num_workers', 'item_size', 'num_items_per_batch', 'num_batches']
+    vals = [num_workers, item_size, num_items_per_batch, num_batches]
     try:
         client = kvlayer.client()
         client.delete_namespace()
-        perftest_large_writes(client, item_size=item_size, 
-                              num_items_per_batch=num_items_per_batch,
-                              num_batches=num_batches)
+        single_put_bps, batch_put_bps = perftest_large_writes(
+            client, item_size=item_size, 
+            num_items_per_batch=num_items_per_batch,
+            num_batches=num_batches)
+        header.extend(['single_put_bps', 'batch_put_bps'])
+        vals.extend([single_put_bps, batch_put_bps])
         client.delete_namespace()
-        perftest_storage_speed(client)
+        key_read_bps, key_write_bps = perftest_storage_speed(client)
+        header.extend(['key_read_bps', 'key_write_bps'])
+        vals.extend([key_read_bps, key_write_bps])
         client.delete_namespace()
         if name not in ['filestorage']:
-            ret_vals = perftest_throughput_insert_random(
+            ret_vals, insert_bps = perftest_throughput_insert_random(
                 num_workers=num_workers,
                 item_size=item_size,
                 num_items_per_batch=num_items_per_batch,
                 num_batches=num_batches,
             )
-            perftest_throughput_many_gets(
+            get_bps = perftest_throughput_many_gets(
                 ret_vals=ret_vals,
                 num_workers=num_workers,
                 item_size=item_size,
                 num_items_per_batch=num_items_per_batch,
                 num_batches=num_batches,
             )
+            header.extend(['insert_bps', 'get_bps'])
+            vals.extend([insert_bps, get_bps])
         client.close()
     except Exception:
         traceback.print_exc()
         rc = 1
     print('')
+    out.write(splitter.join(header))
+    out.write('\n')
+    out.write(splitter.join(map(str, vals)))
+    out.write('\n')
+    out.flush()
     return rc
 
 
@@ -435,7 +518,7 @@ def main():
         description='Run kvlayer performance tests on a single backend.',
         conflict_handler='resolve')
     parser.add_argument('--num-workers', default=4, type=int)
-    parser.add_argument('--item-size', default=fifteen_MB_minus_overhead, type=int, 
+    parser.add_argument('--item-size', action='append', default=[], type=int, 
                         help='size of the items to push in the large writes test, '
                         'defaults to maximum size per record in thrift RPC server '
                         'example, i.e. 15MB minus a bit of overhead')
@@ -446,17 +529,32 @@ def main():
                         help='number of batches in the large writes test, '
                         'defaults to 10')
     parser.add_argument('--profile', action='store_true')
+    parser.add_argument('--out', default=None, help='file to append results to')
     modules = [yakonfig]
     if dblogger:
         modules.append(dblogger)
     modules.append(kvlayer)
     args = yakonfig.parse_args(parser, modules)
 
-    return run_perftests(num_workers=args.num_workers,
-                         item_size=args.item_size,
-                         num_items_per_batch=args.num_items_per_batch,
-                         num_batches=args.num_batches,
-                         profile=args.profile)
+    if args.out:
+        out = open(args.out, 'a')
+    else:
+        out = sys.stdout
+
+    if not args.item_size:
+        args.item_size = fifteen_MB_minus_overhead
+
+    # return code for sys.exit()
+    rc = 0
+    for item_size in args.item_size:
+        rc = run_perftests(
+            num_workers=args.num_workers,
+            item_size=item_size,
+            num_items_per_batch=args.num_items_per_batch,
+            num_batches=args.num_batches,
+            profile=args.profile,
+            out=out)
+    return rc
 
 
 if __name__ == '__main__':
