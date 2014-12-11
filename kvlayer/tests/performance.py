@@ -469,6 +469,7 @@ def run_perftests(num_workers=4,
             )
             header.extend(['insert_bps', 'get_bps'])
             vals.extend([insert_bps, get_bps])
+        client.delete_namespace()
         client.close()
     except Exception:
         traceback.print_exc()
@@ -517,7 +518,7 @@ def main():
     parser = argparse.ArgumentParser(
         description='Run kvlayer performance tests on a single backend.',
         conflict_handler='resolve')
-    parser.add_argument('--num-workers', default=4, type=int)
+    parser.add_argument('--num-workers', action='append', default=[], type=int)
     parser.add_argument('--item-size', action='append', default=[], type=int, 
                         help='size of the items to push in the large writes test, '
                         'defaults to maximum size per record in thrift RPC server '
@@ -542,18 +543,21 @@ def main():
         out = sys.stdout
 
     if not args.item_size:
-        args.item_size = fifteen_MB_minus_overhead
+        args.item_size = [fifteen_MB_minus_overhead]
+    if not args.num_workers:
+        args.num_workers = [1]
 
     # return code for sys.exit()
     rc = 0
-    for item_size in args.item_size:
-        rc = run_perftests(
-            num_workers=args.num_workers,
-            item_size=item_size,
-            num_items_per_batch=args.num_items_per_batch,
-            num_batches=args.num_batches,
-            profile=args.profile,
-            out=out)
+    for num_workers in args.num_workers:
+        for item_size in args.item_size:
+            rc = run_perftests(
+                num_workers=num_workers,
+                item_size=item_size,
+                num_items_per_batch=args.num_items_per_batch,
+                num_batches=args.num_batches,
+                profile=args.profile,
+                out=out)
     return rc
 
 
