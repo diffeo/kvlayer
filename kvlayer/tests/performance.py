@@ -523,7 +523,7 @@ def main():
                         help='size of the items to push in the large writes test, '
                         'defaults to maximum size per record in thrift RPC server '
                         'example, i.e. 15MB minus a bit of overhead')
-    parser.add_argument('--num-items-per-batch', default=1, type=int, 
+    parser.add_argument('--num-items-per-batch', action='append', default=[], type=int, 
                         help='number of items per batch in the large writes test, '
                         'defaults to 1')
     parser.add_argument('--num-batches', default=10, type=int, 
@@ -546,18 +546,21 @@ def main():
         args.item_size = [fifteen_MB_minus_overhead]
     if not args.num_workers:
         args.num_workers = [1]
+    if not args.num_items_per_batch:
+        args.num_items_per_batch = [1]
 
     # return code for sys.exit()
     rc = 0
     for num_workers in args.num_workers:
-        for item_size in args.item_size:
-            rc = run_perftests(
-                num_workers=num_workers,
-                item_size=item_size,
-                num_items_per_batch=args.num_items_per_batch,
-                num_batches=args.num_batches,
-                profile=args.profile,
-                out=out)
+        for num_items_per_batch in args.num_items_per_batch:
+            for item_size in args.item_size:
+                rc = run_perftests(
+                    num_workers=num_workers,
+                    item_size=item_size,
+                    num_items_per_batch=num_items_per_batch,
+                    num_batches=args.num_batches,
+                    profile=args.profile,
+                    out=out)
     return rc
 
 
