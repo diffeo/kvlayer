@@ -229,6 +229,12 @@ class HBaseStorage(AbstractStorage):
 
             for row in scanner:
                 total_count += 1
+                ## TODO: this fails. API may not actually have any way
+                ## to say "don't send value part; send keys only"
+                ## Selecting for a column that doesn't exist
+                ## (e.g. "d:_" returns nothing because no keys match
+                ## it. Selecting for columns=[] returns all columns.
+                #assert (len(row) == 1) or (not row[1])
                 yield deserialize_key(row[0], key_spec)
                 num_keys += 1
                 keys_size += len(row[0])

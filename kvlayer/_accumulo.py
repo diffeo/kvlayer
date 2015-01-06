@@ -85,22 +85,26 @@ class AStorage(AbstractStorage):
         return '%s_%s_%s' % (self._app_name, self._namespace, table)
 
     def _create_table(self, table):
-        logger.info('creating %s', self._ns(table))
+        ns_table = self._ns(table)
+        if self.conn.table_exists(ns_table):
+            logger.info('table %s exists, not modifying', ns_table)
+            return
+        logger.info('creating %s', ns_table)
 
-        self.conn.create_table(self._ns(table))
-        logger.debug('conn.created_table(%s)', self._ns(table))
+        self.conn.create_table(ns_table)
+        logger.debug('conn.created_table(%s)', ns_table)
         self.conn.client.setTableProperty(self.conn.login,
-                                          self._ns(table),
+                                          ns_table,
                                           'table.bloom.enabled',
                                           'true')
         logger.debug("conn.client.setTableProperty(%r, %s, table.bloom.enabled', 'true'",
-                     self.conn.login, self._ns(table))
+                     self.conn.login, ns_table)
 
         i = RowDeletingIterator()
         scopes = set([IteratorScope.SCAN, IteratorScope.MINC,
                       IteratorScope.MAJC])
-        i.attach(self.conn, self._ns(table), scopes)
-        logger.debug('i.attach(%r, %s, %r)', self.conn, self._ns(table), scopes)
+        i.attach(self.conn, ns_table, scopes)
+        logger.debug('i.attach(%r, %s, %r)', self.conn, ns_table, scopes)
 
     def setup_namespace(self, table_names):
         '''creates tables in the namespace.  Can be run multiple times with

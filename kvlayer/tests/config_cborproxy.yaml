@@ -1,0 +1,6 @@
+kvlayer:
+  storage_type: cborproxy
+  proxy_addresses: ['localhost:7321']
+  zk_addresses: ['test-accumulo-1.diffeo.com']
+  username: root 
+  password: secret

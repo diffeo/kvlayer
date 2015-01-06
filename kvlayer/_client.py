@@ -51,6 +51,10 @@ try:
 except ImportError:
     HBaseStorage = None
 
+try:
+    from kvlayer._cbor_proxy import CborProxyStorage
+except ImportError:
+    CborProxyStorage = None
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +78,8 @@ if SplitS3Storage:
     STORAGE_CLIENTS[SplitS3Storage.config_name] = SplitS3Storage
 if HBaseStorage:
     STORAGE_CLIENTS['hbase'] = HBaseStorage
+if CborProxyStorage:
+    STORAGE_CLIENTS['cborproxy'] = CborProxyStorage
 
 def load_entry_point_kvlayer_impls():
     for entry_point in pkg_resources.iter_entry_points('kvlayer.impl'):

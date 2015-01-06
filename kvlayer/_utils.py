@@ -54,6 +54,9 @@ def serialize_key(key_fragments, key_spec=None):
     '''
     if key_spec is None:
         key_spec = [None] * len(key_fragments)
+    else:
+        if len(key_fragments) > len(key_spec):
+            raise BadKey('key too long, wanted {} parts, got {}'.format(len(key_spec), len(key_fragments)))
     frag_types = itertools.izip(key_fragments, key_spec)
     return _DELIMITER.join(_key_frag_serialize(f, s) for f, s in frag_types)
 

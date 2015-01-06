@@ -18,7 +18,9 @@ import cProfile
 import logging
 import multiprocessing
 import os
+import pstats
 import Queue
+from cStringIO import StringIO
 import sys
 import threading
 import time
@@ -84,7 +86,10 @@ def perftest_large_writes(client, item_size=fifteen_MB_minus_overhead,
     return single_put_bps, batch_put_bps
 
 
-# TODO: is this actually a useful test? it's not parameterized in any way (unless there are external setup changes)
+# TODO: is this actually a useful test? it's not parameterized in any
+# way (unless there are external setup changes). I think what it's
+# effectively testing is how fast we can read and write keys with
+# negligible value-data payload.
 def perftest_storage_speed(client):
     "return (read bytes per second, wryte bytes per second)"
     client.setup_namespace(dict(t1=2, t2=3))
@@ -97,13 +102,13 @@ def perftest_storage_speed(client):
     t2 = time.time()
     results = list(client.scan('t1', batch_size=num_rows))
     t3 = time.time()
-    assert num_rows == len(results)
     put_rate = float(num_rows) / (t2 - t1)
     get_rate = float(num_rows) / (t3 - t2)
     print('{} rows '
           'put={:.1f} sec ({:.1f} per sec) '
           'get={:.1f} sec ({:.1f} per sec)'
           .format(num_rows, (t2 - t1), put_rate, (t3 - t2), get_rate))
+    assert num_rows == len(results), ('wanted %s rows, got %s', num_rows, len(results))
 
     num_bytes = num_rows * key_size
     return num_bytes / (t3 - t2), num_bytes / (t2 - t1)
@@ -274,6 +279,7 @@ def worker(operation, i_queue, o_queue, tasks_remaining,
     logger.info('worker entry')
     pr = None
     if profile:
+        logger.info('enabling profiling')
         pr = cProfile.Profile()
         pr.enable()
     if class_config is not None:
@@ -293,14 +299,29 @@ def worker(operation, i_queue, o_queue, tasks_remaining,
             logger.error('worker error', exc_info=True)
             raise
     if pr:
-        pr.create_stats()
-        pr.dump_stats('profile.%d.txt' % os.getpid())
+        pr.disable()
+        profstr = pstatstr(pr)
+        with open('profile.{}.txt'.format(os.getpid()), 'a') as pf:
+            pf.write(profstr)
+
+
+def pstatstr(prof):
+    profout = StringIO()
+    profout.write('# {} {!r}\n\n'.format(time.strftime('%Y%m%d_%H%M%S'), sys.argv))
+    ps = pstats.Stats(prof, stream=profout)
+    ps.sort_stats('cumulative', 'calls')
+    ps.print_stats()
+    profout.write('\n\tfunction callers\n')
+    ps.print_callers()
+    profout.write('\n\tfunction callees\n')
+    ps.print_callees()
+    return profout.getvalue()
 
 
 class simple_app(object):
     def __init__(self, config):
         logger.info('thing init')
-        self.client = kvlayer.client()
+        self.client = config.get('client',None) or kvlayer.client()
         self.client.setup_namespace(dict(t1=2))
         self.item_size = config.pop('item_size', fifteen_MB_minus_overhead)
         self.long_string = b' ' * self.item_size
@@ -340,8 +361,19 @@ def perftest_throughput_insert_random(num_workers=4,
                                       item_size=fifteen_MB_minus_overhead, 
                                       num_items_per_batch=1, 
                                       num_batches=10,
+                                      client=None,
                                       ):
     '''Measure concurrent write throughput writing data to a table.'''
+    if client is None:
+        client = kvlayer.client()
+    if client._config.get('storage_type') == 'accumulo':
+        import struct
+        client.setup_namespace(dict(t1=2))
+        step = ((0x7fffffff // 20) * 2) + 1
+        splits = [struct.pack('>I', i) for i in xrange(step, 0x0ffffffff, step)]
+        logger.info('accumulo splits=%r', splits)
+        client.conn.client.addSplits(client.conn.login, client._ns('t1'), splits)
+
     num_inserts = num_items_per_batch * num_batches
     total_inserts = num_workers * num_inserts
     task_generator = (uuid.uuid4() for x in xrange(num_workers))
@@ -350,6 +382,8 @@ def perftest_throughput_insert_random(num_workers=4,
         num_items_per_batch=num_items_per_batch, 
         num_batches=num_batches,
         )
+    if num_workers == 1:
+        class_config['client'] = client
     start_time = time.time()
     ret_vals = list(run_many(random_inserts, task_generator,
                              timeout=total_inserts * 5,
@@ -379,13 +413,16 @@ def perftest_throughput_many_gets(ret_vals=[], num_workers=4,
                                   item_size=fifteen_MB_minus_overhead, 
                                   num_items_per_batch=1, 
                                   num_batches=10,
-                                  profile=False):
+                                  profile=False,
+                                  client=None):
     '''Measure concurrent read throughput reading data from a table.'''
     class_config = dict(
         item_size=item_size,
         num_items_per_batch=num_items_per_batch, 
         num_batches=num_batches,
         )
+    if (num_workers == 1) and (client is not None):
+        class_config['client'] = client
     start_time = time.time()
     count = 0
     for (found, u) in run_many(many_gets, ret_vals,
@@ -459,6 +496,8 @@ def run_perftests(num_workers=4,
                 item_size=item_size,
                 num_items_per_batch=num_items_per_batch,
                 num_batches=num_batches,
+                profile=profile,
+                client=client,
             )
             get_bps = perftest_throughput_many_gets(
                 ret_vals=ret_vals,
@@ -466,6 +505,8 @@ def run_perftests(num_workers=4,
                 item_size=item_size,
                 num_items_per_batch=num_items_per_batch,
                 num_batches=num_batches,
+                profile=profile,
+                client=client,
             )
             header.extend(['insert_bps', 'get_bps'])
             vals.extend([insert_bps, get_bps])
@@ -530,6 +571,7 @@ def main():
                         help='number of batches in the large writes test, '
                         'defaults to 10')
     parser.add_argument('--profile', action='store_true')
+    parser.add_argument('--shutdown-proxies', action='store_true')
     parser.add_argument('--out', default=None, help='file to append results to')
     modules = [yakonfig]
     if dblogger:
@@ -561,6 +603,11 @@ def main():
                     num_batches=args.num_batches,
                     profile=args.profile,
                     out=out)
+
+    if args.shutdown_proxies:
+        # special feature of CBOR RPC proxy, really for testing only!
+        client = kvlayer.client()
+        client.shutdown_proxies()
     return rc
 
 
