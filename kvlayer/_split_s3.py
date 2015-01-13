@@ -1,7 +1,7 @@
 '''Split S3/kvlayer backend for kvlayer.
 
 .. This software is released under an MIT/X11 open source license.
-   Copyright 2012-2014 Diffeo, Inc.
+   Copyright 2012-2015 Diffeo, Inc.
 
 '''
 from __future__ import absolute_import
@@ -13,7 +13,6 @@ import boto
 import kvlayer
 from kvlayer._abstract_storage import AbstractStorage
 from kvlayer._exceptions import ConfigurationError
-from kvlayer._utils import serialize_key
 
 class SplitS3Storage(AbstractStorage):
     config_name = 'split_s3'
@@ -71,7 +70,7 @@ class SplitS3Storage(AbstractStorage):
         raise ConfigurationError('split_s3 storage requires ' + k)
 
     def _s3_key(self, table_name, k):
-        key = serialize_key(k, key_spec=self._table_names[table_name])
+        key = self._encoder.serialize_key(k, self._table_names[table_name])
         hasher = hashlib.sha256()
         hasher.update(key)
         key_hash = hasher.hexdigest()

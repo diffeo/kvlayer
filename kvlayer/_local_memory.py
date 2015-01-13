@@ -1,7 +1,7 @@
 '''Pure in-memory backend for kvlayer.
 
 .. This software is released under an MIT/X11 open source license.
-   Copyright 2012-2014 Diffeo, Inc.
+   Copyright 2012-2015 Diffeo, Inc.
 
 The :class:`LocalStorage` backend is mostly useful in test environments:
 it stores all :mod:`kvlayer` data in a Python dictionary.
@@ -18,8 +18,7 @@ import logging
 import time
 
 from kvlayer._abstract_storage import AbstractStorage
-from kvlayer._utils import make_start_key, make_end_key, \
-    serialize_key, _requires_connection
+from kvlayer._utils import _requires_connection
 
 logger = logging.getLogger(__name__)
 
@@ -72,12 +71,12 @@ class AbstractLocalStorage(AbstractStorage):
         values_size = 0
         num_keys = 0
         for key, val in keys_and_values:
-            self.check_put_key_value(key, val, table_name,
-                                     self._table_names[table_name])
+            key_spec = self._table_names[table_name]
+            self.check_put_key_value(key, val, table_name, key_spec)
             self.data[table_name][key] = val
             if self._log_stats is not None:
                 num_keys += 1
-                keys_size += len(serialize_key(key))
+                keys_size += len(self._encoder.serialize(key, key_spec))
                 values_size += len(val)
 
         end_time = time.time()
@@ -99,14 +98,14 @@ class AbstractLocalStorage(AbstractStorage):
             key_ranges = [[None, None]]
         for start, finish in key_ranges:
             total_count = 0
-            start = make_start_key(start, key_spec=key_spec)
-            finish = make_end_key(finish, key_spec=key_spec)
+            start = self._encoder.make_start_key(start, key_spec)
+            finish = self._encoder.make_end_key(finish, key_spec)
             for key in sorted(self.data[table_name].iterkeys()):
                 # given a range, mimic the behavior of DBs that tell
                 # you if they failed to find a key
                 # LocalStorage does get/put on the Python tuple as the key,
                 # stringify for sort comparison
-                joined_key = serialize_key(key, key_spec=key_spec)
+                joined_key = self._encoder.serialize(key, key_spec)
                 if (start is not None) and (start > joined_key):
                     continue
                 if (finish is not None) and (finish < joined_key):
@@ -116,7 +115,7 @@ class AbstractLocalStorage(AbstractStorage):
                 yield key, val
 
                 if self._log_stats is not None:
-                    keys_size += len(serialize_key(key))
+                    keys_size += len(joined_key)
                     values_size += len(val)
                     num_keys += 1
                     values_size += len(val)
@@ -136,8 +135,9 @@ class AbstractLocalStorage(AbstractStorage):
 
         for key in keys:
             if self._log_stats is not None:
+                key_spec = self._table_names[table_name]
                 num_keys += 1
-                keys_size += len(serialize_key(key))
+                keys_size += len(self._encoder.serialize(key, key_spec))
             try:
                 key, value = key, self.data[table_name][key]
                 yield key, value
@@ -158,8 +158,9 @@ class AbstractLocalStorage(AbstractStorage):
 
         for key in keys:
             if self._log_stats is not None:
+                key_spec = self._table_names[table_name]
                 num_keys += 1
-                keys_size += len(serialize_key(key))
+                keys_size += len(self._encoder.serialize(key, key_spec))
             self.data[table_name].pop(key, None)
 
         end_time = time.time()

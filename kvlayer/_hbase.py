@@ -3,7 +3,7 @@ Implementation of AbstractStorage using HBase
 
 Your use of this software is governed by your license agreement.
 
-Copyright 2012-2014 Diffeo, Inc.
+Copyright 2012-2015 Diffeo, Inc.
 '''
 
 import logging
@@ -16,7 +16,6 @@ import happybase as hbase
 from kvlayer._decorators import retry
 from kvlayer._exceptions import ProgrammerError
 from kvlayer._abstract_storage import AbstractStorage
-from _utils import deserialize_key, make_start_key, make_end_key, serialize_key
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +116,7 @@ class HBaseStorage(AbstractStorage):
             if ex:
                 raise ex
             num_keys += 1
-            skey = serialize_key(key, key_spec)
+            skey = self._encoder.serialize(key, key_spec)
             morelen = len(blob) + len(skey)
             keys_size += len(skey)
             values_size += len(blob)
@@ -159,12 +158,12 @@ class HBaseStorage(AbstractStorage):
                 if not start_key:
                     srow = None
                 else:
-                    srow = make_start_key(start_key, key_spec=key_spec)
+                    srow = self._encoder.make_start_key(start_key, key_spec)
                     #srow = _string_decrement(srow)
                 if not stop_key:
                     erow = None
                 else:
-                    erow = make_end_key(stop_key, key_spec=key_spec)
+                    erow = self._encoder.make_end_key(stop_key, key_spec)
                 scanner = table.scan(row_start=srow, row_stop=erow)
             else:
                 scanner = table.scan()
@@ -172,7 +171,7 @@ class HBaseStorage(AbstractStorage):
             for row in scanner:
                 total_count += 1
                 val = row[1]['d:d']
-                yield deserialize_key(row[0], key_spec), val
+                yield self._encoder.deserialize(row[0], key_spec), val
                 num_keys += 1
                 keys_size += len(row[0])
                 values_size += len(val)
@@ -217,12 +216,12 @@ class HBaseStorage(AbstractStorage):
                 if not start_key:
                     srow = None
                 else:
-                    srow = make_start_key(start_key, key_spec=key_spec)
+                    srow = self._encoder.make_start_key(start_key, key_spec)
                     #srow = _string_decrement(srow)
                 if not stop_key:
                     erow = None
                 else:
-                    erow = make_end_key(stop_key, key_spec=key_spec)
+                    erow = self._encoder.make_end_key(stop_key, key_spec)
                 scanner = table.scan(row_start=srow, row_stop=erow, columns=())
             else:
                 scanner = table.scan(columns=())
@@ -235,7 +234,7 @@ class HBaseStorage(AbstractStorage):
                 ## (e.g. "d:_" returns nothing because no keys match
                 ## it. Selecting for columns=[] returns all columns.
                 #assert (len(row) == 1) or (not row[1])
-                yield deserialize_key(row[0], key_spec)
+                yield self._encoder.deserialize(row[0], key_spec)
                 num_keys += 1
                 keys_size += len(row[0])
 
@@ -253,7 +252,7 @@ class HBaseStorage(AbstractStorage):
         key_spec = self._table_names[table_name]
         table = self.conn.table(table_name)
         for key in keys:
-            skey = serialize_key(key, key_spec)
+            skey = self._encoder.serialize(key, key_spec)
             keys_size += len(skey)
             num_keys += 1
             cf = table.row(skey, columns=['d:d'])
@@ -281,7 +280,7 @@ class HBaseStorage(AbstractStorage):
         table = self.conn.table(table_name)
         batch = table.batch()
         for key in keys:
-            batch.delete(serialize_key(key, key_spec))
+            batch.delete(self._encoder.serialize(key, key_spec))
         batch.send()
 
     def close(self):

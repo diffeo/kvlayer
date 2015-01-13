@@ -2,7 +2,7 @@
 Accumulo Thrift Proxy that is available in Accumulo 1.4.4+
 
 .. This software is released under an MIT/X11 open source license.
-   Copyright 2012-2014 Diffeo, Inc.
+   Copyright 2012-2015 Diffeo, Inc.
 
 '''
 
@@ -20,10 +20,9 @@ from pyaccumulo.proxy.ttypes import IteratorScope, \
 from kvlayer._abstract_storage import AbstractStorage
 from kvlayer._decorators import retry
 from kvlayer._exceptions import ProgrammerError
-from kvlayer._utils import make_start_key, make_end_key, \
-    serialize_key, deserialize_key
 
 logger = logging.getLogger(__name__)
+
 
 class AStorage(AbstractStorage):
     '''
@@ -162,7 +161,7 @@ class AStorage(AbstractStorage):
                                  'batched, and will send this item in next batch.')
                     batch_writer.flush()
                     cur_bytes = 0
-                joined_key = serialize_key(key, key_spec=key_spec)
+                joined_key = self._encoder.serialize(key, key_spec)
                 num_keys += 1
                 keys_size += len(joined_key)
                 num_values += 1
@@ -227,12 +226,12 @@ class AStorage(AbstractStorage):
                 if not start_key:
                     srow = None
                 else:
-                    srow = make_start_key(start_key, key_spec=key_spec)
+                    srow = self._encoder.make_start_key(start_key, key_spec)
                     srow = _string_decrement(srow)
                 if not stop_key:
                     erow = None
                 else:
-                    erow = make_end_key(stop_key, key_spec=key_spec)
+                    erow = self._encoder.make_end_key(stop_key, key_spec)
                 key_range = Range(srow=srow, erow=erow, sinclude=True, einclude=True)
                 scanner = self.conn.scan(self._ns(table_name),
                                          scanrange=key_range,
@@ -246,7 +245,7 @@ class AStorage(AbstractStorage):
                 keyraw = row.row
                 stats.num_keys += 1
                 stats.keys_size += len(keyraw)
-                key = deserialize_key(keyraw, key_spec)
+                key = self._encoder.deserialize(keyraw, key_spec)
                 if keys_only:
                     yield key
                 else:
@@ -295,8 +294,8 @@ class AStorage(AbstractStorage):
                                        timeout_ms=self._timeout_ms,
                                        threads=self._threads)
             for key in keys:
-                joined_key = serialize_key(
-                    key, key_spec=self._table_names[table_name])
+                joined_key = self._encoder.serialize(
+                    key, self._table_names[table_name])
                 num_keys += 1
                 keys_size += len(joined_key)
                 mut = Mutation(joined_key)

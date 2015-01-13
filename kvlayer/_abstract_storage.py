@@ -4,7 +4,7 @@ implementations inherit.
 
 Your use of this software is governed by your license agreement.
 
-Copyright 2012-2014 Diffeo, Inc.
+Copyright 2012-2015 Diffeo, Inc.
 '''
 
 from __future__ import absolute_import
@@ -15,6 +15,7 @@ import operator
 import time
 import uuid
 
+from kvlayer.encoders import get_encoder
 from kvlayer._exceptions import BadKey, ConfigurationError
 
 class AbstractStorage(object):
@@ -79,10 +80,13 @@ class AbstractStorage(object):
           if provided, log stats after this many operations
         `log_stats_interval_seconds`
           if provided, log stats after this many seconds
+        `encoder`
+          name of a key-to-string encoder, if applicable
 
         :param dict config: local configuration dictionary
         :param str app_name: optional app name override
         :param str namespace: optional namespace override
+        :param kvlayer.encoders.base.Encoder encoder: key serializer
         :raise kvlayer._exceptions.ConfigurationError: if no `app_name`
           or `namespace` could be found
         '''
@@ -94,6 +98,7 @@ class AbstractStorage(object):
         self._app_name = app_name or self._config.get('app_name', None)
         if not self._app_name:
             raise ConfigurationError('kvlayer requires an app_name')
+        self._encoder = get_encoder(self._config.get('encoder', None))
         self._require_uuid = self._config.get('keys_must_be_uuid', True)
         log_stats_cfg = self._config.get('log_stats', None)
         # StorageStats also consumes:

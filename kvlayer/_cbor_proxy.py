@@ -4,7 +4,7 @@ CBOR RPC server for talking to Java databases like Accumulo:
 https://github.com/diffeo/kvlayer-java-proxy
 
 .. This software is released under an MIT/X11 open source license.
-   Copyright 2012-2014 Diffeo, Inc.
+   Copyright 2012-2015 Diffeo, Inc.
 
 '''
 
@@ -20,8 +20,6 @@ import cbor
 from kvlayer._abstract_storage import AbstractStorage
 from kvlayer._decorators import retry
 from kvlayer._exceptions import ProgrammerError
-from kvlayer._utils import make_start_key, make_end_key, \
-    serialize_key, deserialize_key
 
 logger = logging.getLogger(__name__)
 
@@ -174,10 +172,10 @@ class CborRpcClient(object):
         raise Exception(errormessage)
 
 
-def _rangesk(key, key_spec):
-    if not key:
-        return None
-    return serialize_key(key, key_spec=key_spec)
+# def _rangesk(key, key_spec):
+#     if not key:
+#         return None
+#     return serialize_key(key, key_spec=key_spec)
 
 
 class CborProxyStorage(AbstractStorage):
@@ -240,18 +238,18 @@ class CborProxyStorage(AbstractStorage):
         table_name = self._ns(table_name)
         mkv = []
         for key, val in keys_and_values:
-            mkv.append((serialize_key(key, key_spec=key_spec), val))
-        #mkv = [(serialize_key(key, key_spec=key_spec), val) for (key, val) in keys_and_values]
+            mkv.append((self._encoder.serialize(key, key_spec), val))
+        #mkv = [(self._encoder.serialize(key, key_spec), val) for (key, val) in keys_and_values]
         self.conn._rpc(u'put', [unicode(table_name), mkv])
 
     def _scan_range_fix(self, key_spec, key_ranges):
         for lkey, hkey in key_ranges:
             if lkey:
-                lkey = make_start_key(lkey, key_spec=key_spec)
+                lkey = self._encoder.make_start_key(lkey, key_spec)
             else:
                 lkey = None
             if hkey:
-                hkey = make_end_key(hkey, key_spec=key_spec)
+                hkey = self._encoder.make_end_key(hkey, key_spec)
             else:
                 hkey = None
             yield lkey, hkey
@@ -265,7 +263,7 @@ class CborProxyStorage(AbstractStorage):
         #mkv = [(_rangesk(lkey, key_spec), _rangesk(hkey, key_spec)) for (lkey, hkey) in key_ranges]
         logger.info('scan %s %r', table_name, mkv)
         for k,v in self.conn._rpc(u'scan', [unicode(table_name), mkv]):
-            yield deserialize_key(k, key_spec), v
+            yield self._encoder.deserialize(k, key_spec), v
 
     def scan_keys(self, table_name, *key_ranges, **kwargs):
         key_spec = self._table_names[table_name]
@@ -276,14 +274,14 @@ class CborProxyStorage(AbstractStorage):
         #mkv = [(_rangesk(lkey, key_spec), _rangesk(hkey, key_spec)) for (lkey, hkey) in key_ranges]
         logger.info('scan %s %r', table_name, mkv)
         for k in self.conn._rpc(u'scan_keys', [unicode(table_name), mkv]):
-            yield deserialize_key(k, key_spec)
+            yield self._encoder.deserialize(k, key_spec)
 
     def get(self, table_name, *keys, **kwargs):
         key_spec = self._table_names[table_name]
         table_name = self._ns(table_name)
-        keys = [serialize_key(key, key_spec=key_spec) for key in keys]
+        keys = [self._encoder.serialize(key, key_spec) for key in keys]
         for k,v in self.conn._rpc(u'get', [unicode(table_name), keys]):
-            yield deserialize_key(k, key_spec), v
+            yield self._encoder.deserialize(k, key_spec), v
 
     def close(self):
         if self._conn:
@@ -293,7 +291,7 @@ class CborProxyStorage(AbstractStorage):
     def delete(self, table_name, *keys, **kwargs):
         key_spec = self._table_names[table_name]
         table_name = self._ns(table_name)
-        keys = [serialize_key(key, key_spec=key_spec) for key in keys]
+        keys = [self._encoder.serialize(key, key_spec) for key in keys]
         self.conn._rpc(u'delete', [unicode(table_name), keys])
 
     def shutdown_proxies(self):

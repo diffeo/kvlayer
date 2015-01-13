@@ -3,7 +3,12 @@ Implementation of AbstractStorage using Cassandra
 
 This software is released under an MIT/X11 open source license.
 
-Copyright 2012-2014 Diffeo, Inc.
+Copyright 2012-2015 Diffeo, Inc.
+
+..deprecated:: 0.3.0
+  Code changes to support non-UUID keys in all other backends broke
+  Cassandra, and as of kvlayer 0.3.1 this module does not work.
+
 '''
 
 import uuid
@@ -12,8 +17,7 @@ import random
 import logging
 import traceback
 from collections import defaultdict
-from kvlayer._utils import make_start_key, make_end_key, \
-    join_uuids, split_uuids
+from kvlayer._utils import join_uuids, split_uuids
 from kvlayer._abstract_storage import AbstractStorage
 from kvlayer._utils import _requires_connection
 from thrift.transport.TTransport import TTransportException

@@ -21,6 +21,7 @@ default_config = dict(
     max_consistency_delay = 120,
     replication_factor = 1,
     thrift_framed_transport_size_in_mb = 15,
+    encoder = 'ascii_percent',
     )
 
 def add_arguments(parser):

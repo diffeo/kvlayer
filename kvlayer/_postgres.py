@@ -9,7 +9,7 @@ OR
 
 This software is released under an MIT/X11 open source license.
 
-Copyright 2012-2014 Diffeo, Inc.
+Copyright 2012-2015 Diffeo, Inc.
 '''
 from __future__ import absolute_import
 import contextlib
@@ -21,8 +21,6 @@ import psycopg2
 import psycopg2.pool
 
 from kvlayer._abstract_storage import AbstractStorage
-from kvlayer._utils import make_start_key, make_end_key, \
-    serialize_key, deserialize_key
 from kvlayer._exceptions import ProgrammerError
 
 
@@ -226,7 +224,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                     self.check_put_key_value(kv[0], kv[1], table_name,
                                              key_spec)
                     num_keys += 1
-                    keystr = serialize_key(kv[0], key_spec=key_spec)
+                    keystr = self._encoder.serialize(kv[0], key_spec)
                     keys_size += len(keystr)
                     values_size += len(kv[1])
                     #logger.debug('put k=%r from %r', keystr, kv[0])
@@ -246,7 +244,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         keyraw = row[0]
         if isinstance(keyraw, buffer):
             keyraw = keyraw[:]
-        return deserialize_key(keyraw, key_spec)
+        return self._encoder.deserialize(keyraw, key_spec)
 
     def _unmarshal_kv(self, row, key_spec):
         '''Get the (key,value) pair from a response row.'''
@@ -276,7 +274,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
             with self._conn() as conn:
                 for key in keys:
                     num_keys += 1
-                    bkey = serialize_key(key, key_spec=key_spec)
+                    bkey = self._encoder.serialize(key, key_spec)
                     keys_size += len(bkey)
                     bkey = psycopg2.Binary(bkey)
                     with conn.cursor(name='get') as cursor:
@@ -390,12 +388,12 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
 
     def _scan_kminmax(self, key_spec, table_name, kmin, kmax, with_values=True):
         if kmin:
-            start = make_start_key(kmin, key_spec=key_spec)
+            start = self._encoder.make_start_key(kmin, key_spec)
             start = psycopg2.Binary(start)
         else:
             start = None
         if kmax:
-            finish = make_end_key(kmax, key_spec=key_spec)
+            finish = self._encoder.make_end_key(kmax, key_spec)
             finish = psycopg2.Binary(finish)
         else:
             finish = None
@@ -440,7 +438,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         for k in keys:
             if len(k) != len(key_spec):
                 raise Exception('invalid key has %s uuids but wanted %s: %r' % (len(k), len(key_spec), k))
-            joined_key = serialize_key(k, key_spec=key_spec)
+            joined_key = self._encoder.serialize(k, key_spec)
             num_keys += 1
             keys_size += len(joined_key)
             delete_statement_args.append(

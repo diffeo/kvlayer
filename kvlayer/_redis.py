@@ -1,19 +1,13 @@
 """Redis kvlayer storage implementation.
 
 .. This software is released under an MIT/X11 open source license.
-   Copyright 2014 Diffeo, Inc.
+   Copyright 2014-2015 Diffeo, Inc.
 
-Purpose
-=======
-
-This is an implementation of kvlayer that uses redis_ for its
+This is an implementation of :mod:`kvlayer` that uses redis_ for its
 underlying storage.  This generally limits storage to what can be held
 in memory on the host system, but at the same time, redis is expected
 to be available on many systems and requires much less setup than a
 distributed Bigtable system.
-
-Implementation Notes
-====================
 
 Redis is also used by rejester_ for its underlying storage.  Using
 a different ``app_name`` for the kvlayer storage configuration will avoid
@@ -26,16 +20,10 @@ suffix is a hash mapping serialized UUID tuples to values, and the
 mapped table name plus "k" is a sorted set of key names (only, all
 with score 0, to support :meth:`RedisStorage.scan`).
 
-This currently uses pure-ASCII key values (using
-:func:`kvlayer._utils.serialize_key`) and intermediate table row IDs.
-Redis should in principle be able to handle packed-binary values,
-which would be a quarter the size.
-
 .. _redis: http://redis.io
 .. _rejester: https://github.com/diffeo/rejester
 
-Module Contents
-===============
+.. autoclass:: RedisStorage
 
 """
 
@@ -48,8 +36,6 @@ import redis
 
 from kvlayer._abstract_storage import AbstractStorage
 from kvlayer._exceptions import BadKey, ProgrammerError
-from kvlayer._utils import make_start_key, make_end_key, \
-    serialize_key, deserialize_key
 
 logger = logging.getLogger(__name__)
 
@@ -258,7 +244,7 @@ class RedisStorage(AbstractStorage):
         for (k, v) in keys_and_values:
             key_spec = self._table_names[table_name]
             self.check_put_key_value(k, v, table_name, key_spec)
-            k = serialize_key(k, key_spec=key_spec)
+            k = self._encoder.serialize(k, key_spec)
             pipeline.hset(table_key, k, v)
             pipeline.zadd(table_key_k, 0, k)
         pipeline.execute()
@@ -297,7 +283,7 @@ class RedisStorage(AbstractStorage):
             res = conn.hgetall(key)
             for k in sorted(res.iterkeys()):
                 if k == '': continue
-                uuids = deserialize_key(k, key_spec)
+                uuids = self._encoder.deserialize(k, key_spec)
                 yield (uuids, res[k])
         for start, end in key_ranges:
             find_first = '''
@@ -345,9 +331,10 @@ class RedisStorage(AbstractStorage):
             script += do_scan
             script = conn.register_script(script)
             try:
-                res = script(keys=[key, key+'k'],
-                             args=[make_start_key(start, key_spec=key_spec),
-                                   make_end_key(end, key_spec=key_spec)])
+                res = script(
+                    keys=[key, key+'k'],
+                    args=[self._encoder.make_start_key(start, key_spec),
+                          self._encoder.make_end_key(end, key_spec)])
             except redis.ResponseError, exc:
                 if str(exc) == verify_lua_failed:
                     raise BadKey(table_name)
@@ -355,7 +342,7 @@ class RedisStorage(AbstractStorage):
             keys = res[0::2]
             values = res[1::2]
             for k,v in zip(keys, values):
-                uuids = deserialize_key(k, key_spec)
+                uuids = self._encoder.deserialize(k, key_spec)
                 yield (uuids, v)
 
     def get(self, table_name, *keys, **kwargs):
@@ -388,11 +375,11 @@ class RedisStorage(AbstractStorage):
             raise BadKey(key)
         key_spec = self._table_names[table_name]
         #logger.debug('get {} {!r}'.format(table_name, keys))
-        ks = [serialize_key(k, key_spec=key_spec) for k in keys]
+        ks = [self._encoder.serialize(k, key_spec) for k in keys]
         vs = conn.hmget(key, *ks)
         for (k, v) in zip(ks, vs):
             # v may be None if the key isn't there; yield it anyways
-            yield (deserialize_key(k, key_spec), v)
+            yield (self._encoder.deserialize(k, key_spec), v)
             
     def delete(self, table_name, *keys, **kwargs):
         """Delete specific pairs from the table.
@@ -422,7 +409,7 @@ class RedisStorage(AbstractStorage):
             raise BadKey(table_name)
         logger.debug('delete {} {!r}'.format(table_name, keys))
         key_spec = self._table_names[table_name]
-        ks = [serialize_key(k, key_spec=key_spec) for k in keys]
+        ks = [self._encoder.serialize(k, key_spec) for k in keys]
         script = conn.register_script(verify_lua + '''
         for i = 1, #ARGV do
           redis.call('hdel', KEYS[1], ARGV[i])
