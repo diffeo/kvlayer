@@ -19,6 +19,24 @@ implementation.
 # this will *replace* that implementation and maybe become a base for
 # a future generic-SQL backend, so I'm not going to be embarrassed by
 # the copy-and-paste.
+#
+# A brief word on "upsert": kvlayer semantics follow generic Bigtable
+# semantics, that a put() call inserts keys if they do not exist and
+# replaces keys if they do.  This is a long-contentious point in
+# PostgreSQL.  There is a reference single-row stored procedure at
+# http://www.postgresql.org/docs/9.3/static/plpgsql-control-structures.html
+# but this has a couple of practical problems for kvlayer: put() is
+# frequently called with multiple rows at once and the stored procedure
+# all but forces a network round-trip per row; and there is a startup
+# race condition with the stored procedure.  But, for this case, see also
+# http://stackoverflow.com/q/1109061/398670
+#
+# For multi-row upsert, a pattern that works in many places is to
+# create a temporary table, populate it, then do the merge.
+# http://stackoverflow.com/questions/17267417/how-do-i-do-an-upsert-merge-insert-on-duplicate-update-in-postgresql
+# has a good example of doing this safely in PostgreSQL.  In practice
+# at least one minimal benchmark that does do multiple-value put()
+# does quite a bit better with this implementation.
 
 from __future__ import absolute_import
 import contextlib
@@ -34,11 +52,11 @@ import psycopg2.extras
 import psycopg2.pool
 
 from kvlayer._abstract_storage import AbstractStorage
-from kvlayer._decorators import retry
 from kvlayer._exceptions import ConfigurationError, ProgrammerError
 
 logger = logging.getLogger(__name__)
 psycopg2.extras.register_uuid()
+
 
 class PostgresTableStorage(AbstractStorage):
     '''PostgreSQL kvlayer backend.'''
@@ -47,6 +65,7 @@ class PostgresTableStorage(AbstractStorage):
         'min_connections': 2,
         'max_connections': 16,
     }
+
     @classmethod
     def discover_config(cls, config, prefix):
         if 'storage_addresses' in config:
@@ -63,7 +82,7 @@ class PostgresTableStorage(AbstractStorage):
     def __init__(self, *args, **kwargs):
         '''Create a new PostgreSQL kvlayer client.'''
         super(PostgresTableStorage, self).__init__(*args, **kwargs)
-        
+
         # Is the namespace string valid?
         # http://www.postgresql.org/docs/9.3/static/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS
         # has the real rules.
@@ -234,69 +253,6 @@ class PostgresTableStorage(AbstractStorage):
                                ', '.join(cnames)))
                 cursor.execute(sql)
 
-                # Create an "upsert" stored procedure.
-                # There's a reference PostgreSQL one at
-                # http://www.postgresql.org/docs/9.3/static/plpgsql-control-structures.html
-                # and also some commentary at
-                # http://johtopg.blogspot.com/2014/04/upsertisms-in-postgres.html
-                # There are three obvious approaches:
-                # (1) SELECT for the row, and INSERT or UPDATE as appropriate
-                # (2) INSERT the row, UPDATEing on exception
-                # (3) Do a single-statement INSERT...WHERE NOT EXISTS
-                #     (e.g., http://www.the-art-of-web.com/sql/upsert/)
-                # The second link suggests that (3) is never fastest
-                # (but typically never slowest either), and that (1) is
-                # faster if the row usually exists (>30-40%) and (2)
-                # is faster otherwise.  Commentary further notes, the "try"
-                # isn't expensive, the "catch" is.
-                #
-                # Assume we're usually inserting, not updating.
-                # (May consider making this a knob.)
-                
-                # Function parameters
-                args = ['IN {}p {}'.format(n, t)
-                        for n, t in zip(cnames, ctypes)]
-                sql = '''
-                CREATE FUNCTION {app}_{ns}.upsert_{table}
-                  ({argstr}, IN vp BYTEA)
-                RETURNS VOID AS
-                $$
-                BEGIN
-                  LOOP
-                    BEGIN
-                      INSERT INTO {app}_{ns}.{table}({colstr}, v)
-                             VALUES ({values}, vp);
-                      RETURN;
-                    EXCEPTION WHEN unique_violation THEN
-                      UPDATE {app}_{ns}.{table} SET v=vp WHERE {expr};
-                      IF found THEN
-                        RETURN;
-                      END IF;
-                    END;
-                  END LOOP;
-                END;
-                $$
-                LANGUAGE plpgsql
-                '''.format(app=self._app_name,
-                           ns=self._namespace,
-                           table=name,
-                           argstr=', '.join(args),
-                           colstr=', '.join(cnames),
-                           values=', '.join(k + 'p' for k in cnames),
-                           expr=' AND '.join('{0}={0}p'.format(k)
-                                             for k in cnames))
-                try:
-                    cursor.execute(sql)
-                except psycopg2.ProgrammingError, e:
-                    # Ignore "function already exists"
-                    if e.pgcode != psycopg2.errorcodes.DUPLICATE_FUNCTION:
-                        raise
-                    # If we're here, though, also note that the transaction
-                    # is aborted...this is okay since we generally assume
-                    # the table and stored procedure go together,
-                    # and the outer loop uses a transaction per table
-                    pass
-
     def delete_namespace(self):
         '''Find and delete all of the tables.'''
         with self._cursor() as cursor:
@@ -310,14 +266,39 @@ class PostgresTableStorage(AbstractStorage):
 
     def put(self, table_name, *keys_and_values, **kwargs):
         '''Write data into a table.'''
+        if not keys_and_values:
+            return
         key_spec = self._table_names[table_name]
+        tn = self._table_name(table_name)
+        cnames = self._columns(key_spec)
+        for k, v in keys_and_values:
+            self.check_put_key_value(k, v, table_name, key_spec)
+        kvps = [self._massage_key_tuple(key_spec, k) +
+                (self._massage_key_part(str, v),)
+                for (k, v) in keys_and_values]
         with self._cursor() as cursor:
-            for k, v in keys_and_values:
-                self.check_put_key_value(k, v, table_name, key_spec)
-                k = self._massage_key_tuple(key_spec, k)
-                v = self._massage_key_part(str, v)
-                cursor.callproc(self._table_name('upsert_' + table_name),
-                                k + (v,))
+            cursor.execute('CREATE TEMPORARY TABLE put(LIKE {}) '
+                           'ON COMMIT DROP'.format(tn))
+            # DANGER WILL ROBINSON: we are manually constructing the
+            # query parameters, but at least we're relying on the
+            # library to do escaping for us
+            template = '(' + ','.join(['%s'] * (len(key_spec) + 1)) + ')'
+            values = ','.join(cursor.mogrify(template, row)
+                              for row in kvps)
+            cursor.execute('INSERT INTO put VALUES ' + values)
+            cursor.execute('LOCK TABLE {} IN EXCLUSIVE MODE'.format(tn))
+            keys_equal = ' AND '.join('{0}.{1}=put.{1}'.format(tn, col)
+                                      for col in cnames)
+            cursor.execute('UPDATE {} SET v=put.v FROM put WHERE {}'
+                           .format(tn, keys_equal))
+            cursor.execute('INSERT INTO {0} '
+                           'SELECT {1} FROM put '
+                           'LEFT OUTER JOIN {0} ON ({2}) '
+                           'WHERE {0}.{3} IS NULL'
+                           .format(tn,
+                                   ', '.join('put.' + c
+                                             for c in cnames + ['v']),
+                                   keys_equal, cnames[0]))
 
     def get(self, table_name, *keys, **kwargs):
         '''Get values out of the database.'''
