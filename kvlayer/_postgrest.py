@@ -271,34 +271,34 @@ class PostgresTableStorage(AbstractStorage):
         key_spec = self._table_names[table_name]
         tn = self._table_name(table_name)
         cnames = self._columns(key_spec)
+        cname = cnames[0]
+        keys_equal = ' AND '.join('{0}.{1}=put.{1}'.format(tn, col)
+                                  for col in cnames)
+        keys_value = ', '.join('put.{}'.format(c) for c in cnames + ['v'])
         for k, v in keys_and_values:
             self.check_put_key_value(k, v, table_name, key_spec)
         kvps = [self._massage_key_tuple(key_spec, k) +
                 (self._massage_key_part(str, v),)
                 for (k, v) in keys_and_values]
         with self._cursor() as cursor:
-            cursor.execute('CREATE TEMPORARY TABLE put(LIKE {}) '
-                           'ON COMMIT DROP'.format(tn))
             # DANGER WILL ROBINSON: we are manually constructing the
             # query parameters, but at least we're relying on the
             # library to do escaping for us
             template = '(' + ','.join(['%s'] * (len(key_spec) + 1)) + ')'
             values = ','.join(cursor.mogrify(template, row)
                               for row in kvps)
-            cursor.execute('INSERT INTO put VALUES ' + values)
-            cursor.execute('LOCK TABLE {} IN EXCLUSIVE MODE'.format(tn))
-            keys_equal = ' AND '.join('{0}.{1}=put.{1}'.format(tn, col)
-                                      for col in cnames)
-            cursor.execute('UPDATE {} SET v=put.v FROM put WHERE {}'
-                           .format(tn, keys_equal))
-            cursor.execute('INSERT INTO {0} '
-                           'SELECT {1} FROM put '
-                           'LEFT OUTER JOIN {0} ON ({2}) '
-                           'WHERE {0}.{3} IS NULL'
-                           .format(tn,
-                                   ', '.join('put.' + c
-                                             for c in cnames + ['v']),
-                                   keys_equal, cnames[0]))
+            # Now we get to do one massive multi-statement query
+            q = ('CREATE TEMPORARY TABLE put (LIKE {tn}) ON COMMIT DROP; '
+                 'INSERT INTO put VALUES {values}; '
+                 'LOCK TABLE {tn} IN EXCLUSIVE MODE; '
+                 'UPDATE {tn} SET v=put.v FROM put WHERE {keys_equal}; '
+                 'INSERT INTO {tn}'
+                 ' SELECT {keys_value}'
+                 ' FROM put LEFT OUTER JOIN {tn} ON ({keys_equal})'
+                 ' WHERE {tn}.{cname} IS NULL').format(
+                     tn=tn, values=values, keys_equal=keys_equal,
+                     template=template, keys_value=keys_value, cname=cname)
+            cursor.execute(q)
 
     def get(self, table_name, *keys, **kwargs):
         '''Get values out of the database.'''
