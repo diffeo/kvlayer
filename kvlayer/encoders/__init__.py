@@ -13,6 +13,7 @@ single string keys.
 from __future__ import absolute_import
 
 from kvlayer.encoders.ascii_percent import AsciiPercentEncoder
+from kvlayer.encoders.packed import PackedEncoder
 
 def get_encoder(name=None):
     '''Get an encoder instance by name.
@@ -27,5 +28,5 @@ def get_encoder(name=None):
     if name is None:
         name = 'ascii_percent'
     encoders = {encoder.config_name: encoder
-                for encoder in [AsciiPercentEncoder]}
+                for encoder in [AsciiPercentEncoder, PackedEncoder]}
     return encoders[name]()

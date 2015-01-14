@@ -7,29 +7,27 @@
 
 '''
 from __future__ import absolute_import
+import struct
 import uuid
 
 from kvlayer.encoders.base import Encoder
-from kvlayer._exceptions import SerializationError
+from kvlayer._exceptions import BadKey, SerializationError
 
 
-class AsciiPercentEncoder(Encoder):
-    '''Key tuple encoder using ASCII text with percent escaping.
+class PackedEncoder(Encoder):
+    '''Key tuple encoder using compact binary representation.
 
     This serializes :class:`~uuid.UUID`, :class:`int`, and :class:`long`
     to 8-byte ASCII hex strings.  :class:`str` escapes ``%`` to ``%25``
     and null bytes to ``%00``.  Then the tuple of byte strings from
     these encodings is joined with null bytes between them.
 
-    This encoding produces readable keys in most cases, but is
-    fairly inefficient.  Sort order is preserved except for strings
-    containing null and percent bytes, and negative integers.
-
-    .. versionchanged:: 0.5
-       This was the default key encoder before this version.
+    This encoding produces unreadable binary small keys.  Sort order
+    is preserved except for strings containing null and percent bytes,
+    and negative integers.
 
     '''
-    config_name = 'ascii_percent'
+    config_name = 'packed'
 
     DELIMITER = '\0'
 
@@ -55,10 +53,15 @@ class AsciiPercentEncoder(Encoder):
         if len(key) > len(spec):
             raise TypeError('key too long, wanted {} parts, got {}'
                             .format(len(spec), len(key)))
-        return self.DELIMITER.join(self._serialize_one(frag, typ)
-                                   for (frag, typ) in zip(key, spec))
+        return b'\0'.join(self._gen_ser_parts(key, spec))
 
-    def _serialize_one(self, frag, typ):
+    def _gen_ser_parts(self, key, spec):
+        for i in xrange(len(key)):
+            frag = key[i]
+            typ = spec[i]
+            yield self._serialize_one(frag, typ, i)
+
+    def _serialize_one(self, frag, typ, i):
         '''Serialize one fragment of a key tuple.
 
         If `typ` is :const:`None`, then any type of `frag` is
@@ -66,6 +69,7 @@ class AsciiPercentEncoder(Encoder):
 
         :param frag: part of the key
         :param type typ: expected type of `frag`
+        :param int i: position in key spec list
         :return: serialized byte string
         :raise exceptions.TypeError: if `frag` has the wrong type
         :raise kvlayer._exceptions.SerializationError: if `typ` isn't
@@ -75,19 +79,23 @@ class AsciiPercentEncoder(Encoder):
         if typ is not None and not isinstance(frag, typ):
             raise TypeError('expected {} in key but got {} ({!r})'
                             .format(typ, type(frag), frag))
-        if isinstance(frag, uuid.UUID) or hasattr(frag, 'hex'):
-            return frag.hex
-        elif isinstance(frag, (int, long)):
-            # format an int to the same number of nybbles as a UUID
-            return '{0:032x}'.format(frag)
-        elif isinstance(frag, basestring):
-            return str(frag.replace('%', '%25').replace('\x00', '%00'))
-        elif typ is None:
-            raise TypeError('could not serialize {} key fragment ({!r})'
-                            .format(type(frag), frag))
+
+        if typ == str:
+            if i == 0:
+                return frag
+            else:
+                assert len(frag) < 0x0ffff
+                return frag + struct.pack('>H', len(frag))
+        elif typ == int:
+            assert frag <= 0x7fffffff
+            return struct.pack('>I', frag + 0x80000000)
+        elif (typ == long) or (typ == (int,long)) or (typ == (long,int)):
+            assert frag < 0x7fffffffffffffff
+            return struct.pack('>Q', frag + 0x8000000000000000)
+        elif typ == uuid.UUID:
+            return frag.get_bytes()
         else:
-            raise SerializationError('could not serialize {} key fragment'
-                                     .format(typ))
+            raise BadKey("don't know how to serialize type {}".format(typ))
 
     def make_start_key(self, key, spec):
         '''Convert a partial key to the start of a scan range.
@@ -110,8 +118,8 @@ class AsciiPercentEncoder(Encoder):
         if key is None:
             return None
         dbkey = self.serialize(key, spec)
-        if spec and len(key) > 0 and len(key) < len(spec):
-            dbkey += self.DELIMITER
+        #if spec and len(key) > 0 and len(key) < len(spec):
+        #    dbkey += self.DELIMITER
         return dbkey
 
     def make_end_key(self, key, spec):
@@ -139,7 +147,9 @@ class AsciiPercentEncoder(Encoder):
             if len(key) == 0:
                 dbkey += '\xff'
             elif len(key) < len(spec):
-                dbkey += chr(ord(self.DELIMITER) + 1)
+                dbkey += '\x01'
+                #dbkey += chr(ord(self.DELIMITER) + 1)
+                #dbkey = dbkey[:-1] + chr(ord(dbkey[-1]) + 1)
             else:
                 dbkey += '\x00'
         else:
@@ -161,35 +171,30 @@ class AsciiPercentEncoder(Encoder):
           contains types that cannot be deserialized
 
         '''
-        parts = dbkey.split(self.DELIMITER)
-        if len(parts) != len(spec):
-            raise SerializationError(
-                'tried to split key into {0} parts but got {1}, '
-                'from {2!r}').format(len(key_spec), len(parts), key_str)
-        return tuple(self._deserialize_one(frag, typ)
-                     for frag, typ in zip(parts, spec))
-        
-    def _deserialize_one(self, frag, typ):
-        '''Deserialize one fragment of a serialized string.
-
-        :param frag: part of the serialized key
-        :param type typ: expected type of the result
-        :return: instance of `typ`
-        :raise exceptions.ValueError: if `frag` doesn't actually
-          deserialize to `typ`
-        :raise kvlayer._exceptions.SerializationError: if `typ` isn't
-          something this can deserialize
-        '''
-        if typ is int:
-            return int(frag, 16)
-        elif typ is long:
-            return long(frag, 16)
-        elif typ == (int, long):
-            return long(frag, 16)
-        elif typ is uuid.UUID:
-            return uuid.UUID(hex=frag)
-        elif typ is str:
-            return frag.replace('%00', '\x00').replace('%25', '%')
-        else:
-            raise SerializationError('could not deserialize {} key fragment'
-                                     .format(typ))
+        end = len(dbkey)
+        i = len(spec) - 1
+        parts = [None] * len(spec)
+        while i >= 0:
+            si = spec[i]
+            if si == int:
+                parts[i] = struct.unpack('>I', dbkey[end-4:end])[0] - 0x80000000
+                end -= 4
+            elif (si == long) or (si == (int,long)) or (si == (long,int)):
+                parts[i] = struct.unpack('>Q', dbkey[end-8:end])[0] - 0x8000000000000000
+                end -= 8
+            elif si == uuid.UUID:
+                parts[i] = uuid.UUID(bytes=dbkey[end-16:end])
+                end -= 16
+            elif si == str:
+                if i == 0:
+                    parts[i] = dbkey[:end]
+                else:
+                    strlen = struct.unpack('>H', dbkey[end-2:end])[0]
+                    end -= 2
+                    parts[i] = dbkey[end - strlen:end]
+                    end -= strlen
+            else:
+                raise BadKey("don't know how to decode key part type {}".format(si))
+            end -= 1 # skip delimiter byte
+            i -= 1
+        return tuple(parts)
