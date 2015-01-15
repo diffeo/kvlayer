@@ -210,7 +210,9 @@ class CborProxyStorage(AbstractStorage):
             logger.debug('connecting to cbor proxy %s:%s', host, port)
             self._conn = CborRpcClient({'address':(host,port)})
             zk_addr = random.choice(self._zk_addresses)
-            self._conn._rpc(u'connect', [unicode(zk_addr), unicode(self._config.get('username')), unicode(self._config.get('password'))])
+            ok, msg = self._conn._rpc(u'connect', [unicode(zk_addr), unicode(self._config.get('username')), unicode(self._config.get('password'))])
+            if not ok:
+                raise Exception(msg)
         return self._conn
 
     def _ns(self, table):
