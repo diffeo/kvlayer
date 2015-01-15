@@ -51,7 +51,7 @@ class PackedEncoder(Encoder):
         if spec is None:
             spec = (None,) * len(key)
         if len(key) > len(spec):
-            raise TypeError('key too long, wanted {} parts, got {}'
+            raise BadKey('key too long, wanted {} parts, got {}'
                             .format(len(spec), len(key)))
         return b'\0'.join(self._gen_ser_parts(key, spec))
 
@@ -77,10 +77,17 @@ class PackedEncoder(Encoder):
 
         '''
         if typ is not None and not isinstance(frag, typ):
-            raise TypeError('expected {} in key but got {} ({!r})'
+            raise BadKey('expected {} in key but got {} ({!r})'
                             .format(typ, type(frag), frag))
 
         if typ == str:
+            # Delimiter is '\0'
+            # 'prefix' should sort before 'prefixsuffix'
+            # ('\0', '\xff') should sort before ('\0\0','\xff')
+            # but '\0\0\0\xff' would sort before '\0\0\xff'
+            # SO, we must encode away all '\0' inside strings so that
+            # delimiter '\0' always sorts before content.
+            frag = frag.replace('\x01', '\x01\x03').replace('\x00', '\x01\x02')
             if i == 0:
                 return frag
             else:
@@ -187,12 +194,14 @@ class PackedEncoder(Encoder):
                 end -= 16
             elif si == str:
                 if i == 0:
-                    parts[i] = dbkey[:end]
+                    ts = dbkey[:end]
                 else:
                     strlen = struct.unpack('>H', dbkey[end-2:end])[0]
                     end -= 2
-                    parts[i] = dbkey[end - strlen:end]
+                    ts = dbkey[end - strlen:end]
                     end -= strlen
+                # TODO: check that there are no lone '\x01' bytes which would be an invalid encoding
+                parts[i] = ts.replace('\x01\x02', '\x00').replace('\x01\x03', '\x01')
             else:
                 raise BadKey("don't know how to decode key part type {}".format(si))
             end -= 1 # skip delimiter byte

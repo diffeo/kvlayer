@@ -51,8 +51,9 @@ def backend(request):
         pass # okay
     elif not request.fspath.dirpath('config_{}.yaml'.format(backend)).exists():
         pytest.skip('no configuration file for backend {}'.format(backend))
-    if backend != 'local':
-        pytest.skip('TODO DELETE TEMPROARY NONLOCAL SKIP')
+    #if backend not in ('local', 'redis', 'riak', 'accumulo', 'cborproxy'):
+    #if backend != 'local':
+    #    pytest.skip('TODO DELETE TEMPROARY SKIP ' + backend)
     return backend
 
 @pytest.yield_fixture(scope='function')

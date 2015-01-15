@@ -52,8 +52,11 @@ _TEST_KEY_SPECS = [
 
 _TESTISIZE = 20000
 
-def inner_test_sort_preservation(enc, key_spec):
-    a = sorted([randkey(key_spec) for _ in xrange(_TESTISIZE)])
+def inner_test_sort_preservation(enc, key_spec, prebuilt_ordered_keys=None):
+    if prebuilt_ordered_keys is None:
+        a = sorted([randkey(key_spec) for _ in xrange(_TESTISIZE)])
+    else:
+        a = prebuilt_ordered_keys
     sa = map(lambda x: enc.serialize(x, key_spec), a)
     ssa = sorted(sa)
     assert id(sa) != id(ssa)
@@ -70,6 +73,7 @@ def inner_test_sort_preservation(enc, key_spec):
     (str,),
     (str,int),
     (int,str),
+    (int,int),
     (uuid.UUID,),
     (str,str),
     (str,str,int),
@@ -78,3 +82,18 @@ def test_packed_specs(keyspec):
     enc = PackedEncoder()
     inner_test_sort_preservation(enc, keyspec)
 
+def test_packed_si1():
+    enc = PackedEncoder()
+    inner_test_sort_preservation(
+        enc,
+        (str,int),
+        [
+            ('\0',1),
+            ('\0\0',2),
+            ('\0\x01',3),
+            ('\x01',4),
+            ('\x01\0', 5),
+            ('\x01#aoeu', 6),
+            ('\x02',7),
+        ]
+    )
