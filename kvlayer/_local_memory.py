@@ -54,6 +54,9 @@ class AbstractLocalStorage(AbstractStorage):
         if ((self._app_name in self._data and
              self._namespace in self._data[self._app_name])):
             del self._data[self._app_name][self._namespace]
+            if not self._data[self._app_name]:
+                # empty now? del that too.
+                del self._data[self._app_name]
 
     @property
     def data(self):
@@ -196,6 +199,3 @@ class LocalStorage(AbstractLocalStorage):
         super(LocalStorage, self).__init__(config=config, app_name=app_name,
                                            namespace=namespace, *args,
                                            **kwargs)
-
-    def delete_namespace(self):
-        self._data.clear()
