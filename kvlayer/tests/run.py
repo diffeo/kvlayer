@@ -44,7 +44,7 @@ def main():
         ret = subprocess.call([sys.executable, '-m', 'py.test',
                                '--runslow', '--runperf',
                                '--redis-address', args.redis_address,
-                               '-k', 'not (cassandra or accumulo or postgres)',
+                               '-k', 'not (cassandra or accumulo or postgres or cborproxy)',
                                os.path.dirname(__file__)])
         if rc == 0:
             rc = ret

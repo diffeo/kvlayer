@@ -52,7 +52,7 @@ def backend(request):
     elif not request.fspath.dirpath('config_{}.yaml'.format(backend)).exists():
         pytest.skip('no configuration file for backend {}'.format(backend))
     elif backend == 'cborproxy':
-        cbor_proxy_addr = 'localhost:7321'
+        cbor_proxy_addr = ('localhost', 7321)
         try:
             socket.create_connection(cbor_proxy_addr)
         except Exception, exc:
