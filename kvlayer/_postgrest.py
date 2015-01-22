@@ -59,7 +59,16 @@ psycopg2.extras.register_uuid()
 
 
 class PostgresTableStorage(AbstractStorage):
-    '''PostgreSQL kvlayer backend.'''
+    '''PostgreSQL kvlayer backend.
+
+    This implementation uses one SQL table per kvlayer table, inside an
+    SQL schema per kvlayer namespace.
+
+    :meth:`increment` is atomic in this backend for both
+    :class:`~kvlayer._abstract_storage.COUNTER` and
+    :class:`~kvlayer._abstract_storage.ACCUMULATOR` types.
+
+    '''
     config_name = 'postgrest'
     default_config = {
         'min_connections': 2,
@@ -280,6 +289,10 @@ class PostgresTableStorage(AbstractStorage):
         keys_equal = ' AND '.join('{0}.{1}=put.{1}'.format(tn, col)
                                   for col in cnames)
         keys_value = ', '.join('put.{}'.format(c) for c in cnames + ['v'])
+        if kwargs.get('is_increment', False):
+            new_value = '{}.v+put.v'.format(tn)
+        else:
+            new_value = 'put.v'
         for k, v in keys_and_values:
             self.check_put_key_value(k, v, table_name, key_spec)
         kvps = [self._massage_key_tuple(key_spec, k) +
@@ -296,13 +309,14 @@ class PostgresTableStorage(AbstractStorage):
             q = ('CREATE TEMPORARY TABLE put (LIKE {tn}) ON COMMIT DROP; '
                  'INSERT INTO put VALUES {values}; '
                  'LOCK TABLE {tn} IN EXCLUSIVE MODE; '
-                 'UPDATE {tn} SET v=put.v FROM put WHERE {keys_equal}; '
+                 'UPDATE {tn} SET v={new_value} FROM put WHERE {keys_equal}; '
                  'INSERT INTO {tn}'
                  ' SELECT {keys_value}'
                  ' FROM put LEFT OUTER JOIN {tn} ON ({keys_equal})'
                  ' WHERE {tn}.{cname} IS NULL').format(
-                     tn=tn, values=values, keys_equal=keys_equal,
-                     template=template, keys_value=keys_value, cname=cname)
+                     tn=tn, values=values, new_value=new_value,
+                     keys_equal=keys_equal, template=template,
+                     keys_value=keys_value, cname=cname)
             cursor.execute(q)
 
     def get(self, table_name, *keys, **kwargs):
@@ -495,6 +509,12 @@ class PostgresTableStorage(AbstractStorage):
             for k in keys:
                 k = self._massage_key_tuple(key_spec, k)
                 cursor.execute(sql, k)
+
+    def increment(self, table_name, *keys_and_values):
+        if self._value_types[table_name] not in [COUNTER, ACCUMULATOR]:
+            raise ProgrammerError('table {} is not a counter table'
+                                  .format(table_name))
+        self.put(table_name, *keys_and_values, is_increment=True)
 
     def close(self):
         '''
