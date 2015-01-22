@@ -44,14 +44,14 @@ def main():
         ret = subprocess.call([sys.executable, '-m', 'py.test',
                                '--runslow', '--runperf',
                                '--redis-address', args.redis_address,
-                               ## this list of backends NOT to run must also be updated in performance_tests.run_all_perftests
-                               '-k', 'not (cassandra or accumulo or postgres or cborproxy)',
+                               '-k', 'not (cassandra or accumulo or postgres or cborproxy or hbase or riak or mysql or postgrest)',
+                               '-v',
                                os.path.dirname(__file__)])
         if rc == 0:
             rc = ret
 
     if args.performance:
-        ret = performance_tests.run_all_perftests(args.redis_address)
+        ret = performance_tests.run_all_perftests(args.redis_address, clientlist=['redis', 'local'])
         if rc == 0:
             rc = ret
 

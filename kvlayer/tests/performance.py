@@ -524,7 +524,7 @@ def run_perftests(num_workers=4,
     return rc
 
 
-def run_all_perftests(redis_address=None):
+def run_all_perftests(redis_address=None, clientlist=None):
     '''Run all of the performance tests, on every backend.
 
     This is intended to be a fully-automated answer for
@@ -533,7 +533,12 @@ def run_all_perftests(redis_address=None):
     '''
     rc = 0
     for name in STORAGE_CLIENTS.iterkeys():
-        if name in ['cassandra', 'accumulo', 'postgres', 'cborproxy']:
+        if clientlist is not None:
+            if name not in clientlist:
+                logger.info('skipping backend %r', name)
+                continue
+        elif name in ['cassandra', 'accumulo', 'postgres', 'cborproxy']:
+            logger.info('skipping backend %r', name)
             continue
         config = os.path.join(os.path.dirname(__file__),
                               'config_{}.yaml'.format(name))
