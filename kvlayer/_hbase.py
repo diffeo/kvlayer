@@ -7,20 +7,17 @@ Copyright 2012-2015 Diffeo, Inc.
 '''
 
 import logging
-import re
 import random
-import time
 
 import happybase as hbase
 
-from kvlayer._decorators import retry
 from kvlayer._exceptions import ProgrammerError
-from kvlayer._abstract_storage import AbstractStorage
+from kvlayer._abstract_storage import StringKeyedStorage
 
 logger = logging.getLogger(__name__)
 
 
-class HBaseStorage(AbstractStorage):
+class HBaseStorage(StringKeyedStorage):
     '''
     HBase storage implements kvlayer's AbstractStorage, which
     manages a set of tables as specified in setup_namespace
@@ -38,7 +35,8 @@ class HBaseStorage(AbstractStorage):
         self._host, self._port = addr_port(raddr, 9090)
         self._conn = None
 
-        self.max_batch_bytes = int(self._config.get('max_batch_bytes', 10000000))
+        self.max_batch_bytes = int(self._config.get('max_batch_bytes',
+                                                    10000000))
 
     config_name = 'hbase'
     default_config = {
@@ -72,13 +70,12 @@ class HBaseStorage(AbstractStorage):
         # notes about bloom filters in HBase.
         self.conn.create_table(table, {'d': dict(max_versions=1)})
 
-    def setup_namespace(self, table_names):
+    def setup_namespace(self, table_names, value_types={}):
         '''creates tables in the namespace.  Can be run multiple times with
         different table_names in order to expand the set of tables in
         the namespace. This operation is idempotent.
         '''
-        logger.debug('creating tables: %r', table_names)
-        super(HBaseStorage, self).setup_namespace(table_names)
+        super(HBaseStorage, self).setup_namespace(table_names, value_types)
         existing_tables = self.conn.tables()
         for table in table_names:
             if table not in existing_tables:
@@ -101,25 +98,12 @@ class HBaseStorage(AbstractStorage):
         self._delete_table(table_name)
         self._create_table(table_name)
 
-    def put(self, table_name, *keys_and_values, **kwargs):
-        start_time = time.time()
-        keys_size = 0
-        values_size = 0
-        num_keys = 0
-
-        key_spec = self._table_names[table_name]
+    def _put(self, table_name, keys_and_values):
         cur_bytes = 0
         table = self.conn.table(table_name)
         batch = table.batch()
         for key, blob in keys_and_values:
-            ex = self.check_put_key_value(key, blob, table_name, key_spec)
-            if ex:
-                raise ex
-            num_keys += 1
-            skey = self._encoder.serialize(key, key_spec)
-            morelen = len(blob) + len(skey)
-            keys_size += len(skey)
-            values_size += len(blob)
+            morelen = len(blob) + len(key)
             if (morelen + cur_bytes) >= self.max_batch_bytes:
                 logger.debug('len(blob)=%d + cur_bytes=%d >= '
                              'max_batch_bytes = %d',
@@ -130,138 +114,49 @@ class HBaseStorage(AbstractStorage):
                 batch.send()
                 batch = table.batch()
                 cur_bytes = 0
-            batch.put(skey, {'d:d':blob})
+            batch.put(key, {'d:d': blob})
             cur_bytes += morelen
         if cur_bytes > 0:
             batch.send()
 
-        end_time = time.time()
-        num_values = num_keys
-
-        self.log_put(table_name, start_time, end_time, num_keys, keys_size,
-                     num_values, values_size)
-
-    def scan(self, table_name, *key_ranges, **kwargs):
-        start_time = time.time()
-        num_keys = 0
-        keys_size = 0
-        values_size = 0
-        key_spec = self._table_names[table_name]
+    def _scan(self, table_name, key_ranges):
         if not key_ranges:
             key_ranges = [['', '']]
         table = self.conn.table(table_name)
         for start_key, stop_key in key_ranges:
-            total_count = 0
             # start_row is inclusive >=
             # end_row is exclusive <
             if start_key or stop_key:
-                if not start_key:
-                    srow = None
-                else:
-                    srow = self._encoder.make_start_key(start_key, key_spec)
-                    #srow = _string_decrement(srow)
-                if not stop_key:
-                    erow = None
-                else:
-                    erow = self._encoder.make_end_key(stop_key, key_spec)
-                scanner = table.scan(row_start=srow, row_stop=erow)
+                scanner = table.scan(row_start=start_key, row_stop=stop_key)
             else:
                 scanner = table.scan()
 
             for row in scanner:
-                total_count += 1
-                val = row[1]['d:d']
-                yield self._encoder.deserialize(row[0], key_spec), val
-                num_keys += 1
-                keys_size += len(row[0])
-                values_size += len(val)
+                yield (row[0], row[1]['d:d'])
 
-        end_time = time.time()
-        num_values = num_keys
-        self.log_scan(table_name, start_time, end_time, num_keys,
-                      keys_size, num_values, values_size)
-
-    def scan_keys(self, table_name, *key_ranges, **kwargs):
-        '''Scan only the keys from a table.
-
-        Yield key tuples from querying table_name for items with keys
-        within the specified ranges.  If no key_ranges are provided,
-        then yield all keys in table.
-
-        This is equivalent to::
-
-            itertools.imap(lambda (k,v): k,
-                           self.scan(table_name, *key_ranges, **kwargs))
-
-        But it avoids copying the (potentially large) data values across
-        the network.
-
-        :param str table_name: name of table to scan
-        :param key_ranges: (`start`,`end`) key range pairs
-
-        '''
-        start_time = time.time()
-        num_keys = 0
-        keys_size = 0
-        values_size = 0
-        key_spec = self._table_names[table_name]
+    def _scan_keys(self, table_name, key_ranges):
         if not key_ranges:
             key_ranges = [['', '']]
         table = self.conn.table(table_name)
         for start_key, stop_key in key_ranges:
-            total_count = 0
             # start_row is inclusive >=
             # end_row is exclusive <
             if start_key or stop_key:
-                if not start_key:
-                    srow = None
-                else:
-                    srow = self._encoder.make_start_key(start_key, key_spec)
-                    #srow = _string_decrement(srow)
-                if not stop_key:
-                    erow = None
-                else:
-                    erow = self._encoder.make_end_key(stop_key, key_spec)
-                scanner = table.scan(row_start=srow, row_stop=erow, columns=())
+                scanner = table.scan(row_start=start_key, row_stop=stop_key,
+                                     columns=())
             else:
                 scanner = table.scan(columns=())
 
             for row in scanner:
-                total_count += 1
-                ## TODO: this fails. API may not actually have any way
-                ## to say "don't send value part; send keys only"
-                ## Selecting for a column that doesn't exist
-                ## (e.g. "d:_" returns nothing because no keys match
-                ## it. Selecting for columns=[] returns all columns.
-                #assert (len(row) == 1) or (not row[1])
-                yield self._encoder.deserialize(row[0], key_spec)
-                num_keys += 1
-                keys_size += len(row[0])
+                yield row[0]
 
-        end_time = time.time()
-        self.log_scan_keys(table_name, start_time, end_time, num_keys, keys_size)
-
-
-    def get(self, table_name, *keys, **kwargs):
-        start_time = time.time()
-        num_keys = 0
-        keys_size = 0
-        num_values = 0
-        values_size = 0
-
-        key_spec = self._table_names[table_name]
+    def _get(self, table_name, keys):
         table = self.conn.table(table_name)
         for key in keys:
-            skey = self._encoder.serialize(key, key_spec)
-            keys_size += len(skey)
-            num_keys += 1
-            cf = table.row(skey, columns=['d:d'])
+            cf = table.row(key, columns=['d:d'])
             val = cf.get('d:d', None)
-            if val is not None:
-                num_values += 1
-                values_size += len(val)
             yield key, val
-            ## TODO: is .row or .cells faster?
+            # TODO: is .row or .cells faster?
             # values = table.cells(skey, 'd:d', versions=1)
             # if values:
             #     val = values[0]
@@ -271,16 +166,11 @@ class HBaseStorage(AbstractStorage):
             # else:
             #     yield key, None
 
-        end_time = time.time()
-        self.log_get(table_name, start_time, end_time, num_keys,
-                     keys_size, num_values, values_size)
-
-    def delete(self, table_name, *keys, **kwargs):
-        key_spec = self._table_names[table_name]
+    def _delete(self, table_name, keys):
         table = self.conn.table(table_name)
         batch = table.batch()
         for key in keys:
-            batch.delete(self._encoder.serialize(key, key_spec))
+            batch.delete(key)
         batch.send()
 
     def close(self):

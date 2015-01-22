@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 _extension_test_configs = {}
 
+
 def load_entry_point_kvlayer_test_configs():
     global _extension_test_configs
     for entry_point in pkg_resources.iter_entry_points('kvlayer.test_config'):
@@ -33,10 +34,12 @@ def load_entry_point_kvlayer_test_configs():
             constructor = entry_point.load()
             _extension_test_configs[name] = constructor()
         except:
-            logger.error('failed loading kvlayer test_config %r', entry_point and entry_point.name, exc_info=True)
+            logger.error('failed loading kvlayer test_config %r',
+                         entry_point and entry_point.name, exc_info=True)
 
 
-# run at global scope to ensure it's before we might possibly need STORAGE_CLIENTS in any context
+# run at global scope to ensure it's before we might possibly need
+# STORAGE_CLIENTS in any context
 load_entry_point_kvlayer_impls()
 load_entry_point_kvlayer_test_configs()
 
@@ -48,7 +51,7 @@ def backend(request):
     if backend == 'cassandra':
         pytest.skip('cassandra doesn\'t support non-UUID keys')
     if backend in _extension_test_configs:
-        pass # okay
+        pass  # okay
     elif not request.fspath.dirpath('config_{}.yaml'.format(backend)).exists():
         pytest.skip('no configuration file for backend {}'.format(backend))
     #if backend not in ('local', 'redis', 'riak', 'accumulo', 'cborproxy'):
@@ -56,12 +59,14 @@ def backend(request):
     #    pytest.skip('TODO DELETE TEMPROARY SKIP ' + backend)
     return backend
 
+
 @pytest.yield_fixture(scope='function')
 def client(backend, request, tmpdir, namespace_string):
     if backend in _extension_test_configs:
         file_config = yaml.load(_extension_test_configs[backend])
     else:
-        config_path = str(request.fspath.dirpath('config_{}.yaml'.format(backend)))
+        config_path = str(request.fspath.dirpath('config_{}.yaml'
+                                                 .format(backend)))
         # read and parse the config file, insert an object
         with open(config_path, 'r') as f:
             file_config = yaml.load(f)
@@ -80,11 +85,12 @@ def client(backend, request, tmpdir, namespace_string):
     # this is hacky but must go somewhere
     if backend == 'filestorage':
         local = tmpdir.join('local')
-        with local.open('w') as f: pass
+        with local.open('w') as f:
+            pass
         params['kvlayer_filename'] = str(local)
 
     if backend == 'redis':
-        params['storage_addresses'] = [ redis_address(request) ]
+        params['storage_addresses'] = [redis_address(request)]
 
     with yakonfig.defaulted_config(
             [kvlayer],
@@ -99,6 +105,7 @@ def client(backend, request, tmpdir, namespace_string):
                         backend, request.function.__name__,
                         file_config['kvlayer']['log_stats'].getvalue())
         client.delete_namespace()
+
 
 def test_basic_storage(client):
     client.setup_namespace(dict(t1=2, t2=3))
@@ -115,6 +122,7 @@ def test_basic_storage(client):
     assert 0 == len(list(client.scan('t1', ((u1,), (u1,)))))
     assert 0 == len(list(client.scan('t2', ((u2,), (u3,)))))
 
+
 def test_delete(client):
     client.setup_namespace({'table1': 1})
     kv_dict = {(uuid.uuid4(),): 'value' + str(x) for x in xrange(10)}
@@ -130,6 +138,7 @@ def test_delete(client):
             assert kv_dict[key] == value
     for key in delete_keys:
         assert list(client.get('table1', key)) == [(key, None)]
+
 
 def test_get(client):
     client.setup_namespace(dict(t1=1, t2=2, t3=3))
@@ -158,9 +167,9 @@ def test_get(client):
 def test_put_put(client):
     client.setup_namespace(dict(t1=1))
     u1 = uuid.uuid1()
-    client.put('t1', ((u1,),'a'))
-    client.put('t1', ((u1,),'b'))
-    assert list(client.get('t1', (u1,))) == [((u1,),'b')]
+    client.put('t1', ((u1,), 'a'))
+    client.put('t1', ((u1,), 'b'))
+    assert list(client.get('t1', (u1,))) == [((u1,), 'b')]
 
 
 def test_adding_tables(client):
@@ -181,7 +190,7 @@ def test_adding_tables(client):
 
 def test_setup_namespace_idempotent(client):
     client.setup_namespace(dict(t1=2))
-    u1, u2, u3 = uuid.uuid1(), uuid.uuid1(), uuid.uuid1()
+    u1, u2 = uuid.uuid1(), uuid.uuid1()
     client.put('t1', ((u1, u2), b'88'))
     assert 1 == len(list(client.scan('t1')))
     assert 1 == len(list(client.scan('t1', ((u1,), (u1,)))))
@@ -231,12 +240,9 @@ def test_bogus_put(client):
 def sequence_to_one(iterable):
     val = None
     for tv in iterable:
-        if val is None:
-            val = tv
-        else:
-            raise Exception('expected one but got more than one value from %r' % (iterable,))
-    if val is None:
-        raise Exception('epected one value but got nothing from %r' % (iterable,))
+        assert val is None
+        val = tv
+    assert val is not None
     return val
 
 
@@ -245,129 +251,156 @@ def test_binary_clean(client):
     client.setup_namespace(dict(t1=2))
     keya = (uuid.uuid4(), uuid.uuid4())
     # every byte value from 0..255
-    vala = bytes(b''.join([chr(x) for x in xrange(0,256)]))
+    vala = bytes(b''.join([chr(x) for x in xrange(0, 256)]))
     client.put('t1', (keya, vala))
     keyb = (uuid.uuid4(), uuid.uuid4())
-    valb = bytes(b''.join([chr(random.randint(0,255)) for x in xrange(1000)]))
+    valb = bytes(b''.join([chr(random.randint(0, 255)) for x in xrange(1000)]))
     client.put('t1', (keyb, valb))
     xvala = sequence_to_one(client.scan('t1', (keya, keya)))
     assert xvala[1] == vala
     xvalb = sequence_to_one(client.scan('t1', (keyb, keyb)))
     assert xvalb[1] == valb
 
+
 def test_scan(client):
     client.setup_namespace(dict(t1=2))
 
-    ## Add all keys and values from 0 to 90 counting by 10s.
-    for x in xrange(0,100,10):
+    # Add all keys and values from 0 to 90 counting by 10s.
+    for x in xrange(0, 100, 10):
         key = (uuid.UUID(int=x), uuid.UUID(int=x))
         client.put('t1', (key, '%d' % x))
 
-    ## Scan entire range
+    # Scan entire range
     expected_results = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90]
-    actual_results = [int(v) for k,v in client.scan('t1', ((), ()))]
+    actual_results = [int(v) for k, v in client.scan('t1', ((), ()))]
     assert actual_results == expected_results
 
-    ## Scan with specified start and stop values
+    # Scan with specified start and stop values
     expected_results = [40, 50, 60, 70]
-    actual_results = [int(v) for k,v in
+    actual_results = [int(v) for k, v in
                       client.scan('t1', ((uuid.UUID(int=40),),
                                          (uuid.UUID(int=75),)))]
     assert actual_results == expected_results
 
-    ## Scan with specified start and stop values
-    ## 40 <= x <= 70
+    # Scan with specified start and stop values
+    # 40 <= x <= 70
     expected_results = [40, 50, 60, 70]
-    actual_results = [int(v) for k,v in
+    actual_results = [int(v) for k, v in
                       client.scan('t1', ((uuid.UUID(int=40),),
                                          (uuid.UUID(int=70),)))]
     assert actual_results == expected_results
 
-    ## Scan to unspecified end of range from start key
+    # Scan to unspecified end of range from start key
     expected_results = [80, 90]
-    actual_results = [int(v) for k,v in
-                      client.scan('t1', ((uuid.UUID(int=80),),()))]
+    actual_results = [int(v) for k, v in
+                      client.scan('t1', ((uuid.UUID(int=80),), ()))]
     assert actual_results == expected_results
 
-    ## Scan from minimum value to specified middle value
+    # Scan from minimum value to specified middle value
     expected_results = [0, 10]
-    actual_results = [int(v) for k,v in
+    actual_results = [int(v) for k, v in
                       client.scan('t1', ((uuid.UUID(int=0),),
                                          (uuid.UUID(int=15),)))]
     assert actual_results == expected_results
 
-    ## Scan from unspecified start value to middle value
+    # Scan from unspecified start value to middle value
     expected_results = [0, 10, 20, 30, 40, 50, 60, 70]
-    actual_results = [int(v) for k,v in
-                      client.scan('t1', ((),(uuid.UUID(int=75),)))]
+    actual_results = [int(v) for k, v in
+                      client.scan('t1', ((), (uuid.UUID(int=75),)))]
     assert actual_results == expected_results
+
 
 def test_scan_2d(client):
     '''Set up a table with keys x,y and scan a single known x.'''
     client.setup_namespace({'t1': 2})
-    def kf(x, y): return (uuid.UUID(int=x), uuid.UUID(int=y))
-    def k1f(x): return (uuid.UUID(int=x),)
-    def vf(x, y): return '{}:{}'.format(x, y)
-    def kvf(x, y): return (kf(x, y), vf(x, y))
-    def scan(fr, to): return list(client.scan('t1', (fr, to)))
-    r = range(1,5) # [1, 2, 3, 4]
+
+    def kf(x, y):
+        return (uuid.UUID(int=x), uuid.UUID(int=y))
+
+    def k1f(x):
+        return (uuid.UUID(int=x),)
+
+    def vf(x, y):
+        return '{}:{}'.format(x, y)
+
+    def kvf(x, y):
+        return (kf(x, y), vf(x, y))
+
+    def scan(fr, to):
+        return list(client.scan('t1', (fr, to)))
+
+    r = range(1, 5)  # [1, 2, 3, 4]
 
     kvps = [kvf(x, y) for x in r for y in r]
     client.put('t1', *kvps)
 
     assert list(client.scan('t1')) == kvps
-    assert scan(k1f(2), k1f(2)) == [kvf(2,y) for y in r]
-    assert scan(kf(2,1), kf(2,2)) == [kvf(2,1), kvf(2,2)]
-    assert scan(kf(2,0), kf(2,3)) == [kvf(2,1), kvf(2,2), kvf(2,3)]
-    assert scan(kf(2,2), kf(2,5)) == [kvf(2,2), kvf(2,3), kvf(2,4)]
-    assert scan(kf(2,5), kf(3,0)) == []
-    assert scan(kf(2,4), kf(3,1)) == [kvf(2,4), kvf(3,1)]
-    assert scan(k1f(4), k1f(6)) == [kvf(4,y) for y in r]
-    assert scan(k1f(0), k1f(1)) == [kvf(1,y) for y in r]
+    assert scan(k1f(2), k1f(2)) == [kvf(2, y) for y in r]
+    assert scan(kf(2, 1), kf(2, 2)) == [kvf(2, 1), kvf(2, 2)]
+    assert scan(kf(2, 0), kf(2, 3)) == [kvf(2, 1), kvf(2, 2), kvf(2, 3)]
+    assert scan(kf(2, 2), kf(2, 5)) == [kvf(2, 2), kvf(2, 3), kvf(2, 4)]
+    assert scan(kf(2, 5), kf(3, 0)) == []
+    assert scan(kf(2, 4), kf(3, 1)) == [kvf(2, 4), kvf(3, 1)]
+    assert scan(k1f(4), k1f(6)) == [kvf(4, y) for y in r]
+    assert scan(k1f(0), k1f(1)) == [kvf(1, y) for y in r]
     assert scan(k1f(0), k1f(6)) == kvps
-    assert scan(kf(0,6), kf(6,0)) == kvps
+    assert scan(kf(0, 6), kf(6, 0)) == kvps
     assert scan(k1f(0), k1f(0)) == []
+
 
 def test_scan_keys_2d(client):
     '''Same as test_scan_2d, but only scan the key space.'''
     client.setup_namespace({'t1': 2})
-    def kf(x, y): return (uuid.UUID(int=x), uuid.UUID(int=y))
-    def k1f(x): return (uuid.UUID(int=x),)
-    def vf(x, y): return '{}:{}'.format(x, y)
-    def kvf(x, y): return (kf(x, y), vf(x, y))
-    def scan_keys(fr, to): return list(client.scan_keys('t1', (fr, to)))
-    r = range(1,5) # [1, 2, 3, 4]
+
+    def kf(x, y):
+        return (uuid.UUID(int=x), uuid.UUID(int=y))
+
+    def k1f(x):
+        return (uuid.UUID(int=x),)
+
+    def vf(x, y):
+        return '{}:{}'.format(x, y)
+
+    def kvf(x, y):
+        return (kf(x, y), vf(x, y))
+
+    def scan_keys(fr, to):
+        return list(client.scan_keys('t1', (fr, to)))
+
+    r = range(1, 5)  # [1, 2, 3, 4]
 
     kvps = [kvf(x, y) for x in r for y in r]
     keys = [kf(x, y) for x in r for y in r]
     client.put('t1', *kvps)
 
     assert list(client.scan_keys('t1')) == keys
-    assert scan_keys(k1f(2), k1f(2)) == [kf(2,y) for y in r]
-    assert scan_keys(kf(2,1), kf(2,2)) == [kf(2,1), kf(2,2)]
-    assert scan_keys(kf(2,0), kf(2,3)) == [kf(2,1), kf(2,2), kf(2,3)]
-    assert scan_keys(kf(2,2), kf(2,5)) == [kf(2,2), kf(2,3), kf(2,4)]
-    assert scan_keys(kf(2,5), kf(3,0)) == []
-    assert scan_keys(kf(2,4), kf(3,1)) == [kf(2,4), kf(3,1)]
-    assert scan_keys(k1f(4), k1f(6)) == [kf(4,y) for y in r]
-    assert scan_keys(k1f(0), k1f(1)) == [kf(1,y) for y in r]
+    assert scan_keys(k1f(2), k1f(2)) == [kf(2, y) for y in r]
+    assert scan_keys(kf(2, 1), kf(2, 2)) == [kf(2, 1), kf(2, 2)]
+    assert scan_keys(kf(2, 0), kf(2, 3)) == [kf(2, 1), kf(2, 2), kf(2, 3)]
+    assert scan_keys(kf(2, 2), kf(2, 5)) == [kf(2, 2), kf(2, 3), kf(2, 4)]
+    assert scan_keys(kf(2, 5), kf(3, 0)) == []
+    assert scan_keys(kf(2, 4), kf(3, 1)) == [kf(2, 4), kf(3, 1)]
+    assert scan_keys(k1f(4), k1f(6)) == [kf(4, y) for y in r]
+    assert scan_keys(k1f(0), k1f(1)) == [kf(1, y) for y in r]
     assert scan_keys(k1f(0), k1f(6)) == keys
-    assert scan_keys(kf(0,6), kf(6,0)) == keys
+    assert scan_keys(kf(0, 6), kf(6, 0)) == keys
     assert scan_keys(k1f(0), k1f(0)) == []
+
 
 def test_scan_2d_prefix(client):
     '''scan(('a',),('a',)) shouldn't find ('ab','c')'''
-    client.setup_namespace({'ts2': (str,str)})
+    client.setup_namespace({'ts2': (str, str)})
     client.put('ts2',
-               (('a','a'),'1'),
-               (('a','z'),'2'),
-               (('ab','b'),'3'),
-               (('ab','y'),'4'))
+               (('a', 'a'), '1'),
+               (('a', 'z'), '2'),
+               (('ab', 'b'), '3'),
+               (('ab', 'y'), '4'))
 
-    assert (list(client.scan('ts2', (('a',),('a',)))) ==
-            [(('a','a'),'1'),(('a','z'),'2')])  # but not anything ab
-    assert (list(client.scan_keys('ts2', (('a',),('a',)))) ==
-            [('a','a'),('a','z')])  # but not anything ab
+    assert (list(client.scan('ts2', (('a',), ('a',)))) ==
+            [(('a', 'a'), '1'), (('a', 'z'), '2')])  # but not anything ab
+    assert (list(client.scan_keys('ts2', (('a',), ('a',)))) ==
+            [('a', 'a'), ('a', 'z')])  # but not anything ab
+
 
 def test_scan_9042(client):
     tname = 'ts9000'
@@ -388,37 +421,38 @@ def test_scan_9042(client):
 
     # try other ranged scans
     count = 0
-    for rkv in client.scan(tname, (('k{:5x}'.format(3000),), ()) ):
+    for rkv in client.scan(tname, (('k{:5x}'.format(3000),), ())):
         count += 1
 
     assert count == 6042
 
     count = 0
-    for rkv in client.scan(tname, (('k{:5x}'.format(3000),), ('k{:5x}'.format(8437),)) ):
+    for rkv in client.scan(tname, (('k{:5x}'.format(3000),),
+                                   ('k{:5x}'.format(8437),))):
         count += 1
 
-    assert count == 8437-3000+1 # +1 because scan is inclusive of endpoints
+    assert count == 8437-3000+1  # +1 because scan is inclusive of endpoints
 
     count = 0
-    for rkv in client.scan(tname, ((), ('k{:5x}'.format(8437),)) ):
+    for rkv in client.scan(tname, ((), ('k{:5x}'.format(8437),))):
         count += 1
 
-    assert count == 8437+1 # +1 because scan is inclusive of endpoints
+    assert count == 8437+1  # +1 because scan is inclusive of endpoints
 
 
 def test_scan_binary_key_order(client):
-    client.setup_namespace({'s1':(str,int)})
+    client.setup_namespace({'s1': (str, int)})
     # keys in what should be sorted order.
     keys = [
-        ('\0',1),
-        ('\0\0',2),
-        ('\0\x01',3),
-        ('\x01',4),
+        ('\0', 1),
+        ('\0\0', 2),
+        ('\0\x01', 3),
+        ('\x01', 4),
         ('\x01\0', 5),
         ('\x01#aoeu', 6),
-        ('\x02',7),
+        ('\x02', 7),
     ]
-    values = ['{:05d}'.format(i) for i in xrange(1,len(keys)+1)]
+    values = ['{:05d}'.format(i) for i in xrange(1, len(keys)+1)]
     client.put(
         's1',
         *zip(keys, values)
@@ -441,24 +475,24 @@ def test_no_keys(client):
     uu = [u[0]]
     client.put('t1', (u, 'value'))
     assert list(client.get('t1', u)) == [(u, 'value')]
-    assert list(client.scan('t1')) in [ [(u, 'value')], [(uu, 'value')] ]
+    assert list(client.scan('t1')) in [[(u, 'value')], [(uu, 'value')]]
 
     client.delete('t1')
-    assert list(client.scan('t1')) in [ [(u, 'value')], [(uu, 'value')] ]
+    assert list(client.scan('t1')) in [[(u, 'value')], [(uu, 'value')]]
 
     client.get('t1')
-    assert list(client.scan('t1')) in [ [(u, 'value')], [(uu, 'value')] ]
+    assert list(client.scan('t1')) in [[(u, 'value')], [(uu, 'value')]]
 
     client.put('t1')
-    assert list(client.scan('t1')) in [ [(u, 'value')], [(uu, 'value')] ]
+    assert list(client.scan('t1')) in [[(u, 'value')], [(uu, 'value')]]
 
 
 def test_new_key_spec(client):
     """Test that new table key specs work in setup_namespace."""
     client.setup_namespace({
-        'kt2': (str,int),
-        'kt3': (uuid.UUID, (int,long)),
-        'kt4': (str,str,str),
+        'kt2': (str, int),
+        'kt3': (uuid.UUID, (int, long)),
+        'kt4': (str, str, str),
     })
 
     good_kt2_key = ('aoeu', 1337)
@@ -481,8 +515,8 @@ def test_new_key_spec(client):
     client.put('kt3', *good_kt3_kvs)
 
     count = 0
-    for k,v in client.scan('kt3', ((kt3u,), (kt3u,))):
-        assert (k,v) in good_kt3_kvs
+    for k, v in client.scan('kt3', ((kt3u,), (kt3u,))):
+        assert (k, v) in good_kt3_kvs
         count += 1
     assert count == len(good_kt3_kvs)
 
@@ -493,10 +527,11 @@ def test_new_key_spec(client):
     ]
     client.put('kt4', *good_kt4_kvs)
     count = 0
-    for k,v in client.scan('kt4', (('foo',), ('fooz',))):
-        assert (k,v) in good_kt4_kvs
+    for k, v in client.scan('kt4', (('foo',), ('fooz',))):
+        assert (k, v) in good_kt4_kvs
         count += 1
     assert count == len(good_kt4_kvs)
+
 
 def test_merge_join(client):
     '''Test that we can read two tables at the same time.'''
@@ -505,12 +540,12 @@ def test_merge_join(client):
         't2': (str,),
     })
     client.put('t1',
-               (('a',),'one'),
-               (('b',),'two'),
-               (('d',),'four'))
+               (('a',), 'one'),
+               (('b',), 'two'),
+               (('d',), 'four'))
     client.put('t2',
-               (('a',),'one'),
-               (('c',),'three'))
+               (('a',), 'one'),
+               (('c',), 'three'))
     # Find keys in t1 not in t2
     iter1 = client.scan('t1')
     iter2 = client.scan('t2')
@@ -529,42 +564,44 @@ def test_merge_join(client):
             v2 = next(iter2, None)
         else:
             v2 = next(iter2, None)
-    assert missing == [(('b',),'two'),(('d',),'four')]
-        
+    assert missing == [(('b',), 'two'), (('d',), 'four')]
+
+
 def test_partial_scan(client):
     '''Test that reading part of a table, then starting a new scan,
     doesn't break.'''
     client.setup_namespace({'t1': (str,)})
     client.put('t1',
-               (('a',),'one'),
-               (('b',),'two'),
-               (('c',),'three'),
-               (('d',),'four'))
+               (('a',), 'one'),
+               (('b',), 'two'),
+               (('c',), 'three'),
+               (('d',), 'four'))
 
     s1 = client.scan('t1')
-    assert next(s1, None) == (('a',),'one')
-    assert next(s1, None) == (('b',),'two')
+    assert next(s1, None) == (('a',), 'one')
+    assert next(s1, None) == (('b',), 'two')
 
     s2 = client.scan('t1')
-    assert next(s2, None) == (('a',),'one')
-    assert next(s2, None) == (('b',),'two')
-    assert next(s2, None) == (('c',),'three')
-    assert next(s2, None) == (('d',),'four')
+    assert next(s2, None) == (('a',), 'one')
+    assert next(s2, None) == (('b',), 'two')
+    assert next(s2, None) == (('c',), 'three')
+    assert next(s2, None) == (('d',), 'four')
     assert next(s2, None) is None
+
 
 def test_partial_scan_keys(client):
     '''Test that reading part of a table, then starting a new scan,
     doesn't break.'''
     client.setup_namespace({'t1': (str,)})
     client.put('t1',
-               (('a',),'one'),
-               (('b',),'two'),
-               (('c',),'three'),
-               (('d',),'four'))
+               (('a',), 'one'),
+               (('b',), 'two'),
+               (('c',), 'three'),
+               (('d',), 'four'))
 
     s1 = client.scan('t1')
-    assert next(s1, None) == (('a',),'one')
-    assert next(s1, None) == (('b',),'two')
+    assert next(s1, None) == (('a',), 'one')
+    assert next(s1, None) == (('b',), 'two')
 
     s2 = client.scan_keys('t1')
     assert next(s2, None) == ('a',)
@@ -573,20 +610,22 @@ def test_partial_scan_keys(client):
     assert next(s2, None) == ('d',)
     assert next(s2, None) is None
 
+
 def test_scan_name_oddity(client):
-    client.setup_namespace({'index': (str,str,str)})
-    row = (('NAME','alistair','vid'),'1')
+    client.setup_namespace({'index': (str, str, str)})
+    row = (('NAME', 'alistair', 'vid'), '1')
     client.put('index', row)
-    s = client.scan('index', (('NAME','a'), ('NAME','a\xff')))
+    s = client.scan('index', (('NAME', 'a'), ('NAME', 'a\xff')))
     assert list(s) == [row]
-    s = client.scan('index', (('NAME','al'), ('NAME','al\xff')))
+    s = client.scan('index', (('NAME', 'al'), ('NAME', 'al\xff')))
     assert list(s) == [row]
-    s = client.scan('index', (('NAME','ali'), ('NAME','ali\xff')))
+    s = client.scan('index', (('NAME', 'ali'), ('NAME', 'ali\xff')))
     assert list(s) == [row]
-    s = client.scan('index', (('NAME','alis'), ('NAME','alis\xff')))
+    s = client.scan('index', (('NAME', 'alis'), ('NAME', 'alis\xff')))
     assert list(s) == [row]
-    s = client.scan('index', (('NAME','alist'), ('NAME','alist\xff')))
+    s = client.scan('index', (('NAME', 'alist'), ('NAME', 'alist\xff')))
     assert list(s) == [row]
+
 
 def test_get_returns_keys(client):
     client.setup_namespace({'t': (str,)})
@@ -598,6 +637,7 @@ def test_get_returns_keys(client):
     assert k == key
     assert v == '1'
 
+
 def test_key_escaping(client):
     client.setup_namespace({'t': (str, str, str)})
     key = ('a\0b', 'a%b', 'a%00b')
@@ -607,3 +647,44 @@ def test_key_escaping(client):
     k, v = val[0]
     assert k == key
     assert v == '1'
+
+
+# Value types
+
+def test_int_value(client):
+    client.setup_namespace({'t': (str,)}, {'t': int})
+    client.put('t', (('k',), 1))
+    assert list(client.get('t', ('k',))) == [(('k',), 1)]
+    assert list(client.scan('t')) == [(('k',), 1)]
+    assert isinstance(list(client.get('t', ('k',)))[0][1], int)
+
+
+def test_float_value(client):
+    client.setup_namespace({'t': (str,)}, {'t': float})
+    client.put('t', (('k',), 1.0))
+    assert list(client.get('t', ('k',))) == [(('k',), 1.0)]
+    assert list(client.scan('t')) == [(('k',), 1.0)]
+    assert isinstance(list(client.get('t', ('k',)))[0][1], float)
+
+
+# Counters
+
+def test_counter_minimal(client):
+    client.setup_namespace({'t': (str,)}, {'t': kvlayer.COUNTER})
+    client.increment('t', (('k',), 1))
+    assert list(client.get('t', ('k',))) == [(('k',), 1)]
+    assert list(client.scan('t')) == [(('k',), 1)]
+
+    client.increment('t', (('k',), 1))
+    assert list(client.get('t', ('k',))) == [(('k',), 2)]
+    assert list(client.scan('t')) == [(('k',), 2)]
+
+    client.increment('t', (('k',), 1))
+    assert list(client.get('t', ('k',))) == [(('k',), 3)]
+    assert list(client.scan('t')) == [(('k',), 3)]
+
+    client.increment('t', (('k',), -3))
+    assert list(client.get('t', ('k',))) == [(('k',), 0)]
+    assert list(client.scan('t')) == [(('k',), 0)]
+
+    assert list(client.get('t', ('x',))) == [(('x',), None)]

@@ -5,17 +5,13 @@
 
 '''
 from __future__ import absolute_import
-import logging
-import time
 
 import riak
 
-from kvlayer._abstract_storage import AbstractStorage
-
-logger = logging.getLogger(__name__)
+from kvlayer._abstract_storage import StringKeyedStorage
 
 
-class RiakStorage(AbstractStorage):
+class RiakStorage(StringKeyedStorage):
     def __init__(self, *args, **kwargs):
         '''Create a new Riak client object.
 
@@ -66,7 +62,7 @@ class RiakStorage(AbstractStorage):
         for k in bucket.get_keys():
             bucket.delete(k)
 
-    def put(self, table_name, *keys_and_values, **kwargs):
+    def _put(self, table_name, keys_and_values):
         '''Write some data to a table.
 
         Because of the way Riak works, each key/value pair is a separate
@@ -77,61 +73,36 @@ class RiakStorage(AbstractStorage):
         :paramtype keys_and_values: pairs of (key, value)
 
         '''
-        key_spec = self._table_names[table_name]
         bucket = self._bucket(table_name)
-        start_time = time.time()
-        num_keys = 0
-        keys_size = 0
-        num_values = 0
-        values_size = 0
-
         for k, v in keys_and_values:
-            self.check_put_key_value(k, v, table_name, key_spec)
-            key = self._encoder.serialize(k, key_spec)
             # Always do this with a read/write to maintain vector clock
             # consistency...even though this means we're pushing objects
             # around more than we need to
-            obj = bucket.get(key)
+            obj = bucket.get(k)
             obj.encoded_data = v
             obj.content_type = 'application/octet-stream'
             obj.store()
-            num_keys += 1
-            keys_size += len(key)
-            num_values += 1
-            values_size += len(v)
 
-        end_time = time.time()
-        self.log_put(table_name, start_time, end_time, num_keys, keys_size,
-                     num_values, values_size)
-
-    def scan(self, table_name, *key_ranges, **kwargs):
+    def _scan(self, table_name, key_ranges):
         '''Scan key/value ranges from a table.
 
         This is not a native Riak operation!  It is implemented as an
         index scan, over the special index ``$key``.
 
         '''
-        return self._do_scan(table_name, key_ranges, with_values=True,
-                             **kwargs)
+        return self._do_scan(table_name, key_ranges, with_values=True)
 
-    def scan_keys(self, table_name, *key_ranges, **kwargs):
+    def _scan_keys(self, table_name, key_ranges):
         '''Scan key ranges from a table.
 
         This is not a native Riak operation!  It is implemented as an
         index scan, over the special index ``$key``.
 
         '''
-        return self._do_scan(table_name, key_ranges, with_values=False,
-                             **kwargs)
+        return self._do_scan(table_name, key_ranges, with_values=False)
 
-    def _do_scan(self, table_name, key_ranges, with_values=False, **kwargs):
-        key_spec = self._table_names[table_name]
+    def _do_scan(self, table_name, key_ranges, with_values=False):
         bucket = self._bucket(table_name)
-        start_time = time.time()
-        num_keys = 0
-        keys_size = 0
-        num_values = 0
-        values_size = 0
 
         # Can this be a map/reduce job?  This would save us from the
         # requirement to keep a secondary index duplicating the key,
@@ -146,32 +117,24 @@ class RiakStorage(AbstractStorage):
         if not key_ranges:
             key_ranges = [(None, None)]
         for start_key, end_key in key_ranges:
-            if start_key:
-                sk = self._encoder.make_start_key(start_key, key_spec)
-            else:
-                sk = b'\0'
-            if end_key:
-                ek = self._encoder.make_end_key(end_key, key_spec)
-            else:
-                ek = b'\xff'
+            if not start_key:
+                start_key = b'\0'
+            if not end_key:
+                end_key = b'\xff'
 
-            results = bucket.get_index('$key', startkey=sk, endkey=ek,
+            results = bucket.get_index('$key', startkey=start_key,
+                                       endkey=end_key,
                                        max_results=self.scan_limit)
             while True:
-                for k in results:
-                    num_keys += 1
-                    keys_size += len(k)
-                    key = self._encoder.deserialize(k, key_spec)
+                for key in results:
                     # Contrary to what the Riak documentation claims,
                     # in practice the $key and $bucket indexes seem
                     # to contain every key that ever existed.  That
                     # means we must do a fetch to ensure the key
                     # really exists.
-                    obj = bucket.get(k)
+                    obj = bucket.get(key)
                     if obj.exists:
                         if with_values:
-                            num_values += 1
-                            values_size += len(obj.encoded_data)
                             yield (key, obj.encoded_data)
                         else:
                             yield key
@@ -180,67 +143,37 @@ class RiakStorage(AbstractStorage):
                 # sets results.continuation='', but
                 # IndexPage.has_next_page() tests "is None".  We
                 # really want to be calling has_next_page().
-                if results.continuation: # results.has_next_page():
+                if results.continuation:  # results.has_next_page():
                     results = results.next_page()
                 else:
                     break
 
-        end_time = time.time()
-        self.log_scan(table_name, start_time, end_time,
-                      num_keys, keys_size, num_values, values_size)
-
-    def get(self, table_name, *keys, **kwargs):
+    def _get(self, table_name, keys):
         '''Yield tuples of (key, value) for specific keys.'''
-        key_spec = self._table_names[table_name]
         bucket = self._bucket(table_name)
-        start_time = time.time()
-        num_keys = 0
-        keys_size = 0
-        num_values = 0
-        values_size = 0
 
         # We can, in principle, use bucket.multiget() here.  That's
         # a complicated thing that fires up a thread pool under the
         # hood for lots of concurrent fetches.  In practice, get()
         # key lists are almost always pretty small.
 
-        for k in keys:
-            key = self._encoder.serialize(k, key_spec)
-            num_keys += 1
-            keys_size += len(key)
+        for key in keys:
             obj = bucket.get(key)
             if obj.exists:
-                num_values += 1
-                values_size += len(obj.encoded_data)
-                yield (k, obj.encoded_data)
+                yield (key, obj.encoded_data)
             else:
-                yield (k, None)
+                yield (key, None)
 
-        end_time = time.time()
-        self.log_get(table_name, start_time, end_time,
-                     num_keys, keys_size, num_values, values_size)
-
-    def delete(self, table_name, *keys, **kwargs):
+    def _delete(self, table_name, keys):
         '''Delete some specific keys.'''
-        key_spec = self._table_names[table_name]
         bucket = self._bucket(table_name)
-        start_time = time.time()
-        num_keys = 0
-        keys_size = 0
 
-        for k in keys:
-            key = self._encoder.serialize(k, key_spec)
-            num_keys += 1
-            keys_size += len(key)
+        for key in keys:
             # Always do this with a read/write to maintain vector clock
             # consistency...even though this means we're pushing objects
             # around more than we need to
             obj = bucket.get(key)
             obj.delete()
-
-        end_time = time.time()
-        self.log_delete(table_name, start_time, end_time,
-                        num_keys, keys_size)
 
     def close(self):
         '''End use of this storage client.

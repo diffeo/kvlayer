@@ -1,7 +1,7 @@
 '''Table-per-table kvlayer PostgreSQL backend.
 
 .. This software is released under an MIT/X11 open source license.
-   Copyright 2014 Diffeo, Inc.
+   Copyright 2014-2015 Diffeo, Inc.
 
 At a high level this is very similar to :mod:`kvlayer._postgres`.
 However, that implementation puts all kvlayer data into a single SQL
@@ -51,7 +51,7 @@ import psycopg2.errorcodes
 import psycopg2.extras
 import psycopg2.pool
 
-from kvlayer._abstract_storage import AbstractStorage
+from kvlayer._abstract_storage import AbstractStorage, ACCUMULATOR, COUNTER
 from kvlayer._exceptions import ConfigurationError, ProgrammerError
 
 logger = logging.getLogger(__name__)
@@ -203,7 +203,7 @@ class PostgresTableStorage(AbstractStorage):
                      for typ, rp in zip(key_spec, row))
 
     def _python_to_sql_type(self, typ):
-        if typ is int:
+        if typ is int or typ == COUNTER:
             return 'INTEGER'
         if typ is long:
             # We'd think "BIGINT" (64-bit) would be enough for
@@ -211,8 +211,10 @@ class PostgresTableStorage(AbstractStorage):
             return 'NUMERIC(1000,0)'
         if typ is uuid.UUID:
             return 'UUID'
-        if typ is str: # but not unicode; bytes in Python 3
+        if typ is str:  # but not unicode; bytes in Python 3
             return 'BYTEA'
+        if typ is float or typ == ACCUMULATOR:
+            return 'DOUBLE PRECISION'
         if isinstance(typ, tuple):
             # Other backends just pass typ as the second argument to
             # isinstance() and don't use the information to serialize.
@@ -224,7 +226,7 @@ class PostgresTableStorage(AbstractStorage):
                     return self._python_to_sql_type(candidates[0])
         raise ProgrammerError('unexpected key type {!r}'.format(typ))
 
-    def setup_namespace(self, table_names):
+    def setup_namespace(self, table_names, value_types={}):
         '''Create tables in the namespace.
 
         One table is created in PostgreSQL for each table in
@@ -237,7 +239,8 @@ class PostgresTableStorage(AbstractStorage):
         two are PostgreSQL extensions.)
 
         '''
-        super(PostgresTableStorage, self).setup_namespace(table_names)
+        super(PostgresTableStorage, self).setup_namespace(
+            table_names, value_types)
         with self._cursor() as cursor:
             cursor.execute('CREATE SCHEMA IF NOT EXISTS {}_{}'
                            .format(self._app_name, self._namespace))
@@ -245,12 +248,13 @@ class PostgresTableStorage(AbstractStorage):
             with self._cursor() as cursor:
                 cnames = self._columns(key_spec)
                 ctypes = [self._python_to_sql_type(t) for t in key_spec]
+                vtype = self._python_to_sql_type(self._value_types[name])
                 columns = ['{} {} NOT NULL'.format(n, t)
                            for n, t in zip(cnames, ctypes)]
-                sql = ('CREATE TABLE IF NOT EXISTS {} ({}, v BYTEA NOT NULL, '
+                sql = ('CREATE TABLE IF NOT EXISTS {} ({}, v {} NOT NULL, '
                        'PRIMARY KEY ({}))'
                        .format(self._table_name(name), ', '.join(columns),
-                               ', '.join(cnames)))
+                               vtype, ', '.join(cnames)))
                 cursor.execute(sql)
 
     def delete_namespace(self):
@@ -269,6 +273,7 @@ class PostgresTableStorage(AbstractStorage):
         if not keys_and_values:
             return
         key_spec = self._table_names[table_name]
+        value_type = self._value_types[table_name]
         tn = self._table_name(table_name)
         cnames = self._columns(key_spec)
         cname = cnames[0]
@@ -278,7 +283,7 @@ class PostgresTableStorage(AbstractStorage):
         for k, v in keys_and_values:
             self.check_put_key_value(k, v, table_name, key_spec)
         kvps = [self._massage_key_tuple(key_spec, k) +
-                (self._massage_key_part(str, v),)
+                (self._massage_key_part(value_type, v),)
                 for (k, v) in keys_and_values]
         with self._cursor() as cursor:
             # DANGER WILL ROBINSON: we are manually constructing the
@@ -304,6 +309,7 @@ class PostgresTableStorage(AbstractStorage):
         '''Get values out of the database.'''
         tn = self._table_name(table_name)
         key_spec = self._table_names[table_name]
+        value_type = self._value_types[table_name]
         cnames = self._columns(key_spec)
         exprs = ['{}=%s'.format(kn) for kn in cnames]
         where = 'WHERE {}'.format(' AND '.join(exprs))
@@ -316,7 +322,7 @@ class PostgresTableStorage(AbstractStorage):
                 for row in cursor:
                     assert not found
                     found = True
-                    yield k, self._massage_result_part(str, row[0])
+                    yield k, self._massage_result_part(value_type, row[0])
                 if not found:
                     yield k, None
 
@@ -449,6 +455,7 @@ class PostgresTableStorage(AbstractStorage):
         # implementation.
         tn = self._table_name(table_name)
         key_spec = self._table_names[table_name]
+        value_type = self._value_types[table_name]
         cnames = self._columns(key_spec)
         (where, wt) = self._scan_where(cnames, key_spec, key_ranges)
         order = 'ORDER BY {}'.format(', '.join(cnames))
@@ -460,7 +467,7 @@ class PostgresTableStorage(AbstractStorage):
                 k = row[:-1]
                 v = row[-1]
                 yield (self._massage_result_tuple(key_spec, k),
-                       self._massage_result_part(str, v))
+                       self._massage_result_part(value_type, v))
 
     def scan_keys(self, table_name, *key_ranges, **kwargs):
         '''Get ordered key tuples out of the database.'''

@@ -17,14 +17,14 @@ from pyaccumulo.iterators import RowDeletingIterator
 from pyaccumulo.proxy.ttypes import IteratorScope, \
     AccumuloSecurityException, IteratorSetting
 
-from kvlayer._abstract_storage import AbstractStorage
+from kvlayer._abstract_storage import StringKeyedStorage
 from kvlayer._decorators import retry
 from kvlayer._exceptions import ProgrammerError
 
 logger = logging.getLogger(__name__)
 
 
-class AStorage(AbstractStorage):
+class AStorage(StringKeyedStorage):
     '''
     Accumulo storage implements kvlayer's AbstractStorage, which
     manages a set of tables as specified to setup_namespace
@@ -41,18 +41,18 @@ class AStorage(AbstractStorage):
             if ':' not in address:
                 return (address, 50096)
             else:
-                h,p = address.split(':')
+                h, p = address.split(':')
                 return (h, int(p))
         self._addresses = map(str_to_pair, addresses)
 
-        ## The following are all parameters to the accumulo
-        ## batch interfaces.
+        # The following are all parameters to the accumulo
+        # batch interfaces.
         self._max_memory = self._config.get('accumulo_max_memory', 1000000)
         self._timeout_ms = self._config.get('accumulo_timeout_ms', 30000)
         self._threads = self._config.get('accumulo_threads', 10)
         self._latency_ms = self._config.get('accumulo_latency_ms', 10)
 
-        ## Acumulo storage requires a username and password
+        # Acumulo storage requires a username and password
         self._user = self._config.get('username', None)
         self._password = self._config.get('password', None)
         if not self._user and self._password:
@@ -96,8 +96,6 @@ class AStorage(AbstractStorage):
                                           ns_table,
                                           'table.bloom.enabled',
                                           'true')
-        logger.debug("conn.client.setTableProperty(%r, %s, table.bloom.enabled', 'true'",
-                     self.conn.login, ns_table)
 
         i = RowDeletingIterator()
         scopes = set([IteratorScope.SCAN, IteratorScope.MINC,
@@ -105,12 +103,12 @@ class AStorage(AbstractStorage):
         i.attach(self.conn, ns_table, scopes)
         logger.debug('i.attach(%r, %s, %r)', self.conn, ns_table, scopes)
 
-    def setup_namespace(self, table_names):
+    def setup_namespace(self, table_names, value_types={}):
         '''creates tables in the namespace.  Can be run multiple times with
         different table_names in order to expand the set of tables in
         the namespace.
         '''
-        super(AStorage, self).setup_namespace(table_names)
+        super(AStorage, self).setup_namespace(table_names, value_types)
         for table in table_names:
             if not self.conn.table_exists(self._ns(table)):
                 self._create_table(table)
@@ -132,77 +130,44 @@ class AStorage(AbstractStorage):
         self._create_table(table_name)
 
     @retry([AccumuloSecurityException])
-    def put(self, table_name, *keys_and_values, **kwargs):
-        start_time = time.time()
-        num_keys = 0
-        keys_size = 0
-        num_values = 0
-        values_size = 0
-
-        key_spec = self._table_names[table_name]
+    def _put(self, table_name, keys_and_values):
         cur_bytes = 0
-
+        max_bytes = self.thrift_framed_transport_size_in_mb * 2 ** 19
+        batch_writer = BatchWriter(conn=self.conn,
+                                   table=self._ns(table_name),
+                                   max_memory=self._max_memory,
+                                   latency_ms=self._latency_ms,
+                                   timeout_ms=self._timeout_ms,
+                                   threads=self._threads)
         try:
-            batch_writer = BatchWriter(conn=self.conn,
-                                       table=self._ns(table_name),
-                                       max_memory=self._max_memory,
-                                       latency_ms=self._latency_ms,
-                                       timeout_ms=self._timeout_ms,
-                                       threads=self._threads)
             for key, blob in keys_and_values:
-                self.check_put_key_value(key, blob, table_name, key_spec)
-                if (len(blob) + cur_bytes >=
-                        self.thrift_framed_transport_size_in_mb * 2 ** 19):
+                if len(blob) + cur_bytes >= max_bytes:
                     logger.debug('len(blob)=%d + cur_bytes=%d >= '
                                  'thrift_framed_transport_size_in_mb/2 = %d',
-                                 len(blob), cur_bytes,
-                                 self.thrift_framed_transport_size_in_mb * 2 ** 19)
+                                 len(blob), cur_bytes, max_bytes)
                     logger.debug('pre-emptively sending only what has been '
-                                 'batched, and will send this item in next batch.')
+                                 'batched, and will send this item in next '
+                                 'batch.')
                     batch_writer.flush()
                     cur_bytes = 0
-                joined_key = self._encoder.serialize(key, key_spec)
-                num_keys += 1
-                keys_size += len(joined_key)
-                num_values += 1
-                values_size += len(blob)
-                mut = Mutation(joined_key)
+                cur_bytes += max_bytes
+                mut = Mutation(key)
                 mut.put(cf='', cq='', val=blob)
                 batch_writer.add_mutation(mut)
-                cur_bytes += len(blob)
+        finally:
             batch_writer.close()
-        finally:
-            end_time = time.time()
-            self.log_put(table_name, start_time, end_time, num_keys, keys_size,
-                         num_values, values_size)
 
-    def scan(self, table_name, *key_ranges, **kwargs):
-        start_time = time.time()
-        stats = _scanstats()
+    def _scan(self, table_name, key_ranges):
+        for kv in self._do_scan(table_name, key_ranges, keys_only=False):
+            yield kv
 
-        try:
-            for kv in self._scan(table_name, key_ranges, keys_only=False, stats=stats):
-                yield kv
-        finally:
-            end_time = time.time()
-            self.log_scan(table_name, start_time, end_time, stats.num_keys,
-                          stats.keys_size, stats.num_values, stats.values_size)
+    def _scan_keys(self, table_name, key_ranges):
+        for kv in self._do_scan(table_name, key_ranges, keys_only=True):
+            yield kv
 
-    def scan_keys(self, table_name, *key_ranges, **kwargs):
-        start_time = time.time()
-        stats = _scanstats()
-
-        try:
-            for kv in self._scan(table_name, key_ranges, keys_only=True, stats=stats):
-                yield kv
-        finally:
-            end_time = time.time()
-            self.log_scan_keys(table_name, start_time, end_time,
-                               stats.num_keys, stats.keys_size)
-
-    def _scan(self, table_name, key_ranges, keys_only, stats):
+    def _do_scan(self, table_name, key_ranges, keys_only):
         key_spec = self._table_names[table_name]
-        iterators=[]
+        iterators = []
         if keys_only:
             iterators.append(IteratorSetting(
                 name='SortedKeyIterator', priority=10,
@@ -223,16 +188,10 @@ class AStorage(AbstractStorage):
                 # decrement the start key to include the start key
                 # which necessary for a get() operation.
                 # https://github.com/accumulo/pyaccumulo/issues/14
-                if not start_key:
-                    srow = None
-                else:
-                    srow = self._encoder.make_start_key(start_key, key_spec)
-                    srow = _string_decrement(srow)
-                if not stop_key:
-                    erow = None
-                else:
-                    erow = self._encoder.make_end_key(stop_key, key_spec)
-                key_range = Range(srow=srow, erow=erow, sinclude=True, einclude=True)
+                if start_key:
+                    start_key = _string_decrement(start_key)
+                key_range = Range(srow=start_key, erow=stop_key,
+                                  sinclude=True, einclude=True)
                 scanner = self.conn.scan(self._ns(table_name),
                                          scanrange=key_range,
                                          iterators=iterators)
@@ -241,37 +200,19 @@ class AStorage(AbstractStorage):
                                          iterators=iterators)
 
             for row in scanner:
-                total_count += 1
-                keyraw = row.row
-                stats.num_keys += 1
-                stats.keys_size += len(keyraw)
-                key = self._encoder.deserialize(keyraw, key_spec)
                 if keys_only:
-                    yield key
+                    yield row.row
                 else:
-                    if row.val is not None:
-                        stats.num_values += 1
-                        stats.values_size += len(row.val)
-                    yield key, row.val
+                    yield (row.row, row.val)
 
-    def get(self, table_name, *keys, **kwargs):
-        start_time = time.time()
-        stats = _scanstats()
-
-        try:
-            for key in keys:
-                gen = self._scan(table_name, [(key, key)], keys_only=False, stats=stats)
-                v = None
-                for kk, vv in gen:
-                    if kk == key:
-                        v = vv
-                yield key, v
-
-        finally:
-            end_time = time.time()
-            self.log_get(table_name, start_time, end_time,
-                         stats.num_keys, stats.keys_size,
-                         stats.num_values, stats.values_size)
+    def _get(self, table_name, keys):
+        for key in keys:
+            gen = self._do_scan(table_name, [(key, key)], keys_only=False)
+            v = None
+            for kk, vv in gen:
+                if kk == key:
+                    v = vv
+            yield key, v
 
     def close(self):
         self._connected = False
@@ -281,38 +222,20 @@ class AStorage(AbstractStorage):
     def __del__(self):
         self.close()
 
-    def delete(self, table_name, *keys, **kwargs):
-        start_time = time.time()
-        num_keys = 0
-        keys_size = 0
-
+    def _delete(self, table_name, keys):
+        batch_writer = BatchWriter(conn=self.conn,
+                                   table=self._ns(table_name),
+                                   max_memory=self._max_memory,
+                                   latency_ms=self._latency_ms,
+                                   timeout_ms=self._timeout_ms,
+                                   threads=self._threads)
         try:
-            batch_writer = BatchWriter(conn=self.conn,
-                                       table=self._ns(table_name),
-                                       max_memory=self._max_memory,
-                                       latency_ms=self._latency_ms,
-                                       timeout_ms=self._timeout_ms,
-                                       threads=self._threads)
             for key in keys:
-                joined_key = self._encoder.serialize(
-                    key, self._table_names[table_name])
-                num_keys += 1
-                keys_size += len(joined_key)
-                mut = Mutation(joined_key)
+                mut = Mutation(key)
                 mut.put(cf='', cq='', val='DEL_ROW')
                 batch_writer.add_mutation(mut)
-            batch_writer.close()
         finally:
-            end_time = time.time()
-            self.log_delete(table_name, start_time, end_time, num_keys, keys_size)
-
-
-class _scanstats(object):
-    def __init__(self):
-        self.num_keys = 0
-        self.keys_size = 0
-        self.num_values = 0
-        self.values_size = 0
+            batch_writer.close()
 
 
 def _string_decrement(x):

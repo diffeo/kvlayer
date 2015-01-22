@@ -36,8 +36,9 @@ class AbstractLocalStorage(AbstractStorage):
         self._connected = False
         self._raise_on_missing = self._config.get('raise_on_missing', True)
 
-    def setup_namespace(self, table_names):
-        super(AbstractLocalStorage, self).setup_namespace(table_names)
+    def setup_namespace(self, table_names, value_types={}):
+        super(AbstractLocalStorage, self).setup_namespace(
+            table_names, value_types)
 
         if self._app_name not in self._data:
             self._data[self._app_name] = {}
@@ -80,7 +81,7 @@ class AbstractLocalStorage(AbstractStorage):
             if self._log_stats is not None:
                 num_keys += 1
                 keys_size += len(self._encoder.serialize(key, key_spec))
-                values_size += len(val)
+                values_size += len(str(val))
 
         end_time = time.time()
         num_values = num_keys
@@ -93,6 +94,7 @@ class AbstractLocalStorage(AbstractStorage):
         start_time = time.time()
         num_keys = 0
         keys_size = 0
+        num_values = 0
         values_size = 0
 
         key_spec = self._table_names[table_name]
@@ -118,10 +120,10 @@ class AbstractLocalStorage(AbstractStorage):
                 yield key, val
 
                 if self._log_stats is not None:
-                    keys_size += len(joined_key)
-                    values_size += len(val)
                     num_keys += 1
-                    values_size += len(val)
+                    keys_size += len(joined_key)
+                    num_values += 1
+                    values_size += len(str(val))
 
         end_time = time.time()
         num_values = num_keys
@@ -145,7 +147,7 @@ class AbstractLocalStorage(AbstractStorage):
                 key, value = key, self.data[table_name][key]
                 yield key, value
                 num_values += 1
-                values_size += len(value)
+                values_size += len(str(value))
             except KeyError:
                 yield key, None
 

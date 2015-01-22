@@ -34,7 +34,7 @@ import uuid
 
 import redis
 
-from kvlayer._abstract_storage import AbstractStorage
+from kvlayer._abstract_storage import StringKeyedStorage
 from kvlayer._exceptions import BadKey, ProgrammerError
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,8 @@ then return redis.error_reply('no such kvlayer table') end
 '''
 verify_lua_failed = 'no such kvlayer table'
 
-class RedisStorage(AbstractStorage):
+
+class RedisStorage(StringKeyedStorage):
     def __init__(self, *args, **kwargs):
         """Initialize a redis-based storage instance.
 
@@ -120,10 +121,11 @@ class RedisStorage(AbstractStorage):
         """
         if table not in self._table_keys:
             k = conn.hget(self._namespace_key, table)
-            if k is not None: self._table_keys[table] = k
+            if k is not None:
+                self._table_keys[table] = k
         return self._table_keys.get(table, None)
 
-    def setup_namespace(self, table_names):
+    def setup_namespace(self, table_names, value_types={}):
         """Creates tables in the namespace.
 
         :param table_names: Table names to create
@@ -131,7 +133,7 @@ class RedisStorage(AbstractStorage):
           int key lengths
 
         """
-        super(RedisStorage, self).setup_namespace(table_names)
+        super(RedisStorage, self).setup_namespace(table_names, value_types)
         conn = self._connection()
         # We will do this by generating a short random key, and
         # assigning an empty hash to it.  If we can do this successfully
@@ -220,20 +222,7 @@ class RedisStorage(AbstractStorage):
                 raise BadKey(table_name)
             raise
 
-    def put(self, table_name, *keys_and_values, **kwargs):
-        """Save values for keys in `table_name`.
-
-        Each key must be a tuple of UUIDs for the length specified
-        for `table_name` in :meth:`setup_namespace`.
-
-        :param str table_name: Name of the kvlayer table
-        :param keys_and_values: Data to add
-        :type keys_and_values: pairs of (key tuple, value)
-        :param int batch_size: accepted but ignored
-        :raise kvlayer._exceptions.BadKey: `table_name` does not exist
-          in this namespace
-
-        """
+    def _put(self, table_name, keys_and_values):
         conn = self._connection()
         table_key = self._table_key(conn, table_name)
         if table_key is None:
@@ -242,49 +231,20 @@ class RedisStorage(AbstractStorage):
 
         pipeline = conn.pipeline(transaction=False)
         for (k, v) in keys_and_values:
-            key_spec = self._table_names[table_name]
-            self.check_put_key_value(k, v, table_name, key_spec)
-            k = self._encoder.serialize(k, key_spec)
             pipeline.hset(table_key, k, v)
             pipeline.zadd(table_key_k, 0, k)
         pipeline.execute()
 
-    def scan(self, table_name, *key_ranges, **kwargs):
-        """Yield pairs from selected ranges in some table.
-
-        `key_ranges` are pairs of tuples of :class:`uuid.UUID`,
-        specifying valid lower and upper bounds for uuid-tuple keys.
-        All keys in the table that are at least the lower bound of
-        some range and at most the upper bound of the same range are
-        returned.  If no `key_ranges` are provided, scan the entire
-        table.
-
-        >>> for (k,v) in storage.scan('table',
-        ...                           ((start1,None),(end1,None)),
-        ...                           ((start2,None),(end2,None))):
-        ...   print k
-
-        :param str table_name: Name of the kvlayer table
-        :param key_ranges: Ranges to scan
-        :type key_ranges: pairs of uuid tuples
-        :raise kvlayer._exceptions.BadKey: `table_name` does not exist
-          in this namespace
-
-        """
+    def _scan(self, table_name, key_ranges):
         conn = self._connection()
         key = self._table_key(conn, table_name)
         if key is None:
             raise BadKey(table_name)
-        #logger.debug('scan {} {!r}'.format(table_name, key_ranges))
-        key_spec = self._table_names[table_name]
         if len(key_ranges) == 0:
             # scan the whole table
             # just do this in one big call for simplicity
             res = conn.hgetall(key)
-            for k in sorted(res.iterkeys()):
-                if k == '': continue
-                uuids = self._encoder.deserialize(k, key_spec)
-                yield (uuids, res[k])
+            return [(k, res[k]) for k in sorted(res.iterkeys()) if k != '']
         for start, end in key_ranges:
             find_first = '''
             local first = redis.call('zrank', KEYS[2], ARGV[1])
@@ -331,71 +291,32 @@ class RedisStorage(AbstractStorage):
             script += do_scan
             script = conn.register_script(script)
             try:
-                res = script(
-                    keys=[key, key+'k'],
-                    args=[self._encoder.make_start_key(start, key_spec),
-                          self._encoder.make_end_key(end, key_spec)])
+                res = script(keys=[key, key+'k'], args=[start, end])
             except redis.ResponseError, exc:
                 if str(exc) == verify_lua_failed:
                     raise BadKey(table_name)
                 raise
             keys = res[0::2]
             values = res[1::2]
-            for k,v in zip(keys, values):
-                uuids = self._encoder.deserialize(k, key_spec)
-                yield (uuids, v)
+            return zip(keys, values)
 
-    def get(self, table_name, *keys, **kwargs):
-        """Yield specific pairs from the table.
-
-        `keys` are tuples of :class:`uuid.UUID`.  Yields pairs
-        of (uuids,value) for any present values.
-
-        >>> for (k,v) in storage.get('table', key):
-        ...   assert k == key
-        ...   print v
-
-        :param str table_name: Name of the kvlayer table
-        :param keys: Keys to fetch
-        :type key_ranges: tuples of :class:`uuid.UUID`
-        :raise kvlayer._exceptions.BadKey: `table_name` does not exist
-          in this namespace
-
-        """
+    def _get(self, table_name, keys):
         # We can be sufficiently atomic without lua scripting here.
         # The hmget call is atomic, so if the table gets deleted or
         # cleared in between checking for the table's existence
         # (which, remember, could be cached) and actually fetching keys,
         # then this yields nothing, which is consistent.
         if not keys:
-            raise StopIteration
+            return []
         conn = self._connection()
         key = self._table_key(conn, table_name)
         if key is None:
             raise BadKey(key)
-        key_spec = self._table_names[table_name]
-        #logger.debug('get {} {!r}'.format(table_name, keys))
-        ks = [self._encoder.serialize(k, key_spec) for k in keys]
-        vs = conn.hmget(key, *ks)
-        for (k, v) in zip(ks, vs):
-            # v may be None if the key isn't there; yield it anyways
-            yield (self._encoder.deserialize(k, key_spec), v)
-            
-    def delete(self, table_name, *keys, **kwargs):
-        """Delete specific pairs from the table.
+        values = conn.hmget(key, *keys)
+        # values may include None if the key isn't there; return it anyways
+        return zip(keys, values)
 
-        `keys` are pairs of (uuids,value); the uuids are tuples of
-        :class:`uuid.UUID`, and the values are ignored.
-
-        >>> storage.delete('table', (key,None))
-
-        :param str table_name: Name of the kvlayer table
-        :param keys: Keys to delete
-        :type key_ranges: pairs of (uuids,any)
-        :raise kvlayer._exceptions.BadKey: `table_name` does not exist
-          in this namespace
-
-        """
+    def _delete(self, table_name, keys):
         # Again blow off atomicity.  The worst that happens is that
         # the entire table is deleted in between getting its name and
         # deleting single rows from it, and in that case since the
@@ -407,9 +328,6 @@ class RedisStorage(AbstractStorage):
         key = self._table_key(conn, table_name)
         if key is None:
             raise BadKey(table_name)
-        logger.debug('delete {} {!r}'.format(table_name, keys))
-        key_spec = self._table_names[table_name]
-        ks = [self._encoder.serialize(k, key_spec) for k in keys]
         script = conn.register_script(verify_lua + '''
         for i = 1, #ARGV do
           redis.call('hdel', KEYS[1], ARGV[i])
@@ -417,7 +335,7 @@ class RedisStorage(AbstractStorage):
         end
         ''')
         try:
-            script(keys=[key, key+'k'], args=ks)
+            script(keys=[key, key+'k'], args=keys)
         except redis.ResponseError, exc:
             if str(exc) == verify_lua_failed:
                 raise BadKey(table_name)

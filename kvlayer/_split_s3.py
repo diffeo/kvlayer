@@ -14,6 +14,7 @@ import kvlayer
 from kvlayer._abstract_storage import AbstractStorage
 from kvlayer._exceptions import ConfigurationError
 
+
 class SplitS3Storage(AbstractStorage):
     config_name = 'split_s3'
     default_config = {
@@ -78,10 +79,20 @@ class SplitS3Storage(AbstractStorage):
                                         key_hash[0:2], key_hash[2:4],
                                         key_hash[4:])
         return self.bucket.new_key(s3_key)
-            
-    def setup_namespace(self, table_names):
-        super(SplitS3Storage, self).setup_namespace(table_names)
-        self.kvlclient.setup_namespace(table_names)
+
+    def setup_namespace(self, table_names, value_types):
+        for t in table_names.iterkeys():
+            if t not in self.tables:
+                continue
+            if t not in value_types:
+                continue
+            if value_types[t] is str:
+                continue
+            raise ConfigurationError('table {} is S3-backed but has '
+                                     'non-string type {!r}'
+                                     .format(t, value_types[t]))
+        super(SplitS3Storage, self).setup_namespace(table_names, value_types)
+        self.kvlclient.setup_namespace(table_names, value_types)
 
     def delete_namespace(self):
         '''Deletes all data from all known tables.
@@ -120,6 +131,7 @@ class SplitS3Storage(AbstractStorage):
 
     def put(self, table_name, *keys_and_values, **kwargs):
         '''Store objects in the underlying storage and maybe S3.'''
+        value_type = self._value_types[table_name]
         if table_name in self.tables:
             # Hybrid S3/kvlayer object.  If there are multiple
             # keys_and_values, and one late in the list fails, the only
@@ -128,7 +140,8 @@ class SplitS3Storage(AbstractStorage):
                 self.kvlclient.put(table_name, (k, ''), **kwargs)
                 # This didn't raise an exception, so we can put the real
                 # value into S3
-                self._s3_key(table_name, k).set_contents_from_string(v)
+                self._s3_key(table_name, k).set_contents_from_string(
+                    self.value_to_str(v, value_type))
         else:
             # Flat kvlayer object.
             self.kvlclient.put(table_name, *keys_and_values, **kwargs)
@@ -141,18 +154,22 @@ class SplitS3Storage(AbstractStorage):
         '''
         tries_left = self.retries + 1
         key = self._s3_key(table_name, k)
+        value = None
         while tries_left > 0:
             try:
-                return key.get_contents_as_string()
+                value = key.get_contents_as_string()
+                break
             # Is there something more specific we can catch?
             # Boto has its own retry facility, though that's probably
             # more about failure to connect than failure to retrieve.
-            except Exception, e:
+            except Exception:
                 if tries_left == 0:
                     raise
                 pass
             tries_left -= 1
             time.sleep(self.retry_interval)
+        if value is not None:
+            return self.value_to_str(self._value_types[table_name])
 
     def scan(self, table_name, *key_ranges, **kwargs):
         '''Combination key/value scan.
@@ -182,12 +199,12 @@ class SplitS3Storage(AbstractStorage):
 
     def get(self, table_name, *keys, **kwargs):
         '''Get specific keys.'''
-        for (k,v0) in self.kvlclient.get(table_name, *keys, **kwargs):
+        for (k, v0) in self.kvlclient.get(table_name, *keys, **kwargs):
             if v0 is not None and table_name in self.tables:
                 v = self._get(table_name, k)
-            else: # either not present or uninteresting table
+            else:  # either not present or uninteresting table
                 v = v0
-            yield (k,v)
+            yield (k, v)
 
     def delete(self, table_name, *keys, **kwargs):
         '''Delete specific keys.'''

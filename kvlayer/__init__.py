@@ -371,6 +371,7 @@ are tuples of a fixed length.
 
 '''
 
+from kvlayer._abstract_storage import COUNTER
 from kvlayer._client import client
 from kvlayer.config import config_name, default_config, add_arguments, \
     runtime_keys, discover_config, check_config

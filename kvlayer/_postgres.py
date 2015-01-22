@@ -15,19 +15,19 @@ from __future__ import absolute_import
 import contextlib
 import logging
 import re
-import time
 
 import psycopg2
 import psycopg2.pool
 
-from kvlayer._abstract_storage import AbstractStorage
+from kvlayer._abstract_storage import StringKeyedStorage
 from kvlayer._exceptions import ProgrammerError
 
 
 logger = logging.getLogger(__name__)
 
 
-# SQL strings in this module use python3 style string.format() formatting to substitute the table name into the command.
+# SQL strings in this module use python3 style string.format() formatting
+# to substitute the table name into the command.
 
 
 # this is not precisely right.
@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 # Perhaps in the all-unicode-all-the-time Python3 re package there will be
 # better support for characters classes needed to specify this right.
 _psql_identifier_re = re.compile(r'[a-z_][a-z0-9_$]*', re.IGNORECASE)
+
 
 def _valid_namespace(x):
     return bool(_psql_identifier_re.match(x))
@@ -50,7 +51,8 @@ _CREATE_TABLE = '''CREATE TABLE kv_{namespace} (
   PRIMARY KEY (t, k)
 );
 
-CREATE FUNCTION upsert_{namespace}(tname TEXT, key BYTEA, data BYTEA) RETURNS VOID AS
+CREATE FUNCTION upsert_{namespace}(tname TEXT, key BYTEA, data BYTEA)
+  RETURNS VOID AS
 $$
 BEGIN
     LOOP
@@ -80,7 +82,7 @@ _DROP_TABLE_b = '''DROP TABLE kv_{namespace}'''
 _CLEAR_TABLE = '''DELETE FROM kv_{namespace} WHERE t = %s'''
 
 # use cursor.callproc() instead of SELECT query.
-#_PUT = '''SELECT upsert_{namespace} (%s, %s, %s);'''
+# _PUT = '''SELECT upsert_{namespace} (%s, %s, %s);'''
 
 _GET_KV = 'SELECT k, v FROM kv_{namespace} WHERE t=%s'
 _GET_K = 'SELECT k FROM kv_{namespace} WHERE t=%s'
@@ -96,7 +98,8 @@ _GET = _GET_KV + _GET_EXACT
 _DELETE = '''DELETE FROM kv_{namespace} WHERE t = %s AND k = %s;'''
 
 # unused, we always _DELETE single records by key
-#_DELETE_RANGE = '''DELETE FROM kv_{namespace} WHERE t = %s AND k >= %s AND K <= %s;'''
+# _DELETE_RANGE = ('DELETE FROM kv_{namespace} WHERE t = %s AND k >= %s '
+#                  'AND K <= %s;''')
 
 # TODO: use this query to list available namespaces
 # select tablename from pg_catalog.pg_tables where tablename like 'kv_%';
@@ -106,10 +109,12 @@ MAX_BLOB_BYTES = 15000000
 
 
 def _cursor_check_namespace_table(cursor, namespace):
-    cursor.execute('SELECT 1 FROM pg_tables WHERE tablename ILIKE %s', ('kv_' + namespace,))
+    cursor.execute('SELECT 1 FROM pg_tables WHERE tablename ILIKE %s',
+                   ('kv_' + namespace,))
     return cursor.rowcount > 0
 
-class PGStorage(AbstractStorage):
+
+class PGStorage(StringKeyedStorage):
     def __init__(self, *args, **kwargs):
         '''Initialize a storage instance for namespace.
         uses the single string specifier for a connectionn to a postgres db
@@ -117,16 +122,19 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         '''
         super(PGStorage, self).__init__(*args, **kwargs)
         if not _valid_namespace(self._namespace):
-            raise ProgrammerError('namespace must match re: %r' % (_psql_identifier_re.pattern,))
+            raise ProgrammerError('namespace must match re: %r' %
+                                  (_psql_identifier_re.pattern,))
         self.storage_addresses = self._config['storage_addresses']
         if not self.storage_addresses:
-            raise ProgrammerError('postgres kvlayer needs config["storage_addresses"]')
+            raise ProgrammerError(
+                'postgres kvlayer needs config["storage_addresses"]')
         self.connection_pool = psycopg2.pool.SimpleConnectionPool(
             self._config.get('min_connections', 2),
             self._config.get('max_connections', 16),
             self.storage_addresses[0]
         )
-        self._scan_inner_limit = int(self._config.get('scan_inner_limit', 1000))
+        self._scan_inner_limit = int(self._config.get('scan_inner_limit',
+                                                      1000))
 
     @contextlib.contextmanager
     def _conn(self):
@@ -156,7 +164,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
             with conn.cursor() as cursor:
                 return _cursor_check_namespace_table(cursor, self._namespace)
 
-    def setup_namespace(self, table_names):
+    def setup_namespace(self, table_names, value_types={}):
         '''creates tables in the namespace.  Can be run multiple times with
         different table_names in order to expand the set of tables in
         the namespace.
@@ -167,7 +175,7 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
 
         :type table_names: dict(str = int)
         '''
-        super(PGStorage, self).setup_namespace(table_names)
+        super(PGStorage, self).setup_namespace(table_names, value_types)
         with self._conn() as conn:
             with conn.cursor() as cursor:
                 if _cursor_check_namespace_table(cursor, self._namespace):
@@ -203,41 +211,13 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
                     (table_name,)
                 )
 
-    def put(self, table_name, *keys_and_values, **kwargs):
-        '''Save values for keys in table_name.  Each key must be a
-        tuple of UUIDs of the length specified for table_name in
-        setup_namespace.
-
-        :params batch_size: a DB-specific parameter that limits the
-        number of (key, value) paris gathered into each batch for
-        communication with DB.
-        '''
-        start_time = time.time()
-        keys_size = 0
-        values_size = 0
-        num_keys = 0
-
-        key_spec = self._table_names[table_name]
+    def _put(self, table_name, keys_and_values):
         with self._conn() as conn:
             with conn.cursor() as cursor:
-                for kv in keys_and_values:
-                    self.check_put_key_value(kv[0], kv[1], table_name,
-                                             key_spec)
-                    num_keys += 1
-                    keystr = self._encoder.serialize(kv[0], key_spec)
-                    keys_size += len(keystr)
-                    values_size += len(kv[1])
-                    #logger.debug('put k=%r from %r', keystr, kv[0])
-                    keystr = psycopg2.Binary(keystr)
+                for (k, v) in keys_and_values:
                     cursor.callproc(
                         'upsert_{namespace}'.format(namespace=self._namespace),
-                        (table_name, keystr, psycopg2.Binary(kv[1])))
-
-        end_time = time.time()
-        num_values = num_keys
-
-        self.log_put(table_name, start_time, end_time, num_keys, keys_size,
-                     num_values, values_size)
+                        (table_name, psycopg2.Binary(k), psycopg2.Binary(v)))
 
     def _unmarshal_k(self, row, key_spec):
         '''Get the key tuple from a response row.'''
@@ -258,119 +238,42 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
         key = self._unmarshal_k(row, key_spec)
         return (key, val)
 
-    def get(self, table_name, *keys, **kwargs):
-        '''Yield tuples of (key, value) from querying table_name for
-        items with specified keys.
-        '''
-        start_time = time.time()
-        num_keys = 0
-        keys_size = 0
-        num_values = 0
-        values_size = 0
-
-        key_spec = self._table_names[table_name]
+    def _get(self, table_name, keys):
         cmd = _GET.format(namespace=self._namespace)
-        try:
-            with self._conn() as conn:
-                for key in keys:
-                    num_keys += 1
-                    bkey = self._encoder.serialize(key, key_spec)
-                    keys_size += len(bkey)
-                    bkey = psycopg2.Binary(bkey)
-                    with conn.cursor(name='get') as cursor:
-                        cursor.execute(cmd, (table_name, bkey))
-                        found = False
-                        for row in cursor:
-                            p = self._unmarshal_kv(row, key_spec)
-                            if p is None:
-                                continue
-                            num_values += 1
-                            values_size += len(p[1])
-                            yield p
+        with self._conn() as conn:
+            for key in keys:
+                with conn.cursor(name='get') as cursor:
+                    cursor.execute(cmd, (table_name, psycopg2.Binary(key)))
+                    found = False
+                    for row in cursor:
+                        k = row[0]
+                        if k is not None:
+                            k = k[:]
+                        v = row[1]
+                        if v is not None:
+                            v = v[:]  # un-bufferify
                             found = True
-                        if not found:
-                            yield key, None
-        finally:
-            end_time = time.time()
-            self.log_get(table_name, start_time, end_time, num_keys,
-                         keys_size, num_values, values_size)
+                            yield (k, v)
+                    if not found:
+                        yield (key, None)
 
-    def scan(self, table_name, *key_ranges, **kwargs):
-        '''Yield tuples of (key, value) from querying table_name for
-        items with keys within the specified ranges.  If no key_ranges
-        are provided, then yield all (key, value) pairs in table.
+    def _scan(self, table_name, key_ranges):
+        for kmin, kmax in (key_ranges or [['', '']]):
+            for rkey, rval in self._scan_subscan_kminmax(
+                    table_name, kmin, kmax):
+                yield rkey, rval
 
-        :type key_ranges: (((UUID, ...), (UUID, ...)), ...)
-                            ^^^^^^^^^^^^^^^^^^^^^^^^
-                            start        finish of one range
-        '''
-        start_time = time.time()
-        num_keys = 0
-        keys_size = 0
-        values_size = 0
-        key_spec = self._table_names[table_name]
-
-        try:
-            for kmin, kmax in (key_ranges or [['', '']]):
-                for rkey, rval in self._scan_subscan_kminmax(key_spec, table_name,
-                                                             kmin, kmax):
-                    yield rkey, rval
-
-                    num_keys += 1
-                    keys_size += sum(len(str(kp)) for kp in rkey)
-                    values_size += len(rval)
-
-        finally:
-            end_time = time.time()
-            num_values = num_keys
-            self.log_scan(table_name, start_time, end_time, num_keys,
-                          keys_size, num_values, values_size)
-
-    def scan_keys(self, table_name, *key_ranges, **kwargs):
-        '''Scan only the keys from a table.
-
-        Yield key tuples from querying table_name for items with keys
-        within the specified ranges.  If no key_ranges are provided,
-        then yield all keys in table.
-
-        This is equivalent to::
-
-            itertools.imap(lambda (k,v): k,
-                           self.scan(table_name, *key_ranges, **kwargs))
-
-        But it avoids copying the (potentially large) data values across
-        the network.
-
-        :param str table_name: name of table to scan
-        :param key_ranges: (`start`,`end`) key range pairs
-
-        '''
-        start_time = time.time()
-        num_keys = 0
-        keys_size = 0
-        key_spec = self._table_names[table_name]
-
-        try:
-            for kmin, kmax in (key_ranges or [['', '']]):
-                for rkey in self._scan_subscan_kminmax(key_spec, table_name,
-                                                       kmin, kmax,
-                                                       with_values=False):
+    def _scan_keys(self, table_name, key_ranges):
+        for kmin, kmax in (key_ranges or [['', '']]):
+            for rkey in self._scan_subscan_kminmax(
+                    table_name, kmin, kmax, with_values=False):
                     yield rkey
 
-                    num_keys += 1
-                    keys_size += sum(len(str(kp)) for kp in rkey)
-
-        finally:
-            end_time = time.time()
-            self.log_scan_keys(table_name, start_time, end_time, num_keys, keys_size)
-
-    def _scan_subscan_kminmax(self, key_spec, table_name, kmin, kmax,
-                              with_values=True):
+    def _scan_subscan_kminmax(self, table_name, kmin, kmax, with_values=True):
         prevkey = None
         while True:
             count = 0
-            for p in self._scan_kminmax(key_spec, table_name, kmin, kmax,
-                                        with_values):
+            for p in self._scan_kminmax(table_name, kmin, kmax, with_values):
                 if with_values:
                     rkey = p[0]
                 else:
@@ -386,32 +289,19 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
             # else, we hit limit, we need to scan for more
             kmin = rkey
 
-    def _scan_kminmax(self, key_spec, table_name, kmin, kmax, with_values=True):
-        if kmin:
-            start = self._encoder.make_start_key(kmin, key_spec)
-            start = psycopg2.Binary(start)
-        else:
-            start = None
-        if kmax:
-            finish = self._encoder.make_end_key(kmax, key_spec)
-            finish = psycopg2.Binary(finish)
-        else:
-            finish = None
-        #logger.debug('pg t=%r %r<=k<=%r (%s<=k<=%s)', table_name, kmin, kmax, start, finish)
+    def _scan_kminmax(self, table_name, kmin, kmax, with_values=True):
         if with_values:
             query = _GET_KV
-            unmarshal = lambda row: self._unmarshal_kv(row, key_spec)
         else:
             query = _GET_K
-            unmarshal = lambda row: self._unmarshal_k(row, key_spec)
         query = query.format(namespace=self._namespace)
         args = [table_name]
-        if start:
+        if kmin:
             query += _GET_MIN
-            args.append(start)
-        if finish:
+            args.append(psycopg2.Binary(kmin))
+        if kmax:
             query += _GET_MAX
-            args.append(finish)
+            args.append(psycopg2.Binary(kmax))
         query += _SCAN_ORDER
         if self._scan_inner_limit:
             query += _INNER_LIMIT
@@ -420,39 +310,23 @@ http://www.postgresql.org/docs/current/static/libpq-connect.html#LIBPQ-PARAMKEYW
             with conn.cursor(name='scan') as cursor:
                 cursor.execute(query, tuple(args))
                 for row in cursor:
-                    yield unmarshal(row)
+                    k = row[0]
+                    if k is not None:
+                        k = k[:]  # unbufferify
+                    if with_values:
+                        v = row[1]
+                        if v is not None:
+                            v = v[:]
+                        yield (k, v)
+                    else:
+                        yield k
 
-    def delete(self, table_name, *keys, **kwargs):
-        '''Delete all (key, value) pairs with specififed keys
-
-        :params batch_size: a DB-specific parameter that limits the
-        number of (key, value) paris gathered into each batch for
-        communication with DB.
-        '''
-        start_time = time.time()
-        num_keys = 0
-        keys_size = 0
-
-        key_spec = self._table_names[table_name]
-        delete_statement_args = []
-        for k in keys:
-            if len(k) != len(key_spec):
-                raise Exception('invalid key has %s uuids but wanted %s: %r' % (len(k), len(key_spec), k))
-            joined_key = self._encoder.serialize(k, key_spec)
-            num_keys += 1
-            keys_size += len(joined_key)
-            delete_statement_args.append(
-                (table_name, psycopg2.Binary(joined_key))
-            )
-
+    def _delete(self, table_name, keys):
         with self._conn() as conn:
             with conn.cursor() as cursor:
                 cursor.executemany(
                     _DELETE.format(namespace=self._namespace),
-                    delete_statement_args)
-
-        end_time = time.time()
-        self.log_delete(table_name, start_time, end_time, num_keys, keys_size)
+                    [(table_name, psycopg2.Binary(k)) for k in keys])
 
     # don't mark this one detatch_on_exception, that would be silly
     def close(self):
@@ -478,7 +352,8 @@ DECLARE
   pt pg_tables%ROWTYPE;
 BEGIN
   FOR pnargs IN SELECT * from pg_proc where proname like '%upsert_test_%' LOOP
-    SELECT typname FROM pg_type WHERE oid = pnargs.proargtypes[0] INTO argtypes;
+    SELECT typname FROM pg_type WHERE oid = pnargs.proargtypes[0]
+      INTO argtypes;
     FOR i in 1..array_upper(pnargs.proargtypes,1) LOOP
       SELECT typname FROM pg_type WHERE oid = pnargs.proargtypes[i] INTO tat;
       argtypes := argtypes || ',' || tat;

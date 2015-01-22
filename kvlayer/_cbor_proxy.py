@@ -11,17 +11,16 @@ https://github.com/diffeo/kvlayer-java-proxy
 from __future__ import absolute_import
 import logging
 import random
-import re
 import socket
 import time
 
 import cbor
 
-from kvlayer._abstract_storage import AbstractStorage
-from kvlayer._decorators import retry
+from kvlayer._abstract_storage import StringKeyedStorage
 from kvlayer._exceptions import ProgrammerError
 
 logger = logging.getLogger(__name__)
+
 
 class SocketReader(object):
     '''
@@ -71,7 +70,12 @@ class CborRpcClient(object):
             if not isinstance(self._socket_addr, tuple):
                 # python socket standard library insists this be tuple!
                 tsocket_addr = tuple(self._socket_addr)
-                assert len(tsocket_addr) == 2, 'address must be length-2 tuple ("hostname", port number), got {!r} tuplified to {!r}'.format(self._socket_addr, tsocket_addr)
+                assert len(tsocket_addr) == 2, ('address must be length-2 '
+                                                'tuple ("hostname", '
+                                                'port number), got {!r} '
+                                                'tuplified to {!r}'
+                                                .format(self._socket_addr,
+                                                        tsocket_addr))
                 self._socket_addr = tsocket_addr
         self._socket = None
         self._rfile = None
@@ -152,7 +156,7 @@ class CborRpcClient(object):
                 # non-connectivity, it gave us an error message. We
                 # don't retry that, we raise it to the user.
                 errormessage = response.get('error')
-                if errormessage and hasattr(errormessage,'get'):
+                if errormessage and hasattr(errormessage, 'get'):
                     errormessage = errormessage.get('message')
                 if not errormessage:
                     errormessage = repr(response)
@@ -178,7 +182,7 @@ class CborRpcClient(object):
 #     return serialize_key(key, key_spec=key_spec)
 
 
-class CborProxyStorage(AbstractStorage):
+class CborProxyStorage(StringKeyedStorage):
     def __init__(self, *args, **kwargs):
         super(CborProxyStorage, self).__init__(*args, **kwargs)
 
@@ -193,9 +197,9 @@ class CborProxyStorage(AbstractStorage):
             if ':' not in address:
                 return (address, 7123)
             else:
-                h,p = address.split(':')
+                h, p = address.split(':')
                 return (h, int(p))
-        self._zk_addresses = zk_addresses #map(str_to_pair, zk_addresses)
+        self._zk_addresses = zk_addresses  # map(str_to_pair, zk_addresses)
         self._proxy_addresses = map(str_to_pair, proxy_addresses)
 
         # cached lazy connection
@@ -208,9 +212,13 @@ class CborProxyStorage(AbstractStorage):
         if not self._conn:
             host, port = random.choice(self._proxy_addresses)
             logger.debug('connecting to cbor proxy %s:%s', host, port)
-            self._conn = CborRpcClient({'address':(host,port)})
+            self._conn = CborRpcClient({'address': (host, port)})
             zk_addr = random.choice(self._zk_addresses)
-            ok, msg = self._conn._rpc(u'connect', [unicode(zk_addr), unicode(self._config.get('username')), unicode(self._config.get('password'))])
+            ok, msg = self._conn._rpc(
+                u'connect',
+                [unicode(zk_addr),
+                 unicode(self._config.get('username')),
+                 unicode(self._config.get('password'))])
             if not ok:
                 raise Exception(msg)
         return self._conn
@@ -218,90 +226,60 @@ class CborProxyStorage(AbstractStorage):
     def _ns(self, table):
         return '%s_%s_%s' % (self._app_name, self._namespace, table)
 
-    def setup_namespace(self, table_names):
+    def setup_namespace(self, table_names, value_types):
         '''creates tables in the namespace.  Can be run multiple times with
         different table_names in order to expand the set of tables in
         the namespace.
         '''
-        super(CborProxyStorage, self).setup_namespace(table_names)
-        simple_table_names = {self._ns(k):dict() for k in table_names.iterkeys()}
+        super(CborProxyStorage, self).setup_namespace(table_names, value_types)
+        simple_table_names = {self._ns(k): dict()
+                              for k in table_names.iterkeys()}
         self.conn._rpc(u'setup_namespace', [simple_table_names])
 
     def delete_namespace(self):
-        simple_table_names = {self._ns(k):dict() for k in self._table_names.iterkeys()}
+        simple_table_names = {self._ns(k): dict()
+                              for k in self._table_names.iterkeys()}
         self.conn._rpc(u'delete_namespace', [simple_table_names])
 
     def clear_table(self, table_name):
         table_name = self._ns(table_name)
         self.conn._rpc(u'clear_table', [unicode(table_name)])
 
-    def put(self, table_name, *keys_and_values, **kwargs):
-        key_spec = self._table_names[table_name]
-        table_name = self._ns(table_name)
-        mkv = []
-        for key, val in keys_and_values:
-            mkv.append((self._encoder.serialize(key, key_spec), val))
-        #mkv = [(self._encoder.serialize(key, key_spec), val) for (key, val) in keys_and_values]
-        self.conn._rpc(u'put', [unicode(table_name), mkv])
+    def _put(self, table_name, keys_and_values):
+        self.conn._rpc(u'put',
+                       [unicode(self._ns(table_name)), keys_and_values])
 
-    def _scan_range_fix(self, key_spec, key_ranges):
-        for lkey, hkey in key_ranges:
-            if lkey:
-                lkey = self._encoder.make_start_key(lkey, key_spec)
-            else:
-                lkey = None
-            if hkey:
-                hkey = self._encoder.make_end_key(hkey, key_spec)
-            else:
-                hkey = None
-            yield lkey, hkey
-
-    def scan(self, table_name, *key_ranges, **kwargs):
-        key_spec = self._table_names[table_name]
+    def _scan(self, table_name, key_ranges):
         table_name = self._ns(table_name)
         if not key_ranges:
             key_ranges = [((), ())]
-        mkv = list(self._scan_range_fix(key_spec, key_ranges))
-        #mkv = [(_rangesk(lkey, key_spec), _rangesk(hkey, key_spec)) for (lkey, hkey) in key_ranges]
-        logger.info('scan %s %r', table_name, mkv)
-        for k,v in self.conn._rpc(u'scan', [unicode(table_name), mkv]):
-            yield self._encoder.deserialize(k, key_spec), v
+        return self.conn._rpc(u'scan', [unicode(table_name), key_ranges])
 
-    def scan_keys(self, table_name, *key_ranges, **kwargs):
-        key_spec = self._table_names[table_name]
+    def _scan_keys(self, table_name, key_ranges):
         table_name = self._ns(table_name)
         if not key_ranges:
             key_ranges = [((), ())]
-        mkv = list(self._scan_range_fix(key_spec, key_ranges))
-        #mkv = [(_rangesk(lkey, key_spec), _rangesk(hkey, key_spec)) for (lkey, hkey) in key_ranges]
-        logger.info('scan %s %r', table_name, mkv)
-        for k in self.conn._rpc(u'scan_keys', [unicode(table_name), mkv]):
-            yield self._encoder.deserialize(k, key_spec)
+        return self.conn._rpc(u'scan_keys', [unicode(table_name), key_ranges])
 
-    def get(self, table_name, *keys, **kwargs):
-        key_spec = self._table_names[table_name]
+    def _get(self, table_name, keys):
         table_name = self._ns(table_name)
-        keys = [self._encoder.serialize(key, key_spec) for key in keys]
-        for k,v in self.conn._rpc(u'get', [unicode(table_name), keys]):
-            yield self._encoder.deserialize(k, key_spec), v
+        return self.conn._rpc(u'get', [unicode(table_name), keys])
 
     def close(self):
         if self._conn:
-            self._conn.close();
+            self._conn.close()
             self._conn = None
 
-    def delete(self, table_name, *keys, **kwargs):
-        key_spec = self._table_names[table_name]
+    def _delete(self, table_name, keys, **kwargs):
         table_name = self._ns(table_name)
-        keys = [self._encoder.serialize(key, key_spec) for key in keys]
         self.conn._rpc(u'delete', [unicode(table_name), keys])
 
     def shutdown_proxies(self):
         for host, port in self._proxy_addresses:
-            xc = CborRpcClient({'address':(host,port), 'retries':0})
+            xc = CborRpcClient({'address': (host, port), 'retries': 0})
             try:
                 xc._rpc(u"shutdown", [])
             except EOFError:
-                pass # ok
+                pass  # ok
             except:
                 logger.info("%s:%s shutdown", host, port, exc_info=True)
