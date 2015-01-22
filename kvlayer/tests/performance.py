@@ -533,7 +533,7 @@ def run_all_perftests(redis_address=None):
     '''
     rc = 0
     for name in STORAGE_CLIENTS.iterkeys():
-        if name in ['cassandra', 'accumulo', 'postgres']:
+        if name in ['cassandra', 'accumulo', 'postgres', 'cborproxy']:
             continue
         config = os.path.join(os.path.dirname(__file__),
                               'config_{}.yaml'.format(name))
