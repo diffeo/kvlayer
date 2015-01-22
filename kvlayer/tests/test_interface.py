@@ -51,6 +51,13 @@ def backend(request):
         pass # okay
     elif not request.fspath.dirpath('config_{}.yaml'.format(backend)).exists():
         pytest.skip('no configuration file for backend {}'.format(backend))
+    elif backend == 'cborproxy':
+        cbor_proxy_addr = 'localhost:7321'
+        try:
+            socket.create_connection(cbor_proxy_addr)
+        except Exception, exc:
+            logger.warn('skipping CborProxy because cannot connect to %r', cbor_proxy_addr, exc_info=True)
+            pytest.skip('skipping CborProxy because cannot connect to %r: %r' % (cbor_proxy_addr, exc))
     #if backend not in ('local', 'redis', 'riak', 'accumulo', 'cborproxy'):
     #if backend != 'local':
     #    pytest.skip('TODO DELETE TEMPROARY SKIP ' + backend)
