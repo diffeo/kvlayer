@@ -393,7 +393,7 @@ class StringKeyedStorage(AbstractStorage):
 
     '''
 
-    def put(self, table_name, *keys_and_values):
+    def put(self, table_name, *keys_and_values, **kwargs):
         start_time = time.time()
         for (k, v) in keys_and_values:
             self.check_put_key_value(k, v, table_name)
@@ -401,7 +401,7 @@ class StringKeyedStorage(AbstractStorage):
               for (k, v) in keys_and_values]
         vs = [self.value_to_str(v, self._value_types[table_name])
               for (k, v) in keys_and_values]
-        self._put(table_name, zip(ks, vs))
+        self._put(table_name, zip(ks, vs), **kwargs)
         end_time = time.time()
         if self._log_stats is not None:
             self._log_stats.put.add(table_name, start_time, end_time,
@@ -412,14 +412,14 @@ class StringKeyedStorage(AbstractStorage):
     def _put(self, table_name, keys_and_values):
         pass
 
-    def scan(self, table_name, *key_ranges):
+    def scan(self, table_name, *key_ranges, **kwargs):
         stats = StatRecord()
         key_spec = self._table_names[table_name]
         value_type = self._value_types[table_name]
         new_key_ranges = [(self._encoder.make_start_key(start, key_spec),
                            self._encoder.make_end_key(end, key_spec))
                           for (start, end) in key_ranges]
-        for k, v in self._scan(table_name, new_key_ranges):
+        for k, v in self._scan(table_name, new_key_ranges, **kwargs):
             stats.record(len(k), len(v))
             yield (self._encoder.deserialize(k, key_spec),
                    self.str_to_value(v, value_type))
@@ -430,13 +430,13 @@ class StringKeyedStorage(AbstractStorage):
     def _scan(self, table_name, key_ranges):
         pass
 
-    def scan_keys(self, table_name, *key_ranges):
+    def scan_keys(self, table_name, *key_ranges, **kwargs):
         stats = StatRecord()
         key_spec = self._table_names[table_name]
         new_key_ranges = [(self._encoder.make_start_key(start, key_spec),
                            self._encoder.make_end_key(end, key_spec))
                           for (start, end) in key_ranges]
-        for k in self._scan_keys(table_name, new_key_ranges):
+        for k in self._scan_keys(table_name, new_key_ranges, **kwargs):
             stats.record(len(k), None)
             yield self._encoder.deserialize(k, key_spec)
         if self._log_stats is not None:
@@ -446,12 +446,12 @@ class StringKeyedStorage(AbstractStorage):
         for (k, v) in self._scan(table_name, key_ranges):
             yield k
 
-    def get(self, table_name, *keys):
+    def get(self, table_name, *keys, **kwargs):
         stats = StatRecord()
         key_spec = self._table_names[table_name]
         value_type = self._value_types[table_name]
         new_keys = [self._encoder.serialize(k, key_spec) for k in keys]
-        for (k, v) in self._get(table_name, new_keys):
+        for (k, v) in self._get(table_name, new_keys, **kwargs):
             if v is None:
                 stats.record(len(k), None)
             else:
@@ -465,11 +465,11 @@ class StringKeyedStorage(AbstractStorage):
     def _get(self, table_name, keys):
         pass
 
-    def delete(self, table_name, *keys):
+    def delete(self, table_name, *keys, **kwargs):
         start_time = time.time()
         key_spec = self._table_names[table_name]
         new_keys = [self._encoder.serialize(k, key_spec) for k in keys]
-        self._delete(table_name, new_keys)
+        self._delete(table_name, new_keys, **kwargs)
         if self._log_stats is not None:
             self._log_stats.delete.add(
                 table_name, start_time, time.time(),

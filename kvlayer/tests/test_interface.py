@@ -688,3 +688,19 @@ def test_counter_minimal(client):
     assert list(client.scan('t')) == [(('k',), 0)]
 
     assert list(client.get('t', ('x',))) == [(('x',), None)]
+
+
+# (Because Accumulo has an interesting implementation of this)
+def test_counter_put(client):
+    client.setup_namespace({'t': (str,)}, {'t': kvlayer.COUNTER})
+    client.put('t', (('k',), 1))
+    assert list(client.get('t', ('k',))) == [(('k',), 1)]
+
+    client.increment('t', (('k',), 1))
+    assert list(client.get('t', ('k',))) == [(('k',), 2)]
+
+    client.put('t', (('k',), 17))
+    assert list(client.get('t', ('k',))) == [(('k',), 17)]
+
+    client.increment('t', (('k',), -20))
+    assert list(client.get('t', ('k',))) == [(('k',), -3)]

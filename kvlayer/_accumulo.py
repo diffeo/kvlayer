@@ -10,14 +10,14 @@ from __future__ import absolute_import
 import logging
 import random
 import re
-import time
+import struct
 
 from pyaccumulo import Accumulo, Mutation, Range, BatchWriter
-from pyaccumulo.iterators import RowDeletingIterator
+from pyaccumulo.iterators import SummingCombiner
 from pyaccumulo.proxy.ttypes import IteratorScope, \
     AccumuloSecurityException, IteratorSetting
 
-from kvlayer._abstract_storage import StringKeyedStorage
+from kvlayer._abstract_storage import COUNTER, StringKeyedStorage
 from kvlayer._decorators import retry
 from kvlayer._exceptions import ProgrammerError
 
@@ -25,9 +25,21 @@ logger = logging.getLogger(__name__)
 
 
 class AStorage(StringKeyedStorage):
-    '''
-    Accumulo storage implements kvlayer's AbstractStorage, which
-    manages a set of tables as specified to setup_namespace
+    '''Accumulo :mod:`kvlayer` backend.
+
+    Inside Accumulo, all key and value tuples are normalized to
+    strings.  Each key is stored as a row value, and column families
+    and qualifiers are empty strings.
+
+    If a table has type :class:`~kvlayer._abstract_storage.COUNTER`,
+    the Accumulo ``SummingCombiner`` is applied to the table.  Values
+    are stored as 8-byte big-endian signed integers and added
+    server-side.  This makes :meth:`increment` be faster and atomic,
+    since it does not need to get the old values to cause addition to
+    happen.  However, it also means that :meth:`put` on these tables
+    makes two mutations to delete the old value and then start the new
+    sum.
+
     '''
     def __init__(self, *args, **kwargs):
         super(AStorage, self).__init__(*args, **kwargs)
@@ -86,22 +98,32 @@ class AStorage(StringKeyedStorage):
     def _create_table(self, table):
         ns_table = self._ns(table)
         if self.conn.table_exists(ns_table):
-            logger.info('table %s exists, not modifying', ns_table)
+            logger.debug('table %s exists, not modifying', ns_table)
             return
-        logger.info('creating %s', ns_table)
+        logger.debug('creating %s', ns_table)
 
         self.conn.create_table(ns_table)
-        logger.debug('conn.created_table(%s)', ns_table)
         self.conn.client.setTableProperty(self.conn.login,
                                           ns_table,
                                           'table.bloom.enabled',
                                           'true')
 
-        i = RowDeletingIterator()
-        scopes = set([IteratorScope.SCAN, IteratorScope.MINC,
-                      IteratorScope.MAJC])
-        i.attach(self.conn, ns_table, scopes)
-        logger.debug('i.attach(%r, %s, %r)', self.conn, ns_table, scopes)
+        if self._value_types.get(table, str) is COUNTER:
+            i = SummingCombiner()
+            scopes = set([IteratorScope.SCAN, IteratorScope.MINC,
+                          IteratorScope.MAJC])
+            i.attach(self.conn, ns_table, scopes)
+
+    def value_to_str(self, value, value_type):
+        # LongCombiner expects a big-endian 8-byte int
+        if value_type is COUNTER:
+            return struct.pack('>q', value)
+        return super(AStorage, self).value_to_str(value, value_type)
+
+    def str_to_value(self, value, value_type):
+        if value_type is COUNTER:
+            return struct.unpack('>q', value)[0]
+        return super(AStorage, self).str_to_value(value, value_type)
 
     def setup_namespace(self, table_names, value_types={}):
         '''creates tables in the namespace.  Can be run multiple times with
@@ -130,7 +152,7 @@ class AStorage(StringKeyedStorage):
         self._create_table(table_name)
 
     @retry([AccumuloSecurityException])
-    def _put(self, table_name, keys_and_values):
+    def _put(self, table_name, keys_and_values, counter_deletes=True):
         cur_bytes = 0
         max_bytes = self.thrift_framed_transport_size_in_mb * 2 ** 19
         batch_writer = BatchWriter(conn=self.conn,
@@ -151,6 +173,16 @@ class AStorage(StringKeyedStorage):
                     batch_writer.flush()
                     cur_bytes = 0
                 cur_bytes += max_bytes
+
+                # Because COUNTER is implemented via a summing accumulator,
+                # to do a put we need to delete the old value before
+                # restarting the sum.
+                if ((self._value_types.get(table_name, str) is COUNTER and
+                     counter_deletes)):
+                    mut = Mutation(key)
+                    mut.put(cf='', cq='', is_delete=True)
+                    batch_writer.add_mutation(mut)
+
                 mut = Mutation(key)
                 mut.put(cf='', cq='', val=blob)
                 batch_writer.add_mutation(mut)
@@ -166,7 +198,6 @@ class AStorage(StringKeyedStorage):
             yield kv
 
     def _do_scan(self, table_name, key_ranges, keys_only):
-        key_spec = self._table_names[table_name]
         iterators = []
         if keys_only:
             iterators.append(IteratorSetting(
@@ -176,7 +207,6 @@ class AStorage(StringKeyedStorage):
         if not key_ranges:
             key_ranges = [['', '']]
         for start_key, stop_key in key_ranges:
-            total_count = 0
             specific_key_range = bool(start_key or stop_key)
             if specific_key_range:
                 # Accumulo treats None as a negative-infinity or
@@ -232,10 +262,30 @@ class AStorage(StringKeyedStorage):
         try:
             for key in keys:
                 mut = Mutation(key)
-                mut.put(cf='', cq='', val='DEL_ROW')
+                mut.put(cf='', cq='', is_delete=True)
                 batch_writer.add_mutation(mut)
         finally:
             batch_writer.close()
+
+    def increment(self, table_name, *keys_and_values):
+        '''Add values to a counter-type table.
+
+        .. see:: `kvlayer._abstract_storage.AbstractStorage.increment`
+
+        If `table_name` is a :class:`COUNTER` table, then the actual
+        summing is done server-side.  This means that concurrent calls
+        to this method are atomic against each other: if clients on
+        different system increment the same key in the same table by 2
+        and 3, respectively, then later reads will return 5.  Behavior
+        with concurrent put and delete should be reasonable as well.
+
+        '''
+        if self._value_types.get(table_name, str) is COUNTER:
+            # Special case for Accumulo: just write the delta values,
+            # and the summing combiner will do the math for us
+            self.put(table_name, *keys_and_values, counter_deletes=False)
+        else:
+            super(AStorage, self).increment(table_name, *keys_and_values)
 
 
 def _string_decrement(x):
