@@ -109,18 +109,22 @@ class AStorage(StringKeyedStorage):
                                           'true')
 
         if self._value_types.get(table, str) is COUNTER:
-            i = SummingCombiner()
+            i = SummingCombiner(encoding_type='FIXEDLEN')
             scopes = set([IteratorScope.SCAN, IteratorScope.MINC,
                           IteratorScope.MAJC])
             i.attach(self.conn, ns_table, scopes)
 
     def value_to_str(self, value, value_type):
+        if value is None:
+            return None
         # LongCombiner expects a big-endian 8-byte int
         if value_type is COUNTER:
             return struct.pack('>q', value)
         return super(AStorage, self).value_to_str(value, value_type)
 
     def str_to_value(self, value, value_type):
+        if value is None:
+            return None
         if value_type is COUNTER:
             return struct.unpack('>q', value)[0]
         return super(AStorage, self).str_to_value(value, value_type)
@@ -162,6 +166,17 @@ class AStorage(StringKeyedStorage):
                                    timeout_ms=self._timeout_ms,
                                    threads=self._threads)
         try:
+            # Because COUNTER is implemented via a summing accumulator,
+            # to do a put we need to delete all of the old values before
+            # restarting the sum.
+            if ((self._value_types.get(table_name, str) is COUNTER and
+                 counter_deletes)):
+                for key, blob in keys_and_values:
+                    mut = Mutation(key)
+                    mut.put(cf='', cq='', is_delete=True)
+                    batch_writer.add_mutation(mut)
+                batch_writer.flush()
+
             for key, blob in keys_and_values:
                 if len(blob) + cur_bytes >= max_bytes:
                     logger.debug('len(blob)=%d + cur_bytes=%d >= '
@@ -173,15 +188,6 @@ class AStorage(StringKeyedStorage):
                     batch_writer.flush()
                     cur_bytes = 0
                 cur_bytes += max_bytes
-
-                # Because COUNTER is implemented via a summing accumulator,
-                # to do a put we need to delete the old value before
-                # restarting the sum.
-                if ((self._value_types.get(table_name, str) is COUNTER and
-                     counter_deletes)):
-                    mut = Mutation(key)
-                    mut.put(cf='', cq='', is_delete=True)
-                    batch_writer.add_mutation(mut)
 
                 mut = Mutation(key)
                 mut.put(cf='', cq='', val=blob)
