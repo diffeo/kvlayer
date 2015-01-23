@@ -100,7 +100,7 @@ def perftest_storage_speed(client):
     client.put('t1', *[((uuid.uuid4(), uuid.uuid4()), b'')
                        for i in xrange(num_rows)])
     t2 = time.time()
-    results = list(client.scan('t1', batch_size=num_rows))
+    results = list(client.scan('t1'))
     t3 = time.time()
     put_rate = float(num_rows) / (t2 - t1)
     get_rate = float(num_rows) / (t3 - t2)
