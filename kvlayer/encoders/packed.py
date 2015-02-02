@@ -97,7 +97,7 @@ class PackedEncoder(Encoder):
             assert frag <= 0x7fffffff
             return struct.pack('>I', frag + 0x80000000)
         elif (typ == long) or (typ == (int,long)) or (typ == (long,int)):
-            assert frag < 0x7fffffffffffffff
+            assert frag <= 0x7fffffffffffffff
             return struct.pack('>Q', frag + 0x8000000000000000)
         elif typ == uuid.UUID:
             return frag.get_bytes()
