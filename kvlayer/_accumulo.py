@@ -244,13 +244,17 @@ class AStorage(StringKeyedStorage):
                     yield (row.row, row.val)
 
     def _get(self, table_name, keys):
+        # Empirically this works, even though the comment above
+        # suggests we should need to _string_decrement srow???
+        ranges = [Range(srow=k, erow=k, sinclude=True, einclude=True)
+                  for k in keys]
+        scanner = self.conn.batch_scan(self._ns(table_name),
+                                       scanranges=ranges)
+        results = {}
+        for cell in scanner:
+            results[cell.row] = cell.val
         for key in keys:
-            gen = self._do_scan(table_name, [(key, key)], keys_only=False)
-            v = None
-            for kk, vv in gen:
-                if kk == key:
-                    v = vv
-            yield key, v
+            yield (key, results.get(key, None))
 
     def close(self):
         self._connected = False
