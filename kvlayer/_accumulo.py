@@ -178,16 +178,18 @@ class AStorage(StringKeyedStorage):
                 batch_writer.flush()
 
             for key, blob in keys_and_values:
-                if len(blob) + cur_bytes >= max_bytes:
-                    logger.debug('len(blob)=%d + cur_bytes=%d >= '
-                                 'thrift_framed_transport_size_in_mb/2 = %d',
-                                 len(blob), cur_bytes, max_bytes)
-                    logger.debug('pre-emptively sending only what has been '
-                                 'batched, and will send this item in next '
-                                 'batch.')
+                if len(key) + len(blob) + cur_bytes >= max_bytes:
+                    logger.debug(
+                        'len(key)=%d + len(blob)=%d + cur_bytes=%d >= '
+                        'thrift_framed_transport_size_in_mb/2 = %d',
+                        len(key), len(blob), cur_bytes, max_bytes)
+                    logger.debug(
+                        'pre-emptively sending only what has been '
+                        'batched, and will send this item in next '
+                        'batch.')
                     batch_writer.flush()
                     cur_bytes = 0
-                cur_bytes += max_bytes
+                cur_bytes += len(key) + len(blob)
 
                 mut = Mutation(key)
                 mut.put(cf='', cq='', val=blob)
