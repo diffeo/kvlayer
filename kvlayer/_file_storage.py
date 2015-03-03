@@ -55,3 +55,7 @@ class FileStorage(AbstractLocalStorage):
     def delete(self, table_name, *keys):
         super(FileStorage, self).delete(table_name, *keys)
         self._data.sync()
+
+    def clear_table(self, table_name):
+        super(FileStorage, self).clear_table(table_name)
+        self._data.sync()
