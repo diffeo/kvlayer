@@ -178,16 +178,18 @@ class AStorage(StringKeyedStorage):
                 batch_writer.flush()
 
             for key, blob in keys_and_values:
-                if len(blob) + cur_bytes >= max_bytes:
-                    logger.debug('len(blob)=%d + cur_bytes=%d >= '
-                                 'thrift_framed_transport_size_in_mb/2 = %d',
-                                 len(blob), cur_bytes, max_bytes)
-                    logger.debug('pre-emptively sending only what has been '
-                                 'batched, and will send this item in next '
-                                 'batch.')
+                if len(key) + len(blob) + cur_bytes >= max_bytes:
+                    logger.debug(
+                        'len(key)=%d + len(blob)=%d + cur_bytes=%d >= '
+                        'thrift_framed_transport_size_in_mb/2 = %d',
+                        len(key), len(blob), cur_bytes, max_bytes)
+                    logger.debug(
+                        'pre-emptively sending only what has been '
+                        'batched, and will send this item in next '
+                        'batch.')
                     batch_writer.flush()
                     cur_bytes = 0
-                cur_bytes += max_bytes
+                cur_bytes += len(key) + len(blob)
 
                 mut = Mutation(key)
                 mut.put(cf='', cq='', val=blob)
@@ -242,13 +244,17 @@ class AStorage(StringKeyedStorage):
                     yield (row.row, row.val)
 
     def _get(self, table_name, keys):
+        # Empirically this works, even though the comment above
+        # suggests we should need to _string_decrement srow???
+        ranges = [Range(srow=k, erow=k, sinclude=True, einclude=True)
+                  for k in keys]
+        scanner = self.conn.batch_scan(self._ns(table_name),
+                                       scanranges=ranges)
+        results = {}
+        for cell in scanner:
+            results[cell.row] = cell.val
         for key in keys:
-            gen = self._do_scan(table_name, [(key, key)], keys_only=False)
-            v = None
-            for kk, vv in gen:
-                if kk == key:
-                    v = vv
-            yield key, v
+            yield (key, results.get(key, None))
 
     def close(self):
         self._connected = False
