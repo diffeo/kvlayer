@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 class FileStorage(AbstractLocalStorage):
     '''
     File storage for testing and development
+
+    Note that there should only be one connection to any particular
+    file-backed storage at a time. (Data lives in memory and is synced
+    to disk in a way that will clobber whatever is already there.)
     '''
 
     _datas = {}
