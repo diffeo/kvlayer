@@ -4,3 +4,4 @@ kvlayer:
   zk_addresses: ['test-accumulo-1.diffeo.com']
   username: root 
   password: secret
+  instance_name: 'accumulo'

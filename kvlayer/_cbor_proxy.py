@@ -183,6 +183,15 @@ class CborRpcClient(object):
 
 
 class CborProxyStorage(StringKeyedStorage):
+    '''
+
+    Required config terms:
+    zk_addresses: [list, of, addresses, to, zookeeper, servers]
+    proxy_addresses: [list, of, 'host:port', for, cborproxy, servers]
+    instance_name: 'accumulo' or 'instance' are common accumulo cluster names
+    username: database credential
+    password: database credential
+    '''
     def __init__(self, *args, **kwargs):
         super(CborProxyStorage, self).__init__(*args, **kwargs)
 
@@ -218,7 +227,8 @@ class CborProxyStorage(StringKeyedStorage):
                 u'connect',
                 [unicode(zk_addr),
                  unicode(self._config.get('username')),
-                 unicode(self._config.get('password'))])
+                 unicode(self._config.get('password')),
+                 unicode(self._config.get('instance_name'))])
             if not ok:
                 raise Exception(msg)
         return self._conn
@@ -226,7 +236,7 @@ class CborProxyStorage(StringKeyedStorage):
     def _ns(self, table):
         return '%s_%s_%s' % (self._app_name, self._namespace, table)
 
-    def setup_namespace(self, table_names, value_types):
+    def setup_namespace(self, table_names, value_types=None):
         '''creates tables in the namespace.  Can be run multiple times with
         different table_names in order to expand the set of tables in
         the namespace.
@@ -252,13 +262,13 @@ class CborProxyStorage(StringKeyedStorage):
     def _scan(self, table_name, key_ranges):
         table_name = self._ns(table_name)
         if not key_ranges:
-            key_ranges = [((), ())]
+            key_ranges = [(None, None)]
         return self.conn._rpc(u'scan', [unicode(table_name), key_ranges])
 
     def _scan_keys(self, table_name, key_ranges):
         table_name = self._ns(table_name)
         if not key_ranges:
-            key_ranges = [((), ())]
+            key_ranges = [(None, None)]
         return self.conn._rpc(u'scan_keys', [unicode(table_name), key_ranges])
 
     def _get(self, table_name, keys):

@@ -180,7 +180,7 @@ class AbstractStorage(object):
         else:
             self._log_stats = None
 
-    def setup_namespace(self, table_names, value_types={}):
+    def setup_namespace(self, table_names, value_types=None):
         '''Create tables in the namespace.
 
         Can be run multiple times with different `table_names` in
@@ -210,6 +210,8 @@ class AbstractStorage(object):
         :param dict value_types: Mapping from table name to value type
 
         '''
+        if value_types is None:
+            value_types = {}
         # Subclass implementations should call this superclass
         # implementation to actually populate self._table_names.
         for k, v in table_names.iteritems():
