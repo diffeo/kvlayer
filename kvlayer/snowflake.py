@@ -64,8 +64,8 @@ class Snowflake(object):
         # (0.00076%).  Does adding milliseconds (or 2**-10-seconds)
         # but taking that many bits out of the sequence number
         # improve this?
-        key = ((((-math.trunc(now)) & 0xFFFFFFFF) << 32) |
-               ((self.identifier & 0xFFFF) << 16) |
-               (self.sequence & 0xFFFF))
+        key = long((((-math.trunc(now)) & 0x7FFFFFFF) << 32) |
+                   ((self.identifier & 0xFFFF) << 16) |
+                   (self.sequence & 0xFFFF))
         self.sequence = (self.sequence + 1) & 0xFFFF
         return key

@@ -10,6 +10,7 @@ import time
 
 import pytest
 
+from kvlayer.encoders.packed import PackedEncoder
 from kvlayer._local_memory import LocalStorage
 from kvlayer.snowflake import Snowflake
 
@@ -24,9 +25,9 @@ def client():
 
 def test_snowflake_explicit():
     s = Snowflake(identifier=1, sequence=0)
-    assert s(now=0x12345678) == 0xedcba98800010000
-    assert s(now=0x12345678) == 0xedcba98800010001
-    assert s(now=0x12345679) == 0xedcba98700010002
+    assert s(now=0x12345678) == 0x6dcba98800010000
+    assert s(now=0x12345678) == 0x6dcba98800010001
+    assert s(now=0x12345679) == 0x6dcba98700010002
 
 
 def test_snowflake_implicit(monkeypatch):
@@ -35,15 +36,15 @@ def test_snowflake_implicit(monkeypatch):
     monkeypatch.setattr(time, 'time', lambda: 0x12345678)
 
     s = Snowflake()
-    assert s() == 0xedcba98800110011
-    assert s() == 0xedcba98800110012
-    assert s() == 0xedcba98800110013
+    assert s() == 0x6dcba98800110011
+    assert s() == 0x6dcba98800110012
+    assert s() == 0x6dcba98800110013
 
 
 def test_snowflake_wraparound():
     s = Snowflake(identifier=0, sequence=0xFFFF)
-    assert s(now=0x12345678) == 0xedcba9880000ffff
-    assert s(now=0x12345678) == 0xedcba98800000000
+    assert s(now=0x12345678) == 0x6dcba9880000ffff
+    assert s(now=0x12345678) == 0x6dcba98800000000
 
 
 def test_snowflake_scan(client):
@@ -73,3 +74,14 @@ def test_snowflake_scan_sequence(client):
     client.put('t', ((s(now=0x12345679),), 'newest'))
     assert ([v for k, v in client.scan('t')] ==
             ['newer', 'newest', 'oldest', 'older'])
+
+
+def test_snowflake_fits_packed_encoder():
+    encoder = PackedEncoder()
+    s = Snowflake(identifier=0, sequence=0)
+    skey = s(now=0x12345678)
+    dbkey = encoder.serialize((skey,), (long,))
+    # The encoder adds 0x8000000000000000 for ordering purposes
+    assert dbkey == b'\xed\xcb\xa9\x88\x00\x00\x00\x00'
+    kvlkey = encoder.deserialize(dbkey, (long,))
+    assert kvlkey == (skey,)
