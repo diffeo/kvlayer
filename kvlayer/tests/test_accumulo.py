@@ -99,7 +99,7 @@ def test_clear_table(client, direct):
 
 def test_put_get(client, direct):
     client.setup_namespace({'table1': 1, 'table2': 1})
-    kv_dict = {(uuid.uuid4(),): 'value' + str(x) for x in xrange(10)}
+    kv_dict = dict([((uuid.uuid4(),), 'value' + str(x)) for x in xrange(10)])
     keys_and_values = [(key, value) for key, value in kv_dict.iteritems()]
     client.put('table1', *keys_and_values)
     keys = kv_dict.keys()
@@ -117,7 +117,7 @@ def test_put_get(client, direct):
 
 def test_scan_all_keys(client, direct):
     client.setup_namespace({'table1': 1, 'table2': 1})
-    kv_dict = {(uuid.uuid4(),): 'value' + str(x) for x in xrange(10)}
+    kv_dict = dict([((uuid.uuid4(),), 'value' + str(x)) for x in xrange(10)])
     keys_and_values = [(key, value) for key, value in kv_dict.iteritems()]
     client.put('table1', *keys_and_values)
 
@@ -130,7 +130,7 @@ def test_scan_all_keys(client, direct):
 
 def test_delete(client, direct):
     client.setup_namespace({'table1': 1})
-    kv_dict = {(uuid.uuid4(),): 'value' + str(x) for x in xrange(10)}
+    kv_dict = dict([((uuid.uuid4(),), 'value' + str(x)) for x in xrange(10)])
     keys_and_values = [(key, value) for key, value in kv_dict.iteritems()]
     client.put('table1', *keys_and_values)
     keys = kv_dict.keys()

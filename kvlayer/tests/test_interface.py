@@ -125,7 +125,7 @@ def test_basic_storage(client):
 
 def test_delete(client):
     client.setup_namespace({'table1': 1})
-    kv_dict = {(uuid.uuid4(),): 'value' + str(x) for x in xrange(10)}
+    kv_dict = dict([((uuid.uuid4(),), 'value' + str(x)) for x in xrange(10)])
     keys_and_values = [(key, value) for key, value in kv_dict.iteritems()]
     client.put('table1', *keys_and_values)
     keys = kv_dict.keys()
