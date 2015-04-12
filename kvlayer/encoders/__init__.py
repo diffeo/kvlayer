@@ -27,6 +27,6 @@ def get_encoder(name=None):
     '''
     if name is None:
         name = 'ascii_percent'
-    encoders = {encoder.config_name: encoder
-                for encoder in [AsciiPercentEncoder, PackedEncoder]}
+    encoders = dict([(encoder.config_name, encoder)
+                     for encoder in [AsciiPercentEncoder, PackedEncoder]])
     return encoders[name]()
