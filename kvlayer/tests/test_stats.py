@@ -46,7 +46,7 @@ def backend(request):
 
 @pytest.yield_fixture(scope='function')
 def client(backend, request, tmpdir, namespace_string):
-    config_path = str(request.fspath.dirpath('config_{}.yaml'.format(backend)))
+    config_path = str(request.fspath.dirpath('config_{0}.yaml'.format(backend)))
     statsfile = StringIO.StringIO()
     params = dict(
         app_name='kvlayer',

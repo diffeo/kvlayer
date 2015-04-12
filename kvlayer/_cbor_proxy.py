@@ -72,8 +72,8 @@ class CborRpcClient(object):
                 tsocket_addr = tuple(self._socket_addr)
                 assert len(tsocket_addr) == 2, ('address must be length-2 '
                                                 'tuple ("hostname", '
-                                                'port number), got {!r} '
-                                                'tuplified to {!r}'
+                                                'port number), got {0!r} '
+                                                'tuplified to {1!r}'
                                                 .format(self._socket_addr,
                                                         tsocket_addr))
                 self._socket_addr = tsocket_addr
@@ -242,13 +242,13 @@ class CborProxyStorage(StringKeyedStorage):
         the namespace.
         '''
         super(CborProxyStorage, self).setup_namespace(table_names, value_types)
-        simple_table_names = {self._ns(k): dict()
-                              for k in table_names.iterkeys()}
+        simple_table_names = dict([(self._ns(k), dict())
+                                   for k in table_names.iterkeys()])
         self.conn._rpc(u'setup_namespace', [simple_table_names])
 
     def delete_namespace(self):
-        simple_table_names = {self._ns(k): dict()
-                              for k in self._table_names.iterkeys()}
+        simple_table_names = dict([(self._ns(k), dict())
+                                   for k in self._table_names.iterkeys()])
         self.conn._rpc(u'delete_namespace', [simple_table_names])
 
     def clear_table(self, table_name):

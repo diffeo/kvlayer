@@ -96,10 +96,10 @@ class PostgresTableStorage(AbstractStorage):
         # http://www.postgresql.org/docs/9.3/static/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS
         # has the real rules.
         if not re.match('[a-z_][a-z0-9_$]*', self._app_name, re.IGNORECASE):
-            raise ConfigurationError('app_name {!r} must be a valid SQL name'
+            raise ConfigurationError('app_name {0!r} must be a valid SQL name'
                                      .format(self._app_name))
         if not re.match('[a-z_][a-z0-9_$]*', self._namespace, re.IGNORECASE):
-            raise ConfigurationError('namespace {!r} must be a valid SQL name'
+            raise ConfigurationError('namespace {0!r} must be a valid SQL name'
                                      .format(self._namespace))
 
         # Figure out what we're connecting to
@@ -115,9 +115,9 @@ class PostgresTableStorage(AbstractStorage):
         if '=' not in connect_string and ' ' not in connect_string:
             if ':' in connect_string:
                 (host, port) = connect_string.split(':', 2)
-                connect_string = 'host={} port={}'.format(host, port)
+                connect_string = 'host={0} port={1}'.format(host, port)
             else:
-                connect_string = 'host={}'.format(connect_string)
+                connect_string = 'host={0}'.format(connect_string)
             user = self._config.get('username', None)
             if not user:
                 raise ConfigurationError('no username for postgrest')
@@ -127,7 +127,7 @@ class PostgresTableStorage(AbstractStorage):
             dbname = self._config.get('dbname', None)
             if not dbname:
                 raise ConfigurationError('no dbname for postgrest')
-            connect_string += ' user={} password={} dbname={}'.format(
+            connect_string += ' user={0} password={1} dbname={2}'.format(
                 user, password, dbname)
         self.connection_pool = psycopg2.pool.SimpleConnectionPool(
             self._config.get('min_connections', 2),
@@ -183,11 +183,11 @@ class PostgresTableStorage(AbstractStorage):
 
     def _table_name(self, table_name):
         '''Get the SQL table name of a kvlayer table.'''
-        return '{}_{}.{}'.format(self._app_name, self._namespace, table_name)
+        return '{0}_{1}.{2}'.format(self._app_name, self._namespace, table_name)
 
     def _columns(self, key_spec):
         '''Get the names of the columns for a specific table.'''
-        return ['k{}'.format(n+1) for n in xrange(len(key_spec))]
+        return ['k{0}'.format(n+1) for n in xrange(len(key_spec))]
 
     def _massage_key_part(self, typ, kp):
         '''Change a single key part if needed.'''
@@ -233,7 +233,7 @@ class PostgresTableStorage(AbstractStorage):
             for candidates in typs:
                 if all(t in candidates for t in typ):
                     return self._python_to_sql_type(candidates[0])
-        raise ProgrammerError('unexpected key type {!r}'.format(typ))
+        raise ProgrammerError('unexpected key type {0!r}'.format(typ))
 
     def setup_namespace(self, table_names, value_types={}):
         '''Create tables in the namespace.
@@ -251,17 +251,17 @@ class PostgresTableStorage(AbstractStorage):
         super(PostgresTableStorage, self).setup_namespace(
             table_names, value_types)
         with self._cursor() as cursor:
-            cursor.execute('CREATE SCHEMA IF NOT EXISTS {}_{}'
+            cursor.execute('CREATE SCHEMA IF NOT EXISTS {0}_{1}'
                            .format(self._app_name, self._namespace))
         for name, key_spec in self._table_names.iteritems():
             with self._cursor() as cursor:
                 cnames = self._columns(key_spec)
                 ctypes = [self._python_to_sql_type(t) for t in key_spec]
                 vtype = self._python_to_sql_type(self._value_types[name])
-                columns = ['{} {} NOT NULL'.format(n, t)
+                columns = ['{0} {1} NOT NULL'.format(n, t)
                            for n, t in zip(cnames, ctypes)]
-                sql = ('CREATE TABLE IF NOT EXISTS {} ({}, v {} NOT NULL, '
-                       'PRIMARY KEY ({}))'
+                sql = ('CREATE TABLE IF NOT EXISTS {0} ({1}, v {2} NOT NULL, '
+                       'PRIMARY KEY ({3}))'
                        .format(self._table_name(name), ', '.join(columns),
                                vtype, ', '.join(cnames)))
                 cursor.execute(sql)
@@ -269,13 +269,13 @@ class PostgresTableStorage(AbstractStorage):
     def delete_namespace(self):
         '''Find and delete all of the tables.'''
         with self._cursor() as cursor:
-            cursor.execute('DROP SCHEMA IF EXISTS {}_{} CASCADE'
+            cursor.execute('DROP SCHEMA IF EXISTS {0}_{1} CASCADE'
                            .format(self._app_name, self._namespace))
 
     def clear_table(self, table_name):
         '''Clear out a single table.'''
         with self._cursor() as cursor:
-            cursor.execute('TRUNCATE {}'.format(self._table_name(table_name)))
+            cursor.execute('TRUNCATE {0}'.format(self._table_name(table_name)))
 
     def put(self, table_name, *keys_and_values, **kwargs):
         '''Write data into a table.'''
@@ -288,9 +288,9 @@ class PostgresTableStorage(AbstractStorage):
         cname = cnames[0]
         keys_equal = ' AND '.join('{0}.{1}=put.{1}'.format(tn, col)
                                   for col in cnames)
-        keys_value = ', '.join('put.{}'.format(c) for c in cnames + ['v'])
+        keys_value = ', '.join('put.{0}'.format(c) for c in cnames + ['v'])
         if kwargs.get('is_increment', False):
-            new_value = '{}.v+put.v'.format(tn)
+            new_value = '{0}.v+put.v'.format(tn)
         else:
             new_value = 'put.v'
         for k, v in keys_and_values:
@@ -325,8 +325,8 @@ class PostgresTableStorage(AbstractStorage):
         key_spec = self._table_names[table_name]
         value_type = self._value_types[table_name]
         cnames = self._columns(key_spec)
-        exprs = ['{}=%s'.format(kn) for kn in cnames]
-        where = 'WHERE {}'.format(' AND '.join(exprs))
+        exprs = ['{0}=%s'.format(kn) for kn in cnames]
+        where = 'WHERE {0}'.format(' AND '.join(exprs))
         sql = 'SELECT v FROM ' + tn + ' ' + where
         with self._cursor() as cursor:
             for k in keys:
@@ -350,7 +350,7 @@ class PostgresTableStorage(AbstractStorage):
     def _scan_where_one(self, cnames, key_spec, op, key):
         '''``tuple(kN) `op` key`` as part of a WHERE clause'''
         z = zip(cnames, self._massage_key_tuple(key_spec, key))
-        query = ' AND '.join(['{}{}%s'.format(cn, op) for (cn, kp) in z])
+        query = ' AND '.join(['{0}{1}%s'.format(cn, op) for (cn, kp) in z])
         wt = tuple(kp for (cn, kp) in z)
         return (query, wt)
 
@@ -431,12 +431,12 @@ class PostgresTableStorage(AbstractStorage):
             cnames, key_spec, hi[:1], hi) # (c,) to (c,d)
         if q1:
             if q3:
-                query = '({}) OR ({}) OR ({})'.format(q1, q2, q3)
+                query = '({0}) OR ({1}) OR ({2})'.format(q1, q2, q3)
             else:
-                query = '({}) OR ({})'.format(q1, q2)
+                query = '({0}) OR ({1})'.format(q1, q2)
         else:
             if q3:
-                query = '({}) OR ({})'.format(q2, q3)
+                query = '({0}) OR ({1})'.format(q2, q3)
             else:
                 query = q2
         params = p1 + p2 + p3
@@ -455,7 +455,7 @@ class PostgresTableStorage(AbstractStorage):
         parts = [(query, params) for (query, params) in parts if query]
         where = ''
         if parts:
-            where = ' OR '.join(['({})'.format(p[0]) for p in parts])
+            where = ' OR '.join(['({0})'.format(p[0]) for p in parts])
             where = 'WHERE ' + where
         wt = sum([p[1] for p in parts], ())
         return (where, wt)
@@ -472,9 +472,9 @@ class PostgresTableStorage(AbstractStorage):
         value_type = self._value_types[table_name]
         cnames = self._columns(key_spec)
         (where, wt) = self._scan_where(cnames, key_spec, key_ranges)
-        order = 'ORDER BY {}'.format(', '.join(cnames))
+        order = 'ORDER BY {0}'.format(', '.join(cnames))
         with self._cursor(name='scan') as cursor:
-            sql = ('SELECT {}, v FROM {} {} {}'
+            sql = ('SELECT {0}, v FROM {1} {2} {3}'
                    .format(', '.join(cnames), tn, where, order))
             cursor.execute(sql, wt)
             for row in cursor:
@@ -490,9 +490,9 @@ class PostgresTableStorage(AbstractStorage):
         key_spec = self._table_names[table_name]
         cnames = self._columns(key_spec)
         (where, wt) = self._scan_where(cnames, key_spec, key_ranges)
-        order = 'ORDER BY {}'.format(', '.join(cnames))
+        order = 'ORDER BY {0}'.format(', '.join(cnames))
         with self._cursor(name='scan') as cursor:
-            cursor.execute('SELECT {} FROM {} {} {}'
+            cursor.execute('SELECT {0} FROM {1} {2} {3}'
                            .format(', '.join(cnames), tn, where, order),
                            wt)
             for row in cursor:
@@ -502,8 +502,8 @@ class PostgresTableStorage(AbstractStorage):
         tn = self._table_name(table_name)
         key_spec = self._table_names[table_name]
         cnames = self._columns(key_spec)
-        exprs = ['{}=%s'.format(kn) for kn in cnames]
-        where = 'WHERE {}'.format(' AND '.join(exprs))
+        exprs = ['{0}=%s'.format(kn) for kn in cnames]
+        where = 'WHERE {0}'.format(' AND '.join(exprs))
         sql = 'DELETE FROM ' + tn + ' ' + where
         with self._cursor() as cursor:
             for k in keys:
@@ -512,7 +512,7 @@ class PostgresTableStorage(AbstractStorage):
 
     def increment(self, table_name, *keys_and_values):
         if self._value_types[table_name] not in [COUNTER, ACCUMULATOR]:
-            raise ProgrammerError('table {} is not a counter table'
+            raise ProgrammerError('table {0} is not a counter table'
                                   .format(table_name))
         self.put(table_name, *keys_and_values, is_increment=True)
 

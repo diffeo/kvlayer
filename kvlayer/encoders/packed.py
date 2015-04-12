@@ -51,7 +51,7 @@ class PackedEncoder(Encoder):
         if spec is None:
             spec = (None,) * len(key)
         if len(key) > len(spec):
-            raise BadKey('key too long, wanted {} parts, got {}'
+            raise BadKey('key too long, wanted {0} parts, got {1}'
                             .format(len(spec), len(key)))
         return b'\0'.join(self._gen_ser_parts(key, spec))
 
@@ -77,7 +77,7 @@ class PackedEncoder(Encoder):
 
         '''
         if typ is not None and not isinstance(frag, typ):
-            raise BadKey('expected {} in key but got {} ({!r})'
+            raise BadKey('expected {0} in key but got {1} ({2!r})'
                             .format(typ, type(frag), frag))
 
         if typ == str:
@@ -102,7 +102,7 @@ class PackedEncoder(Encoder):
         elif typ == uuid.UUID:
             return frag.get_bytes()
         else:
-            raise BadKey("don't know how to serialize type {}".format(typ))
+            raise BadKey("don't know how to serialize type {0}".format(typ))
 
     def make_start_key(self, key, spec):
         '''Convert a partial key to the start of a scan range.
@@ -203,7 +203,7 @@ class PackedEncoder(Encoder):
                 # TODO: check that there are no lone '\x01' bytes which would be an invalid encoding
                 parts[i] = ts.replace('\x01\x02', '\x00').replace('\x01\x03', '\x01')
             else:
-                raise BadKey("don't know how to decode key part type {}".format(si))
+                raise BadKey("don't know how to decode key part type {0}".format(si))
             end -= 1 # skip delimiter byte
             i -= 1
         return tuple(parts)

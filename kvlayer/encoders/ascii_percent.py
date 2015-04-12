@@ -53,7 +53,7 @@ class AsciiPercentEncoder(Encoder):
         if spec is None:
             spec = (None,) * len(key)
         if len(key) > len(spec):
-            raise TypeError('key too long, wanted {} parts, got {}'
+            raise TypeError('key too long, wanted {0} parts, got {1}'
                             .format(len(spec), len(key)))
         return self.DELIMITER.join(self._serialize_one(frag, typ)
                                    for (frag, typ) in zip(key, spec))
@@ -73,7 +73,7 @@ class AsciiPercentEncoder(Encoder):
 
         '''
         if typ is not None and not isinstance(frag, typ):
-            raise TypeError('expected {} in key but got {} ({!r})'
+            raise TypeError('expected {0} in key but got {1} ({2!r})'
                             .format(typ, type(frag), frag))
         if isinstance(frag, uuid.UUID) or hasattr(frag, 'hex'):
             return frag.hex
@@ -83,10 +83,10 @@ class AsciiPercentEncoder(Encoder):
         elif isinstance(frag, basestring):
             return str(frag.replace('%', '%25').replace('\x00', '%00'))
         elif typ is None:
-            raise TypeError('could not serialize {} key fragment ({!r})'
+            raise TypeError('could not serialize {0} key fragment ({1!r})'
                             .format(type(frag), frag))
         else:
-            raise SerializationError('could not serialize {} key fragment'
+            raise SerializationError('could not serialize {0} key fragment'
                                      .format(typ))
 
     def make_start_key(self, key, spec):
@@ -191,5 +191,5 @@ class AsciiPercentEncoder(Encoder):
         elif typ is str:
             return frag.replace('%00', '\x00').replace('%25', '%')
         else:
-            raise SerializationError('could not deserialize {} key fragment'
+            raise SerializationError('could not deserialize {0} key fragment'
                                      .format(typ))

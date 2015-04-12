@@ -58,7 +58,7 @@ def perftest_large_writes(client, item_size=fifteen_MB_minus_overhead,
     
     num = num_batches * num_items_per_batch
     total_bytes = num * len(long_string)
-    print('Testing large writes ({} rows of {} KB)'
+    print('Testing large writes ({0} rows of {1} KB)'
           .format(num, len(long_string)/1024))
 
     t1 = time.time()
@@ -71,7 +71,7 @@ def perftest_large_writes(client, item_size=fifteen_MB_minus_overhead,
 
     single_put_bps = total_bytes / dt
 
-    print ('{} single  rows put={:.1f} sec ({:.1f} per sec, {:.1f} KB/s)'
+    print ('{0} single  rows put={1:.1f} sec ({2:.1f} per sec, {3:.1f} KB/s)'
            .format(num, dt, num / dt, total_bytes / (1024 * dt)))
 
     for _ in xrange(num_batches):
@@ -79,7 +79,7 @@ def perftest_large_writes(client, item_size=fifteen_MB_minus_overhead,
     t3 = time.time()
 
     dt = t3 - t2
-    print ('{} batched rows put={:.1f} sec ({:.1f} per sec, {:.1f} KB/s)'
+    print ('{0} batched rows put={1:.1f} sec ({2:.1f} per sec, {3:.1f} KB/s)'
            .format(num, dt, num / dt, total_bytes / (1024 * dt)))
 
     batch_put_bps = total_bytes / dt
@@ -95,7 +95,7 @@ def perftest_storage_speed(client):
     client.setup_namespace(dict(t1=2, t2=3))
     num_rows = 10 ** 4
     key_size = 33 # two 16-byte uuid plus splitter, approx 33 bytes
-    print('Testing key-only I/O ({} rows) * (~33 byte keys)'.format(num_rows))
+    print('Testing key-only I/O ({0} rows) * (~33 byte keys)'.format(num_rows))
     t1 = time.time()
     client.put('t1', *[((uuid.uuid4(), uuid.uuid4()), b'')
                        for i in xrange(num_rows)])
@@ -104,9 +104,9 @@ def perftest_storage_speed(client):
     t3 = time.time()
     put_rate = float(num_rows) / (t2 - t1)
     get_rate = float(num_rows) / (t3 - t2)
-    print('{} rows '
-          'put={:.1f} sec ({:.1f} per sec) '
-          'get={:.1f} sec ({:.1f} per sec)'
+    print('{0} rows '
+          'put={1:.1f} sec ({2:.1f} per sec) '
+          'get={3:.1f} sec ({4:.1f} per sec)'
           .format(num_rows, (t2 - t1), put_rate, (t3 - t2), get_rate))
     assert num_rows == len(results), ('wanted %s rows, got %s', num_rows, len(results))
 
@@ -301,13 +301,13 @@ def worker(operation, i_queue, o_queue, tasks_remaining,
     if pr:
         pr.disable()
         profstr = pstatstr(pr)
-        with open('profile.{}.txt'.format(os.getpid()), 'a') as pf:
+        with open('profile.{0}.txt'.format(os.getpid()), 'a') as pf:
             pf.write(profstr)
 
 
 def pstatstr(prof):
     profout = StringIO()
-    profout.write('# {} {!r}\n\n'.format(time.strftime('%Y%m%d_%H%M%S'), sys.argv))
+    profout.write('# {0} {1!r}\n\n'.format(time.strftime('%Y%m%d_%H%M%S'), sys.argv))
     ps = pstats.Stats(prof, stream=profout)
     ps.sort_stats('cumulative', 'calls')
     ps.print_stats()
@@ -397,10 +397,10 @@ def perftest_throughput_insert_random(num_workers=4,
     total_bytes = item_size * total_inserts
     rate = total_inserts / elapsed
     print(
-        'parallel {} workers, {} batches, {} items per batch, '
-        '{} bytes per item, '
-        '{} inserts ({:.4f} MB) written in {:.1f} seconds --> '
-        '{:.1f} items/sec, {:.4f} MB/s'
+        'parallel {0} workers, {1} batches, {2} items per batch, '
+        '{3} bytes per item, '
+        '{4} inserts ({5:.4f} MB) written in {6:.1f} seconds --> '
+        '{7:.1f} items/sec, {8:.4f} MB/s'
         .format(
             num_workers, num_batches, num_items_per_batch, item_size,
             total_inserts, total_bytes / 2**20, elapsed, 
@@ -442,10 +442,10 @@ def perftest_throughput_many_gets(ret_vals=[], num_workers=4,
 
     rate = count / elapsed
     print(
-        'parallel {} workers, {} batches, {} items per batch, '
-        '{} bytes per item, '
-        '{} items ({:.4f} MB) read in {:.1f} seconds --> '
-        '{:.1f} items/sec, {:.4f} MB/s'
+        'parallel {0} workers, {1} batches, {2} items per batch, '
+        '{3} bytes per item, '
+        '{4} items ({5:.4f} MB) read in {6:.1f} seconds --> '
+        '{7:.1f} items/sec, {8:.4f} MB/s'
         .format(
             num_workers, num_batches, num_items_per_batch, item_size,
             count, total_bytes/2**20, elapsed, rate,
@@ -473,7 +473,7 @@ def run_perftests(num_workers=4,
         out = sys.stdout
     rc = 0
     name = yakonfig.get_global_config('kvlayer')['storage_type']
-    print('Running tests on backend "{}"'.format(name))
+    print('Running tests on backend "{0}"'.format(name))
     header = ['#num_workers', 'item_size', 'num_items_per_batch', 'num_batches']
     vals = [num_workers, item_size, num_items_per_batch, num_batches]
     try:
@@ -541,7 +541,7 @@ def run_all_perftests(redis_address=None, clientlist=None):
             logger.info('skipping backend %r', name)
             continue
         config = os.path.join(os.path.dirname(__file__),
-                              'config_{}.yaml'.format(name))
+                              'config_{0}.yaml'.format(name))
         if not os.path.exists(config):
             continue
         params = {'app_name': 'kvlayer_performance',

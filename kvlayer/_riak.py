@@ -33,7 +33,7 @@ class RiakStorage(StringKeyedStorage):
 
     def _bucket(self, table):
         '''Riak bucket name for a kvlayer table.'''
-        name = '{}_{}_{}'.format(self._app_name, self._namespace, table)
+        name = '{0}_{1}_{2}'.format(self._app_name, self._namespace, table)
         return self.connection.bucket(name)
 
     def delete_namespace(self):

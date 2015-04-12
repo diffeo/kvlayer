@@ -52,8 +52,8 @@ def backend(request):
         pytest.skip('cassandra doesn\'t support non-UUID keys')
     if backend in _extension_test_configs:
         pass  # okay
-    elif not request.fspath.dirpath('config_{}.yaml'.format(backend)).exists():
-        pytest.skip('no configuration file for backend {}'.format(backend))
+    elif not request.fspath.dirpath('config_{0}.yaml'.format(backend)).exists():
+        pytest.skip('no configuration file for backend {0}'.format(backend))
     #if backend not in ('local', 'redis', 'riak', 'accumulo', 'cborproxy'):
     #if backend != 'local':
     #    pytest.skip('TODO DELETE TEMPROARY SKIP ' + backend)
@@ -65,7 +65,7 @@ def client(backend, request, tmpdir, namespace_string):
     if backend in _extension_test_configs:
         file_config = yaml.load(_extension_test_configs[backend])
     else:
-        config_path = str(request.fspath.dirpath('config_{}.yaml'
+        config_path = str(request.fspath.dirpath('config_{0}.yaml'
                                                  .format(backend)))
         # read and parse the config file, insert an object
         with open(config_path, 'r') as f:
@@ -321,7 +321,7 @@ def test_scan_2d(client):
         return (uuid.UUID(int=x),)
 
     def vf(x, y):
-        return '{}:{}'.format(x, y)
+        return '{0}:{1}'.format(x, y)
 
     def kvf(x, y):
         return (kf(x, y), vf(x, y))
@@ -359,7 +359,7 @@ def test_scan_keys_2d(client):
         return (uuid.UUID(int=x),)
 
     def vf(x, y):
-        return '{}:{}'.format(x, y)
+        return '{0}:{1}'.format(x, y)
 
     def kvf(x, y):
         return (kf(x, y), vf(x, y))
@@ -407,7 +407,7 @@ def test_scan_9042(client):
     client.setup_namespace({tname: (str,)})
 
     kv = [
-        (('k{:5x}'.format(x),), 'v{:5x}'.format(x))
+        (('k{0:5x}'.format(x),), 'v{0:5x}'.format(x))
         for x in xrange(9042)
     ]
     client.put(tname, *kv)
@@ -421,20 +421,20 @@ def test_scan_9042(client):
 
     # try other ranged scans
     count = 0
-    for rkv in client.scan(tname, (('k{:5x}'.format(3000),), ())):
+    for rkv in client.scan(tname, (('k{0:5x}'.format(3000),), ())):
         count += 1
 
     assert count == 6042
 
     count = 0
-    for rkv in client.scan(tname, (('k{:5x}'.format(3000),),
-                                   ('k{:5x}'.format(8437),))):
+    for rkv in client.scan(tname, (('k{0:5x}'.format(3000),),
+                                   ('k{0:5x}'.format(8437),))):
         count += 1
 
     assert count == 8437-3000+1  # +1 because scan is inclusive of endpoints
 
     count = 0
-    for rkv in client.scan(tname, ((), ('k{:5x}'.format(8437),))):
+    for rkv in client.scan(tname, ((), ('k{0:5x}'.format(8437),))):
         count += 1
 
     assert count == 8437+1  # +1 because scan is inclusive of endpoints
@@ -452,7 +452,7 @@ def test_scan_binary_key_order(client):
         ('\x01#aoeu', 6),
         ('\x02', 7),
     ]
-    values = ['{:05d}'.format(i) for i in xrange(1, len(keys)+1)]
+    values = ['{0:05d}'.format(i) for i in xrange(1, len(keys)+1)]
     client.put(
         's1',
         *zip(keys, values)

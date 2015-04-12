@@ -92,7 +92,7 @@ class RedisStorage(StringKeyedStorage):
         else:
             conn_kwargs = { 'host': address, 'db': db_num }
 
-        logger.debug('will connect to redis {!r}'.format(conn_kwargs))
+        logger.debug('will connect to redis {0!r}'.format(conn_kwargs))
         self._pool = redis.ConnectionPool(**conn_kwargs)
         self._table_keys = {}
         pass
@@ -157,13 +157,13 @@ class RedisStorage(StringKeyedStorage):
             tries = 5
             while True:
                 key = uuid.uuid4().hex
-                logger.debug("setup_namespace: table {} trying uuid {} in {}"
+                logger.debug("setup_namespace: table {0} trying uuid {1} in {2}"
                              .format(table, key, self._namespace_key))
                 try:
                     key = script(keys=[key, self._namespace_key], args=[table])
                     # will return a key name (possibly an existing key)
                     # or raise ResponseError
-                    logger.debug("setup_namespace: table {} uuid {}"
+                    logger.debug("setup_namespace: table {0} uuid {1}"
                                  .format(table, key))
                     self._table_keys[table] = key
                     break

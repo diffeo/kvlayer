@@ -110,7 +110,7 @@ class AbstractStorage(object):
             return struct.pack('>i', value)
         if value_type is float or value_type is ACCUMULATOR:
             return struct.pack('>f', value)
-        raise ConfigurationError('unexpected value_type {!r}'
+        raise ConfigurationError('unexpected value_type {0!r}'
                                  .format(value_type))
 
     def str_to_value(self, value, value_type):
@@ -122,7 +122,7 @@ class AbstractStorage(object):
             return struct.unpack('>i', value)[0]
         if value_type is float or value_type is ACCUMULATOR:
             return struct.unpack('>f', value)[0]
-        raise ConfigurationError('unexpected value_type {!r}'
+        raise ConfigurationError('unexpected value_type {0!r}'
                                  .format(value_type))
 
     def __init__(self, config, app_name=None, namespace=None):
@@ -219,14 +219,14 @@ class AbstractStorage(object):
                 if v >= 50:
                     # This is probably a bug
                     raise ConfigurationError(
-                        'excessively long tuple size {!r} for table {!r}'
+                        'excessively long tuple size {0!r} for table {1!r}'
                         .format(v, k))
                 v = (uuid.UUID,) * v
             self._table_names[k] = v
             value_type = value_types.get(k, str)
             if value_type not in (str, int, float, COUNTER, ACCUMULATOR):
                 raise ConfigurationError(
-                    'invalid value type {!r} for table {!r}'
+                    'invalid value type {0!r} for table {1!r}'
                     .format(value_type, k))
             self._value_types[k] = value_type
 
@@ -374,7 +374,7 @@ class AbstractStorage(object):
 
         '''
         if self._value_types[table_name] not in [COUNTER, ACCUMULATOR]:
-            raise ProgrammerError('table {} is not a counter table'
+            raise ProgrammerError('table {0} is not a counter table'
                                   .format(table_name))
         # Default, non-atomic implementation
         keys = [k for (k, v) in keys_and_values]
@@ -588,8 +588,8 @@ class OpStats(object):
         total = OpStatsPerTable()
         for k, v in self.by_table.iteritems():
             total += v
-            parts.append('{:10s} {}\n'.format(k, str(v)))
-        return ''.join(parts) + '           {}\n'.format(str(total))
+            parts.append('{0:10s} {1}\n'.format(k, str(v)))
+        return ''.join(parts) + '           {0}\n'.format(str(total))
 
 
 class OpStatsPerTable(object):
@@ -637,7 +637,7 @@ class OpStatsPerTable(object):
                 bpv=(1.0*self.values_size)/self.num_values
             )
         if self.total_time > 0:
-            out += ' {:0.1f} (k+v)B/s'.format(
+            out += ' {0:0.1f} (k+v)B/s'.format(
                 (1.0*(self.keys_size + self.values_size))/self.total_time)
         return out
 

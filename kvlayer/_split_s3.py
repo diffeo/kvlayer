@@ -40,7 +40,7 @@ class SplitS3Storage(AbstractStorage):
             raise ConfigurationError('split_s3 storage requires tables')
         self.prefix = self._config.get('path_prefix', '')
         if self._config.get('kvlayer_prefix', True):
-            self.prefix += '{}/{}/'.format(self._app_name, self._namespace)
+            self.prefix += '{0}/{1}/'.format(self._app_name, self._namespace)
         self.retries = self._config.get('retries', 5)
         self.retry_interval = self._config.get('retry_interval', 0.1)
 
@@ -75,7 +75,7 @@ class SplitS3Storage(AbstractStorage):
         hasher = hashlib.sha256()
         hasher.update(key)
         key_hash = hasher.hexdigest()
-        s3_key = '{}{}/{}/{}/{}'.format(self.prefix, table_name,
+        s3_key = '{0}{1}/{2}/{3}/{4}'.format(self.prefix, table_name,
                                         key_hash[0:2], key_hash[2:4],
                                         key_hash[4:])
         return self.bucket.new_key(s3_key)
@@ -88,8 +88,8 @@ class SplitS3Storage(AbstractStorage):
                 continue
             if value_types[t] is str:
                 continue
-            raise ConfigurationError('table {} is S3-backed but has '
-                                     'non-string type {!r}'
+            raise ConfigurationError('table {0} is S3-backed but has '
+                                     'non-string type {1!r}'
                                      .format(t, value_types[t]))
         super(SplitS3Storage, self).setup_namespace(table_names, value_types)
         self.kvlclient.setup_namespace(table_names, value_types)

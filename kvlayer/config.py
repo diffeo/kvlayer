@@ -117,12 +117,12 @@ def discover_config(config, prefix):
 
 def check_config(config, name):
     if 'storage_type' not in config:
-        raise ConfigurationError('{} must have a storage_type'
+        raise ConfigurationError('{0} must have a storage_type'
                                  .format(name))
     if config['storage_type'] not in STORAGE_CLIENTS:
-        raise ConfigurationError('invalid {} storage_type {}'
+        raise ConfigurationError('invalid {0} storage_type {1}'
                                  .format(name, config['storage_type']))
     if 'namespace' not in config:
-        raise ConfigurationError('{} requires a namespace'.format(name))
+        raise ConfigurationError('{0} requires a namespace'.format(name))
     if 'app_name' not in config:
-        raise ConfigurationError('{} requires an app_name'.format(name))
+        raise ConfigurationError('{0} requires an app_name'.format(name))

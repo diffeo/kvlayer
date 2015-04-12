@@ -137,7 +137,7 @@ def client(config=None, storage_type=None, *args, **kwargs):
         _load_entry_point_kvlayer_impls_done = True
 
     if storage_type not in STORAGE_CLIENTS:
-        raise ConfigurationError('Invalid kvlayer storage_type {!r}'
+        raise ConfigurationError('Invalid kvlayer storage_type {0!r}'
                                  .format(storage_type))
 
     cls = STORAGE_CLIENTS[storage_type]
@@ -164,12 +164,12 @@ class Actions(ArgParseCmd):
         '''delete all tables in the current namespace'''
         namespace = self.client._namespace
         if not args.assume_yes:
-            response = raw_input('Delete everything in {!r}?  Enter namespace: '
+            response = raw_input('Delete everything in {0!r}?  Enter namespace: '
                                  .format(namespace))
             if response != namespace:
                 self.stdout.write('not deleting anything\n')
                 return
-        self.stdout.write('deleting namespace {!r}\n'.format(namespace))
+        self.stdout.write('deleting namespace {0!r}\n'.format(namespace))
         self.client.delete_namespace()
 
     @staticmethod
@@ -189,7 +189,7 @@ class Actions(ArgParseCmd):
         '''list all keys in a single table'''
         self.client.setup_namespace({ args.table: args.schema })
         for k,v in self.client.scan(args.table):
-            self.stdout.write('{!r}\n'.format(k))
+            self.stdout.write('{0!r}\n'.format(k))
 
     def args_get(self, parser):
         parser.add_argument('table', help='name of kvlayer table')
@@ -203,9 +203,9 @@ class Actions(ArgParseCmd):
         key = tuple(f(x) for f, x in zip(args.schema, args.keys))
         for k,v in self.client.get(args.table, key):
             if v is None:
-                self.stdout.write('No values for key {!r}.\n'.format(k))
+                self.stdout.write('No values for key {0!r}.\n'.format(k))
             else:
-                self.stdout.write('{!r}\n'.format(v))
+                self.stdout.write('{0!r}\n'.format(v))
 
 
 def main():
