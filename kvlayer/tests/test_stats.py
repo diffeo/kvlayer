@@ -109,7 +109,7 @@ def test_stats(client):
     client._log_stats.flush()
     f = client._log_stats._f
     raw = f.getvalue()
-    assert len(re.findall('put:', raw)) == 10
+    assert len(re.findall('put:', raw)) == 9
     logger.info('stats: %s', raw)
     client._log_stats.close()
     client._log_stats = None

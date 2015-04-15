@@ -9,10 +9,12 @@ https://github.com/diffeo/kvlayer-java-proxy
 '''
 
 from __future__ import absolute_import
+import json
 import logging
 import random
 import socket
 import time
+import threading
 
 import cbor
 
@@ -129,7 +131,10 @@ class CborRpcClient(object):
         :raise Exception: if the server response was a failure
 
         '''
-        mlog = logging.getLogger('cborrpc')
+        ## it's really time and file-space consuming to log all the
+        ## rpc data, but there are times when a developer needs to.
+        mlog = None
+        #mlog = logging.getLogger('cborrpc')
         tryn = 0
         delay = self._base_retry_seconds
         self._message_count += 1
@@ -138,7 +143,8 @@ class CborRpcClient(object):
             'method': method_name,
             'params': params
         }
-        mlog.debug('request %r', message)
+        if mlog is not None:
+            mlog.debug('request %r', message)
         buf = cbor.dumps(message)
 
         errormessage = None
@@ -147,7 +153,8 @@ class CborRpcClient(object):
                 conn = self._conn()
                 conn.send(buf)
                 response = cbor.load(self.rfile)
-                mlog.debug('response %r', response)
+                if mlog is not None:
+                    mlog.debug('response %r', response)
                 assert response['id'] == message['id']
                 if 'result' in response:
                     return response['result']
@@ -176,10 +183,115 @@ class CborRpcClient(object):
         raise Exception(errormessage)
 
 
-# def _rangesk(key, key_spec):
-#     if not key:
-#         return None
-#     return serialize_key(key, key_spec=key_spec)
+class CborProxyPooledConnection(object):
+    """CborProxyPooledConnection is a context manager
+    usage:
+        with pooled_conn as conn:
+           conn._rpc(...)
+    """
+
+    def __init__(self, zk_addresses, proxy_addresses, username, password, instance_name):
+        self._zk_addresses = zk_addresses
+        self._proxy_addresses = proxy_addresses
+        self._username = username
+        self._password = password
+        self._instance_name = instance_name
+        self._conn = None  # CborRpcClient instance
+        self.lock = threading.Lock()
+        self.owned = False
+        self.lastused = None # time.time() when last used. close if unused 30s
+
+    def conn(self):
+        if not self._conn:
+            host, port = random.choice(self._proxy_addresses)
+            logger.debug('connecting to cbor proxy %s:%s', host, port)
+            self._conn = CborRpcClient({'address': (host, port), 'retries': 0})
+            zk_addr = random.choice(self._zk_addresses)
+            ok, msg = self._conn._rpc(
+                u'connect',
+                [unicode(zk_addr),
+                 unicode(self._username),
+                 unicode(self._password),
+                 unicode(self._instance_name)])
+            if not ok:
+                raise Exception(msg)
+        return self._conn
+
+    def close(self):
+        if self._conn:
+            self._conn.close()
+            self._conn = None
+
+    def __enter__(self):
+        return self.conn()
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        # todo, detect broken connection in exc_*
+        with self.lock:
+            self.owned = False
+            self.lastused = time.time()
+            if (exc_value is not None) and (self._conn is not None):
+                self._conn.close()
+                self._conn = None
+
+
+class CborProxyConnectionPool(object):
+    def __init__(self):
+        # dict from (big key of params) to [list of connections]
+        self.they = {}
+        self.lastgc = None
+        self.lock = threading.Lock()
+
+    def connect(self, zk_addresses, proxy_addresses, username, password, instance_name):
+        """Returns a CborProxyPooledConnection. Use in a with stamement.
+        with pooled_connection as conn:
+          conn.foo()
+        """
+        with self.lock:
+            out = self._connect(zk_addresses, proxy_addresses, username, password, instance_name)
+            self.maybegc()
+            return out
+
+    def _connect(self, zk_addresses, proxy_addresses, username, password, instance_name):
+        key = json.dumps((zk_addresses, proxy_addresses, username, password, instance_name))
+        cons = self.they.get(key)
+        if cons:
+            for con in cons:
+                if not con.owned:
+                    with con.lock:
+                        if not con.owned:
+                            con.owned = True
+                            return con
+        newpc = CborProxyPooledConnection(zk_addresses, proxy_addresses, username, password, instance_name)
+        newpc.owned = True
+        if cons is None:
+            cons = [newpc]
+            self.they[key] = cons
+        else:
+            cons.append(newpc)
+        return newpc
+
+    def maybegc(self):
+        # garbage collect old connections, at most every 5s
+        now = time.time()
+        if (self.lastgc is None) or (self.lastgc < (now - 5)):
+            self.gc()
+            self.lastgc = now
+
+    def gc(self):
+        # garbage collect old connections
+        now = time.time()
+        too_old = now - 30
+        for k, cons in self.they.iteritems():
+            # keep if owned, or not unused yet, or used recently enough
+            pos = 0
+            while pos < len(cons):
+                c = cons[pos]
+                if c.owned or (c.lastused is None) or (c.lastused > too_old):
+                    # keep, move on
+                    pos += 1
+                else:
+                    cons.pop(pos)
 
 
 class CborProxyStorage(StringKeyedStorage):
@@ -192,6 +304,8 @@ class CborProxyStorage(StringKeyedStorage):
     username: database credential
     password: database credential
     '''
+    global_pool = CborProxyConnectionPool()
+
     def __init__(self, *args, **kwargs):
         super(CborProxyStorage, self).__init__(*args, **kwargs)
 
@@ -212,26 +326,15 @@ class CborProxyStorage(StringKeyedStorage):
         self._proxy_addresses = map(str_to_pair, proxy_addresses)
 
         # cached lazy connection
-        self._conn = None
+        #self._conn = None
         # have we sent zk connection information to proxy?
         self._proxy_connected = False
 
-    @property
-    def conn(self):
-        if not self._conn:
-            host, port = random.choice(self._proxy_addresses)
-            logger.debug('connecting to cbor proxy %s:%s', host, port)
-            self._conn = CborRpcClient({'address': (host, port)})
-            zk_addr = random.choice(self._zk_addresses)
-            ok, msg = self._conn._rpc(
-                u'connect',
-                [unicode(zk_addr),
-                 unicode(self._config.get('username')),
-                 unicode(self._config.get('password')),
-                 unicode(self._config.get('instance_name'))])
-            if not ok:
-                raise Exception(msg)
-        return self._conn
+        self._connection_pool = kwargs.get('pool') or CborProxyStorage.global_pool
+
+    def pooled_conn(self):
+        # return a CborProxyConnectionPool, use in with
+        return self._connection_pool.connect(self._zk_addresses, self._proxy_addresses, self._config.get('username'), self._config.get('password'), self._config.get('instance_name'))
 
     def _ns(self, table):
         return '%s_%s_%s' % (self._app_name, self._namespace, table)
@@ -244,45 +347,52 @@ class CborProxyStorage(StringKeyedStorage):
         super(CborProxyStorage, self).setup_namespace(table_names, value_types)
         simple_table_names = dict([(self._ns(k), dict())
                                    for k in table_names.iterkeys()])
-        self.conn._rpc(u'setup_namespace', [simple_table_names])
+        with self.pooled_conn() as conn:
+            conn._rpc(u'setup_namespace', [simple_table_names])
 
     def delete_namespace(self):
         simple_table_names = dict([(self._ns(k), dict())
                                    for k in self._table_names.iterkeys()])
-        self.conn._rpc(u'delete_namespace', [simple_table_names])
+        with self.pooled_conn() as conn:
+            conn._rpc(u'delete_namespace', [simple_table_names])
 
     def clear_table(self, table_name):
         table_name = self._ns(table_name)
-        self.conn._rpc(u'clear_table', [unicode(table_name)])
+        with self.pooled_conn() as conn:
+            conn._rpc(u'clear_table', [unicode(table_name)])
 
     def _put(self, table_name, keys_and_values):
-        self.conn._rpc(u'put',
+        with self.pooled_conn() as conn:
+            conn._rpc(u'put',
                        [unicode(self._ns(table_name)), keys_and_values])
 
     def _scan(self, table_name, key_ranges):
         table_name = self._ns(table_name)
         if not key_ranges:
             key_ranges = [(None, None)]
-        return self.conn._rpc(u'scan', [unicode(table_name), key_ranges])
+        with self.pooled_conn() as conn:
+            return conn._rpc(u'scan', [unicode(table_name), key_ranges])
 
     def _scan_keys(self, table_name, key_ranges):
         table_name = self._ns(table_name)
         if not key_ranges:
             key_ranges = [(None, None)]
-        return self.conn._rpc(u'scan_keys', [unicode(table_name), key_ranges])
+        with self.pooled_conn() as conn:
+            return conn._rpc(u'scan_keys', [unicode(table_name), key_ranges])
 
     def _get(self, table_name, keys):
         table_name = self._ns(table_name)
-        return self.conn._rpc(u'get', [unicode(table_name), keys])
+        with self.pooled_conn() as conn:
+            return conn._rpc(u'get', [unicode(table_name), keys])
 
     def close(self):
-        if self._conn:
-            self._conn.close()
-            self._conn = None
+        # everything is taken care of at pooled_conn context scope
+        pass
 
     def _delete(self, table_name, keys, **kwargs):
         table_name = self._ns(table_name)
-        self.conn._rpc(u'delete', [unicode(table_name), keys])
+        with self.pooled_conn() as conn:
+            conn._rpc(u'delete', [unicode(table_name), keys])
 
     def shutdown_proxies(self):
         for host, port in self._proxy_addresses:

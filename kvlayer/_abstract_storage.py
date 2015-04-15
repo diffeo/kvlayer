@@ -515,8 +515,23 @@ class StorageStats(object):
         atexit.register(self.atexit)
 
     def __str__(self):
-        return ('put:\n{x.put}\nscan:\n{x.scan}\nscan_keys:\n{x.scan_keys}\n'
-                'get:\n{x.get}\ndelete:\n{x.delete}\n'.format(x=self))
+        outparts = []
+        if self.put.num_ops:
+            outparts.append('put:')
+            outparts.append(str(self.put))
+        if self.scan.num_ops:
+            outparts.append('scan:')
+            outparts.append(str(self.scan))
+        if self.scan_keys.num_ops:
+            outparts.append('scan_keys:')
+            outparts.append(str(self.scan_keys))
+        if self.get.num_ops:
+            outparts.append('get:')
+            outparts.append(str(self.get))
+        if self.delete.num_ops:
+            outparts.append('delete:')
+            outparts.append(str(self.delete))
+        return '\n'.join(outparts) + '\n'
 
     def _out(self):
         if (self._f is None) and hasattr(self._config_str, 'write'):
