@@ -119,7 +119,10 @@ class AbstractStorage(object):
         if value_type is str:
             return value
         if value_type is int or value_type is COUNTER:
-            return struct.unpack('>i', value)[0]
+            if len(value) == 4:
+                return struct.unpack('>i', value)[0]
+            elif len(value) == 8:
+                return struct.unpack('>q', value)[0]
         if value_type is float or value_type is ACCUMULATOR:
             return struct.unpack('>f', value)[0]
         raise ConfigurationError('unexpected value_type {0!r}'

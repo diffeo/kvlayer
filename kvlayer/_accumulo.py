@@ -126,13 +126,6 @@ class AStorage(StringKeyedStorage):
             return struct.pack('>q', value)
         return super(AStorage, self).value_to_str(value, value_type)
 
-    def str_to_value(self, value, value_type):
-        if value is None:
-            return None
-        if value_type is COUNTER:
-            return struct.unpack('>q', value)[0]
-        return super(AStorage, self).str_to_value(value, value_type)
-
     def setup_namespace(self, table_names, value_types={}):
         '''creates tables in the namespace.  Can be run multiple times with
         different table_names in order to expand the set of tables in

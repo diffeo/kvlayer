@@ -13,12 +13,13 @@ import json
 import logging
 import random
 import socket
+import struct
 import time
 import threading
 
 import cbor
 
-from kvlayer._abstract_storage import StringKeyedStorage
+from kvlayer._abstract_storage import StringKeyedStorage, COUNTER
 from kvlayer._exceptions import ProgrammerError
 
 logger = logging.getLogger(__name__)
@@ -339,16 +340,34 @@ class CborProxyStorage(StringKeyedStorage):
     def _ns(self, table):
         return '%s_%s_%s' % (self._app_name, self._namespace, table)
 
+    def _translate_value_config(self, value_types):
+        # convert setup_namespace value_types for upload to java proxy
+        if value_types is None:
+            return None
+        out = {}
+        for k,v in value_types.iteritems():
+            out[unicode(self._ns(k))] = self._translate_value_type(v)
+        return out
+
+    def _translate_value_type(self, value_type):
+        # convert one of setup_namespace value_types for upload to java proxy
+        if value_type is None:
+            return None
+        if isinstance(value_type, type):
+            return unicode(value_type.__name__)
+        else:
+            return unicode(type(value_type).__name__)
+
     def setup_namespace(self, table_names, value_types=None):
         '''creates tables in the namespace.  Can be run multiple times with
         different table_names in order to expand the set of tables in
         the namespace.
         '''
         super(CborProxyStorage, self).setup_namespace(table_names, value_types)
-        simple_table_names = dict([(self._ns(k), dict())
+        simple_table_names = dict([(unicode(self._ns(k)), dict())
                                    for k in table_names.iterkeys()])
         with self.pooled_conn() as conn:
-            conn._rpc(u'setup_namespace', [simple_table_names])
+            conn._rpc(u'setup_namespace', [simple_table_names, self._translate_value_config(value_types)])
 
     def delete_namespace(self):
         simple_table_names = dict([(self._ns(k), dict())
@@ -394,6 +413,22 @@ class CborProxyStorage(StringKeyedStorage):
         with self.pooled_conn() as conn:
             conn._rpc(u'delete', [unicode(table_name), keys])
 
+    def increment(self, table_name, *keys_and_values):
+        assert self._value_types[table_name] is COUNTER, 'attempting to increment non-COUNTER table {}'.format(table_name)
+
+        # do the transformation like put()
+        convkv = []
+        for (k, v) in keys_and_values:
+            self.check_put_key_value(k, v, table_name)
+            nk = self._encoder.serialize(k, self._table_names[table_name])
+            nv = self.value_to_str(v, self._value_types[table_name])
+            convkv.append( (nk , nv) )
+
+        table_name = self._ns(table_name)
+
+        with self.pooled_conn() as conn:
+            conn._rpc(u'increment', [unicode(table_name), convkv])
+
     def shutdown_proxies(self):
         for host, port in self._proxy_addresses:
             xc = CborRpcClient({'address': (host, port), 'retries': 0})
@@ -403,3 +438,12 @@ class CborProxyStorage(StringKeyedStorage):
                 pass  # ok
             except:
                 logger.info("%s:%s shutdown", host, port, exc_info=True)
+
+    def value_to_str(self, value, value_type):
+        # override StringKeyedStorage part for translating values in put()
+        if value is None:
+            return None
+        # LongCombiner expects a big-endian 8-byte int
+        if value_type is COUNTER:
+            return struct.pack('>q', value)
+        return super(CborProxyStorage, self).value_to_str(value, value_type)
