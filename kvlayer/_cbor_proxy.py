@@ -249,8 +249,9 @@ class CborProxyConnectionPool(object):
           conn.foo()
         """
         with self.lock:
-            out = self._connect(zk_addresses, proxy_addresses, username, password, instance_name)
+            # drop stale connections _before_ we try to use them.
             self.maybegc()
+            out = self._connect(zk_addresses, proxy_addresses, username, password, instance_name)
             return out
 
     def _connect(self, zk_addresses, proxy_addresses, username, password, instance_name):
@@ -389,15 +390,43 @@ class CborProxyStorage(StringKeyedStorage):
         table_name = self._ns(table_name)
         if not key_ranges:
             key_ranges = [(None, None)]
+        cmd = [unicode(table_name), key_ranges]
         with self.pooled_conn() as conn:
-            return conn._rpc(u'scan', [unicode(table_name), key_ranges])
+            while cmd is not None:
+                resultob =  conn._rpc(u'scan', cmd)
+                results = None
+                next_command = None
+                if isinstance(resultob, list):
+                    results = resultob
+                if isinstance(resultob, dict):
+                    results = resultob.get('out')
+                    next_command = resultob.get('next')
+                if results:
+                    for k,v in results:
+                        yield k,v
+                cmd = next_command
 
     def _scan_keys(self, table_name, key_ranges):
         table_name = self._ns(table_name)
         if not key_ranges:
             key_ranges = [(None, None)]
+        cmd = [unicode(table_name), key_ranges]
         with self.pooled_conn() as conn:
-            return conn._rpc(u'scan_keys', [unicode(table_name), key_ranges])
+            while cmd is not None:
+                resultob = conn._rpc(u'scan_keys', cmd)
+                results = None
+                next_command = None
+                if isinstance(resultob, list):
+                    results = resultob
+                elif isinstance(resultob, dict):
+                    results = resultob.get('out')
+                    next_command = resultob.get('next')
+                else:
+                    raise Exception('bad result from scan_keys, got {}'.format(type(resultob)))
+                if results:
+                    for k in results:
+                        yield k
+                cmd = next_command
 
     def _get(self, table_name, keys):
         table_name = self._ns(table_name)
