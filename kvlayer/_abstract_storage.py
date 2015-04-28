@@ -12,6 +12,7 @@ import abc
 import atexit
 import collections
 import itertools
+import json
 import operator
 import struct
 import time
@@ -494,8 +495,10 @@ class StorageStats(object):
         self._config_str = None
         if hasattr(config_str_or_writeable, 'write'):
             self._f = config_str_or_writeable
+            self._write_json = config.get('json', False)
         elif isinstance(config_str_or_writeable, (str, unicode)):
             self._config_str = config_str_or_writeable
+            self._write_json = self._config_str.endswith('.json') or config.get('json', False)
         self._interval_ops = config.get('log_stats_interval_ops')
         if self._interval_ops is not None:
             self._interval_ops = int(self._interval_ops)
@@ -536,6 +539,21 @@ class StorageStats(object):
             outparts.append(str(self.delete))
         return '\n'.join(outparts) + '\n'
 
+    def to_dict(self):
+        "return a dict suitable for json.dump()"
+        out = {}
+        if self.put.num_ops:
+            out['put'] = self.put.to_dict()
+        if self.scan.num_ops:
+            out['scan'] = self.scan.to_dict()
+        if self.scan_keys.num_ops:
+            out['scan_keys'] = self.scan_keys.to_dict()
+        if self.get.num_ops:
+            out['get'] = self.get.to_dict()
+        if self.delete.num_ops:
+            out['delete'] = self.delete.to_dict()
+        return out
+
     def _out(self):
         if (self._f is None) and hasattr(self._config_str, 'write'):
             self._f = self._config_str
@@ -561,10 +579,20 @@ class StorageStats(object):
                 self._op_interval_counter = 0
                 return
 
+    def write_json(self, writeable):
+        data = self.to_dict()
+        now = time.time()
+        data['time'] = now
+        data['times'] = time.strftime('%Y%m%d_%H%M%S', time.gmtime(now))
+        writeable.write(json.dumps(data) + '\n')
+
     def flush(self):
         out = self._out()
-        out.write(time.strftime('%Y%m%d_%H%M%S\n'))
-        out.write(self.__str__())
+        if self._write_json:
+            self.write_json(out)
+        else:
+            out.write(time.strftime('%Y%m%d_%H%M%S\n'))
+            out.write(self.__str__())
         if hasattr(out, 'flush'):
             out.flush()
 
@@ -608,6 +636,13 @@ class OpStats(object):
             total += v
             parts.append('{0:10s} {1}\n'.format(k, str(v)))
         return ''.join(parts) + '           {0}\n'.format(str(total))
+
+    def to_dict(self):
+        "return a dict suitable for json.dump()"
+        out = {}
+        for k, v in self.by_table.iteritems():
+            out[k] = v.to_dict()
+        return out
 
 
 class OpStatsPerTable(object):
@@ -657,6 +692,19 @@ class OpStatsPerTable(object):
         if self.total_time > 0:
             out += ' {0:0.1f} (k+v)B/s'.format(
                 (1.0*(self.keys_size + self.values_size))/self.total_time)
+        return out
+
+    def to_dict(self):
+        "return a dict suitable for json.dump()"
+        out = {
+            't': self.total_time,
+            'ops': self.num_ops,
+            'k': self.num_keys,
+            'kb': self.keys_size,
+        }
+        if self.num_values > 0:
+            out['v'] = self.num_values
+            out['vb'] = self.values_size
         return out
 
 
