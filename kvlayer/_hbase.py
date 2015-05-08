@@ -138,14 +138,15 @@ class HBaseStorage(StringKeyedStorage):
         if not key_ranges:
             key_ranges = [['', '']]
         table = self.conn.table(table_name)
+        hfilter = 'KeyOnlyFilter()'
         for start_key, stop_key in key_ranges:
             # start_row is inclusive >=
             # end_row is exclusive <
             if start_key or stop_key:
                 scanner = table.scan(row_start=start_key, row_stop=stop_key,
-                                     columns=())
+                                     columns=(), filter=hfilter)
             else:
-                scanner = table.scan(columns=())
+                scanner = table.scan(columns=(), filter=hfilter)
 
             for row in scanner:
                 yield row[0]
