@@ -35,6 +35,7 @@ class AbstractLocalStorage(AbstractStorage):
         super(AbstractLocalStorage, self).__init__(*args, **kwargs)
         self._connected = False
         self._raise_on_missing = self._config.get('raise_on_missing', True)
+        self._joined_key_cache = dict()
 
     def setup_namespace(self, table_names, value_types={}):
         super(AbstractLocalStorage, self).setup_namespace(
@@ -89,6 +90,23 @@ class AbstractLocalStorage(AbstractStorage):
         self.log_put(table_name, start_time, end_time, num_keys, keys_size,
                      num_values, values_size)
 
+    def _get_joined_key(self, key, key_spec):
+        '''To ensure that this acts like big disk-bound DBs, we ensure that
+        the sort order coming out of this in-memory mock matches the
+        serialized sorted key order.  This requires serializing the
+        key according to the key spec.  If an application does this
+        frequently, then it can be expensive.  This caches the
+        serialized key strings for faster access.
+
+        '''
+        _key = (key, key_spec)
+        if _key in self._joined_key_cache:
+            return self._joined_key_cache[_key]
+        else:
+            joined_key = self._encoder.serialize(key, key_spec)
+            self._joined_key_cache[_key] = joined_key
+            return joined_key
+
     @_requires_connection
     def scan(self, table_name, *key_ranges, **kwargs):
         start_time = time.time()
@@ -110,7 +128,7 @@ class AbstractLocalStorage(AbstractStorage):
                 # you if they failed to find a key
                 # LocalStorage does get/put on the Python tuple as the key,
                 # stringify for sort comparison
-                joined_key = self._encoder.serialize(key, key_spec)
+                joined_key = self._get_joined_key(key, key_spec)
                 if (start is not None) and (start > joined_key):
                     continue
                 if (finish is not None) and (finish < joined_key):
