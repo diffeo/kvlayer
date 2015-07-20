@@ -9,12 +9,16 @@ import sys
 import time
 import uuid
 
-import cql
-import pycassa
-from pycassa.pool import ConnectionPool
-from pycassa.system_manager import SystemManager, SIMPLE_STRATEGY, \
-    LEXICAL_UUID_TYPE, ASCII_TYPE, BYTES_TYPE
-from pycassa.types import CompositeType, TimeUUIDType, LexicalUUIDType, UUIDType, UTF8Type
+try:
+    import cql
+    import pycassa
+    from pycassa.pool import ConnectionPool
+    from pycassa.system_manager import SystemManager, SIMPLE_STRATEGY, \
+        LEXICAL_UUID_TYPE, ASCII_TYPE, BYTES_TYPE
+    from pycassa.types import CompositeType, TimeUUIDType, LexicalUUIDType, UUIDType, UTF8Type
+except ImportError:
+    cql = None
+    pycassa = None
 import pytest
 import yaml
 
