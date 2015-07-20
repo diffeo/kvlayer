@@ -94,10 +94,8 @@ setup(
     ],
     install_requires=[
         'yakonfig >= 0.6.0',
-        'pycassa >= 1.10',
         'pyaccumulo >= 1.5.0.5',
         'pyyaml',
-        'cql',
         'redis',
     ],
     extras_require={
@@ -105,6 +103,7 @@ setup(
         'Riak': ['riak'],
         'S3': ['boto'],
         'unittest': ['pytest', 'pytest-diffeo'],
+        'cassandra': ['pycassa >= 1.10', 'cql'], # deprecated
     },
     entry_points={
         'console_scripts': [

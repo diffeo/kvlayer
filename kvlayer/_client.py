@@ -17,7 +17,6 @@ except ImportError:
 
 import kvlayer
 from kvlayer._accumulo import AStorage
-from kvlayer._cassandra import CStorage
 from kvlayer._local_memory import LocalStorage
 from kvlayer._file_storage import FileStorage
 from kvlayer._redis import RedisStorage
@@ -25,6 +24,11 @@ import yakonfig
 from yakonfig import ConfigurationError
 from yakonfig.cmd import ArgParseCmd
 from yakonfig.merge import overlay_config
+
+try:
+    from kvlayer._cassandra import CStorage
+except ImportError:
+    CStorage = None
 
 try:
     from kvlayer._postgres import PGStorage
@@ -61,13 +65,14 @@ logger = logging.getLogger(__name__)
 STORAGE_CLIENTS = dict(
     ## these strings deinfe the external API for selecting the kvlayer
     ## storage backends
-    cassandra=CStorage,
     accumulo=AStorage,
     local=LocalStorage,
     filestorage=FileStorage,
     redis=RedisStorage
 )
 
+if CStorage:
+    STORAGE_CLIENTS['cassandra'] = CStorage
 if PGStorage:
     STORAGE_CLIENTS['postgres'] = PGStorage
 if PostgresTableStorage:
